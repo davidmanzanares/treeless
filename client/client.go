@@ -17,7 +17,7 @@ type result struct {
 //Connection is a DB connection
 type Connection struct {
 	conn         net.Conn
-	writeChannel chan com.Message
+	writeChannel chan tlcom.Message
 	waitLock     sync.Mutex
 	waits        map[uint32](chan result)
 	tid          uint32
@@ -40,20 +40,20 @@ func (c *Connection) Close() {
 }
 
 func listenToResponses(c *Connection) {
-	f := func(m com.Message) {
+	f := func(m tlcom.Message) {
 		c.waitLock.Lock()
 		ch := c.waits[m.ID]
 		c.waitLock.Unlock()
 		switch m.Type {
-		case com.OpGetResponse:
+		case tlcom.OpGetResponse:
 			rval := make([]byte, len(m.Value))
 			copy(rval, m.Value)
 			ch <- result{rval, nil}
-		case com.OpGetResponseError:
+		case tlcom.OpGetResponseError:
 			ch <- result{nil, errors.New(string(m.Value))}
 		}
 	}
-	err := com.TCPReader(c.conn, f)
+	err := tlcom.TCPReader(c.conn, f)
 	if !c.isClosed() {
 		panic(err)
 	}
@@ -61,7 +61,7 @@ func listenToResponses(c *Connection) {
 
 //Get the value of  key
 func (c *Connection) Get(key []byte) ([]byte, error) {
-	var mess com.Message
+	var mess tlcom.Message
 
 	ch := c.chanPool.Get().(chan result)
 	c.waitLock.Lock()
@@ -70,7 +70,7 @@ func (c *Connection) Get(key []byte) ([]byte, error) {
 	c.tid++
 	c.waitLock.Unlock()
 
-	mess.Type = com.OpGet
+	mess.Type = tlcom.OpGet
 	mess.Key = key
 	mess.ID = mytid
 
@@ -85,14 +85,14 @@ func (c *Connection) Get(key []byte) ([]byte, error) {
 
 //Put a new key/value pair
 func (c *Connection) Put(key, value []byte) error {
-	var mess com.Message
+	var mess tlcom.Message
 
 	c.waitLock.Lock()
 	mytid := c.tid
 	c.tid++
 	c.waitLock.Unlock()
 
-	mess.Type = com.OpPut
+	mess.Type = tlcom.OpPut
 	mess.ID = mytid
 	mess.Key = key
 	mess.Value = value
@@ -114,11 +114,11 @@ func CreateConnection(IP string) *Connection {
 	if err != nil {
 		panic(err)
 	}
-	writeCh := make(chan com.Message, 128)
+	writeCh := make(chan tlcom.Message, 128)
 	c.conn = tcpconn
 	c.writeChannel = writeCh
 
-	go com.TCPWriter(tcpconn, writeCh)
+	go tlcom.TCPWriter(tcpconn, writeCh)
 	go listenToResponses(&c)
 
 	return &c

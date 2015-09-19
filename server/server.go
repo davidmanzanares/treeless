@@ -1,4 +1,4 @@
-package server
+package tlserver
 
 import (
 	"flag"
@@ -45,21 +45,21 @@ func listenToConnetion(conn *net.TCPConn, id int, db *DBServer) {
 	//log.Println("New connection accepted. Connection ID:", id)
 	//tcpWriter will buffer TCP writes to send more message in less TCP packets
 	//this technique allows bigger throughtputs, but latency in increased a little
-	writeCh := make(chan com.Message, 1024)
-	go com.TCPWriter(conn, writeCh)
+	writeCh := make(chan tlcom.Message, 1024)
+	go tlcom.TCPWriter(conn, writeCh)
 
-	processMessage := func(message com.Message) {
+	processMessage := func(message tlcom.Message) {
 		switch message.Type {
 		case tlcore.OpGet:
-			var response com.Message
+			var response tlcom.Message
 			rval, err := db.m.Get(message.Key)
 			//fmt.Println("Get operation", key, rval, err)
 			response.ID = message.ID
 			if err != nil {
-				response.Type = com.OpGetResponseError
+				response.Type = tlcom.OpGetResponseError
 				response.Value = []byte(err.Error())
 			} else {
-				response.Type = com.OpGetResponse
+				response.Type = tlcom.OpGetResponse
 				response.Value = rval
 			}
 			writeCh <- response
@@ -72,7 +72,7 @@ func listenToConnetion(conn *net.TCPConn, id int, db *DBServer) {
 		}
 	}
 
-	com.TCPReader(conn, processMessage)
+	tlcom.TCPReader(conn, processMessage)
 
 	close(writeCh)
 
@@ -138,7 +138,7 @@ func Init() *DBServer {
 		panic(err)
 	}
 	//Init server
-	db.udpCon = com.ReplyToPings()
+	db.udpCon = tlcom.ReplyToPings()
 	go listenToNewConnections(&db)
 	return &db
 }

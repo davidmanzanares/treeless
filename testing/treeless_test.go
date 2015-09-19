@@ -1,5 +1,5 @@
 //Package testing tests the DB client and server
-package testing
+package tltesting
 
 import (
 	"bytes"
@@ -23,11 +23,11 @@ const OpSet = 3
 
 const serverIP = "127.0.0.1"
 
-var db *server.DBServer
+var db *tlserver.DBServer
 
 func startServer() {
-	db = server.Init()
-	com.Ping(serverIP, time.Second)
+	db = tlserver.Init()
+	tlcom.Ping(serverIP, time.Second)
 }
 func stopServer() {
 	db.Close()
