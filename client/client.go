@@ -1,0 +1,125 @@
+package treeless
+
+import (
+	"errors"
+	"net"
+	"sync"
+	"sync/atomic"
+	"treeless/com"
+)
+
+//Stores a DB operation result
+type result struct {
+	value []byte
+	err   error
+}
+
+//Connection is a DB connection
+type Connection struct {
+	conn         net.Conn
+	writeChannel chan com.Message
+	waitLock     sync.Mutex
+	waits        map[uint32](chan result)
+	tid          uint32
+	chanPool     sync.Pool
+	closed       int32
+}
+
+//ToDo: use external Connection struct, and let it decide how many TCP connection must be used simultaneously
+
+const bufferSize = 2048
+const writeTimeWindow = 1000
+
+func (c *Connection) isClosed() bool {
+	return atomic.LoadInt32(&c.closed) != 0
+}
+func (c *Connection) Close() {
+	atomic.StoreInt32(&c.closed, 1)
+	close(c.writeChannel)
+	c.conn.Close()
+}
+
+func listenToResponses(c *Connection) {
+	f := func(m com.Message) {
+		c.waitLock.Lock()
+		ch := c.waits[m.ID]
+		c.waitLock.Unlock()
+		switch m.Type {
+		case com.OpGetResponse:
+			rval := make([]byte, len(m.Value))
+			copy(rval, m.Value)
+			ch <- result{rval, nil}
+		case com.OpGetResponseError:
+			ch <- result{nil, errors.New(string(m.Value))}
+		}
+	}
+	err := com.TCPReader(c.conn, f)
+	if !c.isClosed() {
+		panic(err)
+	}
+}
+
+//Get the value of  key
+func (c *Connection) Get(key []byte) ([]byte, error) {
+	var mess com.Message
+
+	ch := c.chanPool.Get().(chan result)
+	c.waitLock.Lock()
+	mytid := c.tid
+	c.waits[c.tid] = ch
+	c.tid++
+	c.waitLock.Unlock()
+
+	mess.Type = com.OpGet
+	mess.Key = key
+	mess.ID = mytid
+
+	c.writeChannel <- mess
+	r := <-ch
+	c.chanPool.Put(ch)
+	c.waitLock.Lock()
+	delete(c.waits, mytid)
+	c.waitLock.Unlock()
+	return r.value, r.err
+}
+
+//Put a new key/value pair
+func (c *Connection) Put(key, value []byte) error {
+	var mess com.Message
+
+	c.waitLock.Lock()
+	mytid := c.tid
+	c.tid++
+	c.waitLock.Unlock()
+
+	mess.Type = com.OpPut
+	mess.ID = mytid
+	mess.Key = key
+	mess.Value = value
+
+	//fmt.Println("sending put", key, value, len(string(key)), len(key))
+	c.writeChannel <- mess
+	return nil
+}
+
+//CreateConnection returns a new DB connection
+func CreateConnection(IP string) *Connection {
+	var c Connection
+	c.chanPool.New = func() interface{} {
+		return make(chan result)
+	}
+
+	c.waits = make(map[uint32](chan result))
+	tcpconn, err := net.DialTCP("tcp", nil, &net.TCPAddr{IP: net.ParseIP(IP), Port: 9876})
+	if err != nil {
+		panic(err)
+	}
+	writeCh := make(chan com.Message, 128)
+	c.conn = tcpconn
+	c.writeChannel = writeCh
+
+	go com.TCPWriter(tcpconn, writeCh)
+	go listenToResponses(&c)
+
+	return &c
+}
