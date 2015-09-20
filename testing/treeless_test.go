@@ -23,14 +23,14 @@ const OpSet = 3
 
 const serverIP = "127.0.0.1"
 
-var db *tlserver.DBServer
+var db *tlserver.Server
 
 func startServer() {
-	db = tlserver.Init()
+	db = tlserver.Start()
 	tlcom.Ping(serverIP, time.Second)
 }
 func stopServer() {
-	db.Close()
+	db.Stop()
 	os.RemoveAll("tmpDB/")
 }
 

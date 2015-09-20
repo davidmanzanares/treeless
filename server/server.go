@@ -12,95 +12,22 @@ import (
 	"treeless/com"
 	"treeless/core"
 )
-import _ "net/http/pprof"
 
-type DBServer struct {
-	coreDB         *tlcore.DB
-	m              *tlcore.Map
-	udpCon         net.Conn
-	tcpListener    *net.TCPListener
-	tcpConnections []*net.TCPConn
-	closed         int32
+//Server listen to TCP & UDP, accepting connections and responding to clients
+type Server struct {
+	coreDB      *tlcore.DB
+	m           *tlcore.Map
+	udpCon      net.Conn
+	tcpListener *net.TCPListener
+	stopped     int32
 }
 
 const bufferSize = 2048
 
-func (db *DBServer) isClosed() bool {
-	return atomic.LoadInt32(&db.closed) != 0
-}
-
-func (db *DBServer) Close() {
-	atomic.StoreInt32(&db.closed, 1)
-	db.udpCon.Close()
-	db.tcpListener.Close()
-	for i := 0; i < len(db.tcpConnections); i++ {
-		db.tcpConnections[i].Close()
-	}
-	db.coreDB.Close()
-}
-
-func listenToConnetion(conn *net.TCPConn, id int, db *DBServer) {
-	db.tcpConnections = append(db.tcpConnections, conn)
-
-	//log.Println("New connection accepted. Connection ID:", id)
-	//tcpWriter will buffer TCP writes to send more message in less TCP packets
-	//this technique allows bigger throughtputs, but latency in increased a little
-	writeCh := make(chan tlcom.Message, 1024)
-	go tlcom.TCPWriter(conn, writeCh)
-
-	processMessage := func(message tlcom.Message) {
-		switch message.Type {
-		case tlcore.OpGet:
-			var response tlcom.Message
-			rval, err := db.m.Get(message.Key)
-			//fmt.Println("Get operation", key, rval, err)
-			response.ID = message.ID
-			if err != nil {
-				response.Type = tlcom.OpGetResponseError
-				response.Value = []byte(err.Error())
-			} else {
-				response.Type = tlcom.OpGetResponse
-				response.Value = rval
-			}
-			writeCh <- response
-		case tlcore.OpPut:
-			err := db.m.Put(message.Key, message.Value)
-			//fmt.Println("Put operation", message.Key, message.Value, err)
-			if err != nil {
-				panic(err)
-			}
-		}
-	}
-
-	tlcom.TCPReader(conn, processMessage)
-
-	close(writeCh)
-
-	conn.Close()
-	//log.Println("Connection closed. Connection ID:", id)
-}
-
-func listenToNewConnections(db *DBServer) {
-	ln, err := net.ListenTCP("tcp", &net.TCPAddr{Port: 9876})
-	if err != nil {
-		panic(err)
-	}
-	db.tcpListener = ln
-	for i := 0; ; i++ {
-		conn, err := ln.AcceptTCP()
-		if err != nil {
-			if db.isClosed() {
-				return
-			}
-			panic(err)
-		}
-		go listenToConnetion(conn, i, db)
-	}
-}
-
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
-func Init() *DBServer {
+//Start a Treeless server
+func Start() *Server {
 	//go http.ListenAndServe("localhost:8080", nil)
 	//Recover
 	defer func() {
@@ -130,15 +57,93 @@ func Init() *DBServer {
 		}()
 	}
 	//Launch core
-	var db DBServer
-	db.coreDB = tlcore.Create(dbPath)
+	var s Server
+	s.coreDB = tlcore.Create(dbPath)
 	var err error
-	db.m, err = db.coreDB.AllocMap("map1")
+	s.m, err = s.coreDB.AllocMap("map1")
 	if err != nil {
 		panic(err)
 	}
 	//Init server
-	db.udpCon = tlcom.ReplyToPings()
-	go listenToNewConnections(&db)
-	return &db
+	s.udpCon = tlcom.ReplyToPings()
+	listenConnections(&s)
+	return &s
+}
+
+//IsStopped returns true if the server is not running
+func (s *Server) IsStopped() bool {
+	return atomic.LoadInt32(&s.stopped) != 0
+}
+
+//Stop the server, close all TCP/UDP connections
+func (s *Server) Stop() {
+	atomic.StoreInt32(&s.stopped, 1)
+	s.udpCon.Close()
+	s.tcpListener.Close()
+	s.coreDB.Close()
+}
+
+func listenRequests(conn *net.TCPConn, id int, s *Server) {
+	//log.Println("New connection accepted. Connection ID:", id)
+	//tcpWriter will buffer TCP writes to send more message in less TCP packets
+	//this technique allows bigger throughtputs, but latency in increased a little
+	writeCh := make(chan tlcom.Message, 1024)
+	go tlcom.TCPWriter(conn, writeCh)
+
+	processMessage := func(message tlcom.Message) {
+		switch message.Type {
+		case tlcore.OpGet:
+			var response tlcom.Message
+			rval, err := s.m.Get(message.Key)
+			//fmt.Println("Get operation", key, rval, err)
+			response.ID = message.ID
+			if err != nil {
+				response.Type = tlcom.OpGetResponseError
+				response.Value = []byte(err.Error())
+			} else {
+				response.Type = tlcom.OpGetResponse
+				response.Value = rval
+			}
+			writeCh <- response
+		case tlcore.OpPut:
+			s.m.Put(message.Key, message.Value)
+			//TODO err response
+			//fmt.Println("Put operation", message.Key, message.Value, err)
+			//if err != nil {
+			//	panic(err)
+			//}
+		}
+	}
+
+	tlcom.TCPReader(conn, processMessage)
+
+	close(writeCh)
+
+	conn.Close()
+	//log.Println("Connection closed. Connection ID:", id)
+}
+
+func listenConnections(s *Server) {
+	ln, err := net.ListenTCP("tcp", &net.TCPAddr{Port: 9876})
+	if err != nil {
+		panic(err)
+	}
+	s.tcpListener = ln
+	go func(s *Server) {
+		var tcpConnections []*net.TCPConn
+		for i := 0; ; i++ {
+			conn, err := s.tcpListener.AcceptTCP()
+			if err != nil {
+				for i := 0; i < len(tcpConnections); i++ {
+					tcpConnections[i].Close()
+				}
+				if s.IsStopped() {
+					return
+				}
+				panic(err)
+			}
+			tcpConnections = append(tcpConnections, conn)
+			go listenRequests(conn, i, s)
+		}
+	}(s)
 }

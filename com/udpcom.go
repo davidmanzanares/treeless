@@ -16,6 +16,7 @@ func ReplyToPings() net.Conn {
 		for {
 			_, addr, err := conn.ReadFromUDP(nil)
 			if err != nil {
+				conn.Close()
 				return
 			}
 			conn.WriteTo([]byte("pong"), addr)

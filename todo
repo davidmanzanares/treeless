@@ -5,7 +5,6 @@ Server:
     -add primitives
     -add tests
     -add benchmarks
-    -test disconnection: panic?
 Dist:
     -Rendezvous hashing and rebalance
     -UDP heartbeat: server & client
