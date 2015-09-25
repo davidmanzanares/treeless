@@ -65,7 +65,7 @@ func Start() *Server {
 		panic(err)
 	}
 	//Init server
-	s.udpCon = tlcom.ReplyToPings()
+	s.udpCon = tlcom.ReplyToPings(udpCreateReplier(&s))
 	listenConnections(&s)
 	return &s
 }
@@ -81,6 +81,12 @@ func (s *Server) Stop() {
 	s.udpCon.Close()
 	s.tcpListener.Close()
 	s.coreDB.Close()
+}
+
+func udpCreateReplier(s *Server) tlcom.UDPReplyCallback {
+	return func() []byte {
+		return []byte(fmt.Sprint(len(s.m.Chunks)))
+	}
 }
 
 func listenRequests(conn *net.TCPConn, id int, s *Server) {

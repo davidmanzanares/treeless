@@ -27,7 +27,7 @@ var db *tlserver.Server
 
 func startServer() {
 	db = tlserver.Start()
-	tlcom.Ping(serverIP, time.Second)
+	tlcom.UDPRequest(serverIP, time.Second)
 }
 func stopServer() {
 	db.Stop()
@@ -45,6 +45,10 @@ func TestSimple(t *testing.T) {
 	rval, err = Get(c, []byte("meh"))
 	fmt.Println(rval, err)
 	*/
+}
+
+func TestCmplx(t *testing.T) {
+	metaTest(10*1000, 10, 40, 10)
 }
 
 //This test will make lots of PUT/SET/DELETE operations using a PRNG, then it will use GET operations to check the DB status
@@ -154,10 +158,6 @@ func metaTest(numOperations, maxKeySize, maxValueSize, threads int) {
 		}
 	}
 	c.Close()
-}
-
-func TestCmplx(t *testing.T) {
-	metaTest(10*1000, 10, 40, 10)
 }
 
 //Benchmark GET operations by issuing lots of GET operations from different goroutines.
