@@ -4,6 +4,7 @@ package tltesting
 import (
 	"bytes"
 	"encoding/binary"
+	"flag"
 	"fmt"
 	"math/rand"
 	"os"
@@ -25,13 +26,26 @@ const serverIP = "127.0.0.1"
 
 var db *tlserver.Server
 
+var noserver bool
+
+func TestMain(m *testing.M) {
+	flag.BoolVar(&noserver, "noserver", false, "don't start the built-in server, search for the servers")
+	flag.Parse()
+	fmt.Println(noserver)
+	os.Exit(m.Run())
+}
+
 func startServer() {
-	db = tlserver.Start()
-	tlcom.UDPRequest(serverIP, time.Second)
+	if !noserver {
+		db = tlserver.Start()
+		tlcom.UDPRequest(serverIP, time.Second)
+	}
 }
 func stopServer() {
-	db.Stop()
-	os.RemoveAll("tmpDB/")
+	if !noserver {
+		db.Stop()
+		os.RemoveAll("tmpDB/")
+	}
 }
 
 //Test just a few hard-coded operations

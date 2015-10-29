@@ -3,5 +3,6 @@ package main
 import "treeless/server"
 
 func main() {
-	server.Init()
+	tlserver.Start()
+	select {}
 }

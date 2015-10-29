@@ -65,8 +65,8 @@ func Start() *Server {
 		panic(err)
 	}
 	//Init server
-	s.udpCon = tlcom.ReplyToPings(udpCreateReplier(&s))
 	listenConnections(&s)
+	s.udpCon = tlcom.ReplyToPings(udpCreateReplier(&s))
 	return &s
 }
 
