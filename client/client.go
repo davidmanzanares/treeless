@@ -5,6 +5,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"treeless/com"
 )
 
 //Stores a DB operation result
@@ -24,37 +25,20 @@ type Connection struct {
 	closed       int32
 }
 
-type serverID int
-
-type virtualChunk struct {
-	id           int        //Chunk ID
-	allServers   []serverID //Ordered (by hash weight) list with the servers IDs
-	knownServers []serverID //Ordered (by hash weight) list with the servers IDs, only connected servers are included
-}
-
 const (
-	GetPolicyConnectedServers = 0
-	GetPolicyOneServer        = 1
+	GetPolicyKnownServers = 0
+	GetPolicyOneServer    = 1
+	GetPolicy51Server     = 0.51
 )
 
-//Access provides an access to a DB server group
-type Access struct {
-	vChunks   []*virtualChunk
-	conns     []*Connection //Maps each serverID with a connection
-	GetPolicy int
+type ClientAccess struct {
 }
 
-func CreateAccess(ac *AccessConf) {
-	//Create virtual chunks
-	//Calculate server ranking for each chunk
-	//Establish all server connections
-	//Calculate adjusted server ranking (connected only)
-}
-func (a *Access) Get(key []byte) ([]byte, error) {
+func (a *ClientAccess) Get(key []byte) ([]byte, error) {
 	//Calc hash
 	//get vChunk
 	//for each needed read
-	//	get conn
+	//	get server, get conn
 	//	r[i]=conn.get
 	//for each result
 	//	if r[i]!=r[i+1]{

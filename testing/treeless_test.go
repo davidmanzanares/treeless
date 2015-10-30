@@ -31,7 +31,6 @@ var noserver bool
 func TestMain(m *testing.M) {
 	flag.BoolVar(&noserver, "noserver", false, "don't start the built-in server, search for the servers")
 	flag.Parse()
-	fmt.Println(noserver)
 	os.Exit(m.Run())
 }
 

@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 
 echo "Treeless client..."
-/vagrant/testing.test -test.v --test.bench .
+/vagrant/testing.test -noserver -test.v --test.bench .
