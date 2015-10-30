@@ -5,7 +5,6 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
-	"treeless/com"
 )
 
 //Stores a DB operation result
@@ -45,13 +44,6 @@ type Access struct {
 	GetPolicy int
 }
 
-//AccessConf represents a DB access configuration
-type AccessConf struct {
-	serverlist []string
-	maxServers int
-	chunks     int
-}
-
 func CreateAccess(ac *AccessConf) {
 	//Create virtual chunks
 	//Calculate server ranking for each chunk
@@ -68,6 +60,7 @@ func (a *Access) Get(key []byte) ([]byte, error) {
 	//	if r[i]!=r[i+1]{
 	//		return nil, error
 	//return value, ok
+	return nil, nil
 }
 
 //ToDo: use external Connection struct, and let it decide how many TCP connection must be used simultaneously
