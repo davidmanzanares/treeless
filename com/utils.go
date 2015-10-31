@@ -1,9 +1,6 @@
 package tlcom
 
-import (
-	"encoding/json"
-	"io/ioutil"
-)
+import "encoding/json"
 
 //AccessConf represents a DB access configuration
 type AccessConf struct {
@@ -11,12 +8,12 @@ type AccessConf struct {
 	Servers []string
 }
 
-var DefaultAccessConf = AccessConf{256, []string{"127.0.0.1:9876"}}
+var DefaultAccessConf = &AccessConf{8, []string{"127.0.0.1:9876"}}
 
-func (ac *AccessConf) WriteToFile(path string) {
+func (ac *AccessConf) Marshal() []byte {
 	b, err := json.MarshalIndent(ac, "", "\t")
 	if err != nil {
 		panic(err)
 	}
-	ioutil.WriteFile(path, b, 0777)
+	return b
 }

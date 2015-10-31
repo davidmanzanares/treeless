@@ -6,7 +6,7 @@ This module implements DB maps.
 
 import "os"
 
-const defaultNumChunks = 256
+const defaultNumChunks = 8
 
 //Map is a TreeLess map
 type Map struct {

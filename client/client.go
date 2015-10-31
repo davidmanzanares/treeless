@@ -32,6 +32,7 @@ const (
 )
 
 type ClientAccess struct {
+	GetPolicy float64
 }
 
 func (a *ClientAccess) Get(key []byte) ([]byte, error) {

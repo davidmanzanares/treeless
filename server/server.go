@@ -1,6 +1,7 @@
 package tlserver
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -85,7 +86,18 @@ func (s *Server) Stop() {
 
 func udpCreateReplier(s *Server) tlcom.UDPReplyCallback {
 	return func() []byte {
-		return []byte(fmt.Sprint(len(s.m.Chunks)))
+		var r tlcom.UDPResponse
+		r.KnownChunks = make([]int, 0, len(s.m.Chunks))
+		for i := 0; i < len(s.m.Chunks); i++ {
+			if s.m.Chunks[i] != nil {
+				r.KnownChunks = append(r.KnownChunks, i)
+			}
+		}
+		b, err := json.Marshal(r)
+		if err != nil {
+			panic(err)
+		}
+		return b
 	}
 }
 

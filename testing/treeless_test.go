@@ -37,7 +37,7 @@ func TestMain(m *testing.M) {
 func startServer() {
 	if !noserver {
 		db = tlserver.Start()
-		tlcom.UDPRequest(serverIP, time.Second)
+		tlcom.UDPRequest("127.0.0.1:9876", time.Second)
 	}
 }
 func stopServer() {
@@ -49,15 +49,9 @@ func stopServer() {
 
 //Test just a few hard-coded operations
 func TestSimple(t *testing.T) {
-	//go tlserver.Init("testsDB")
-	/*time.Sleep(time.Second)
-	c := Init()
-	Put(c, []byte("hola"), []byte("adios"))
-	rval, err := Get(c, []byte("hola"))
-	fmt.Println(string(rval), err)
-	rval, err = Get(c, []byte("meh"))
-	fmt.Println(rval, err)
-	*/
+	startServer()
+	defer stopServer()
+	tlcom.CreateAccess(tlcom.DefaultAccessConf)
 }
 
 func TestCmplx(t *testing.T) {

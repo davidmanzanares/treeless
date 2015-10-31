@@ -1,40 +1,92 @@
 package tlcom
 
 import (
-	"sort"
+	"encoding/json"
+	"fmt"
+	"time"
 )
-
-type virtualChunk struct {
-	id           int          //Chunk ID
-	allServers   []serverRank //Ordered (by hash weight) list with the servers
-	knownServers []*server    //Ordered (by hash weight) list with the servers, only servers with the chunk are included
-}
-
-type serverRank struct {
-	server *server
-	rank   uint64
-}
 
 //Access provides an access to a DB server group
 type Access struct {
-	vChunks   []*virtualChunk
-	servers   []*server
-	GetPolicy float64
+	Servers []*ServerAccess //List of all servers
+	Chunks  []ChunkAccess   //Array of all chunks
+}
+type ChunkAccess struct {
+	//Each chunk has a list of server providers
+	Servers []*ServerAccess
+}
+type ServerAccess struct {
+	Phy         string
+	Alive       bool
+	KnownChunks []int //List of all chunks that this server provides
 }
 
-type server struct {
-	phy         string
-	knownChunks []int //Get by heartbeat
+func (a Access) String() string {
+	str := fmt.Sprint(len(a.Servers)) + " servers:\n"
+	for i := 0; i < len(a.Servers); i++ {
+		str += "\t Address: " + a.Servers[i].Phy + "\n\t\tAlive: " +
+			fmt.Sprint(a.Servers[i].Alive) + "\n\t\tKnown chunks: " +
+			fmt.Sprint(a.Servers[i].KnownChunks) + "\n"
+	}
+	str += fmt.Sprint(len(a.Chunks)) + " chunks:\n"
+	for i := 0; i < len(a.Chunks); i++ {
+		srv := ""
+		for j := 0; j < len(a.Chunks[i].Servers); j++ {
+			srv += "\n\t\t" + a.Chunks[i].Servers[j].Phy
+		}
+		str += "\tChunk " + fmt.Sprint(i) + srv + "\n"
+	}
+	return str
 }
 
-func (s *server) knowChunk(chunkId int) bool {
-	return false
+//CreateAccess will create a new DB access
+func CreateAccess(ac *AccessConf) *Access {
+	a := new(Access)
+	//Create virtual chunks
+	a.Chunks = make([]ChunkAccess, ac.Chunks)
+	for chunkID := 0; chunkID < ac.Chunks; chunkID++ {
+		a.Chunks[chunkID].Servers = make([]*ServerAccess, 0)
+	}
+	//Establish all server connections
+	a.Servers = make([]*ServerAccess, len(ac.Servers))
+	for i := 0; i < len(a.Servers); i++ {
+		server := new(ServerAccess)
+		a.Servers[i] = server
+		server.Phy = ac.Servers[i]
+		server.KnownChunks = make([]int, 0)
+		b, err := UDPRequest(server.Phy, time.Millisecond*50)
+		server.Alive = (err == nil)
+		if err == nil {
+			var udpr UDPResponse
+			err = json.Unmarshal(b, &udpr)
+			if err != nil {
+				panic(err)
+			}
+			server.KnownChunks = udpr.KnownChunks
+			for j := 0; j < len(udpr.KnownChunks); j++ {
+				a.Chunks[server.KnownChunks[j]].Servers = append(a.Chunks[server.KnownChunks[j]].Servers, server)
+			}
+		}
+	}
+	//Launch UDP heartbeat listener
+	fmt.Println(a)
+	return a
 }
 
-func hashServerChunk(serverPhy string, chunkID int) uint64 {
-	return 0
+func udpListener() {
+	for {
+		//listen heartbeats
+		//for each new known chunk
+		//add server to known chunk list
+		//for each forgotten chunk
+		//remove server from known chunk list
+	}
 }
 
+type serverRank struct {
+	server *ServerAccess
+	rank   uint64
+}
 type byRank []serverRank
 
 func (a byRank) Len() int {
@@ -45,33 +97,4 @@ func (a byRank) Swap(i, j int) {
 }
 func (a byRank) Less(i, j int) bool {
 	return a[i].rank < a[j].rank
-}
-
-func CreateAccess(ac *AccessConf) {
-	var a Access
-	//Establish all server connections
-
-	//Create virtual chunks
-	a.vChunks = make([]*virtualChunk, ac.Chunks)
-	for chunkID := 0; chunkID < ac.Chunks; chunkID++ {
-		a.vChunks[chunkID] = new(virtualChunk)
-		a.vChunks[chunkID].id = chunkID
-		a.vChunks[chunkID].allServers = make([]serverRank, len(a.servers))
-		a.vChunks[chunkID].knownServers = make([]*server, 0)
-		//Calculate server ranking for each chunk
-		for j := 0; j < len(a.servers); j++ {
-			s := a.servers[j]
-			rank := hashServerChunk(s.phy, chunkID)
-			a.vChunks[chunkID].allServers[j] = serverRank{s, rank}
-		}
-		//Sort by rank
-		sort.Sort(byRank(a.vChunks[chunkID].allServers))
-		//for each known, add to knownServers
-		for j := 0; j < len(a.vChunks[chunkID].allServers); j++ {
-			s := a.vChunks[chunkID].allServers[j].server
-			if s.knowChunk(chunkID) {
-				a.vChunks[chunkID].knownServers = append(a.vChunks[chunkID].knownServers, s)
-			}
-		}
-	}
 }
