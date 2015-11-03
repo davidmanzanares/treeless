@@ -16,12 +16,16 @@ Vagrant.configure(2) do |config|
 
 
 
-  config.vm.define :testing do |server1|
+  config.vm.define :s0 do |server0|
+      server0.vm.provision :shell, path: "initialServerBootstrap.sh"
+      server0.vm.network "private_network", ip: "192.168.55.10"
+  end
+  config.vm.define :s1 do |server1|
       server1.vm.provision :shell, path: "serverBootstrap.sh"
-      server1.vm.network "private_network", ip: "192.168.55.10"
+      server1.vm.network "private_network", ip: "192.168.55.11"
   end
 
-  config.vm.define :testing do |client1|
+  config.vm.define :c0 do |client1|
       client1.vm.provision :shell, path: "clientBootstrap.sh"
       client1.vm.network "private_network", ip: "192.168.77.10"
   end

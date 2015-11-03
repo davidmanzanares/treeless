@@ -17,15 +17,13 @@ type ChunkAccess struct {
 }
 type ServerAccess struct {
 	Phy         string
-	Alive       bool
 	KnownChunks []int //List of all chunks that this server provides
 }
 
 func (a Access) String() string {
 	str := fmt.Sprint(len(a.Servers)) + " servers:\n"
 	for i := 0; i < len(a.Servers); i++ {
-		str += "\t Address: " + a.Servers[i].Phy + "\n\t\tAlive: " +
-			fmt.Sprint(a.Servers[i].Alive) + "\n\t\tKnown chunks: " +
+		str += "\t Address: " + a.Servers[i].Phy + "\n\t\tKnown chunks: " +
 			fmt.Sprint(a.Servers[i].KnownChunks) + "\n"
 	}
 	str += fmt.Sprint(len(a.Chunks)) + " chunks:\n"
@@ -55,8 +53,8 @@ func CreateAccess(ac *AccessConf) *Access {
 		server.Phy = ac.Servers[i]
 		server.KnownChunks = make([]int, 0)
 		b, err := UDPRequest(server.Phy, time.Millisecond*50)
-		server.Alive = (err == nil)
 		if err == nil {
+			fmt.Println(string(b))
 			var udpr UDPResponse
 			err = json.Unmarshal(b, &udpr)
 			if err != nil {
@@ -76,6 +74,10 @@ func CreateAccess(ac *AccessConf) *Access {
 func udpListener() {
 	for {
 		//listen heartbeats
+
+		//for each new server
+		//add server
+
 		//for each new known chunk
 		//add server to known chunk list
 		//for each forgotten chunk
@@ -83,18 +85,10 @@ func udpListener() {
 	}
 }
 
-type serverRank struct {
-	server *ServerAccess
-	rank   uint64
-}
-type byRank []serverRank
-
-func (a byRank) Len() int {
-	return len(a)
-}
-func (a byRank) Swap(i, j int) {
-	a[i], a[j] = a[j], a[i]
-}
-func (a byRank) Less(i, j int) bool {
-	return a[i].rank < a[j].rank
+func oldServersRemover() {
+	for {
+		time.Sleep(time.Minute)
+		//check for dead servers
+		//remove them
+	}
 }

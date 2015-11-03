@@ -28,7 +28,7 @@ const bufferSize = 2048
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
 //Start a Treeless server
-func Start() *Server {
+func Start(newDB bool) *Server {
 	//go http.ListenAndServe("localhost:8080", nil)
 	//Recover
 	defer func() {
@@ -61,7 +61,12 @@ func Start() *Server {
 	var s Server
 	s.coreDB = tlcore.Create(dbPath)
 	var err error
-	s.m, err = s.coreDB.AllocMap("map1")
+	if newDB {
+		s.m, err = s.coreDB.AllocMap("map1")
+	} else {
+		s.m, err = s.coreDB.DefineMap("map1")
+	}
+	fmt.Println(s.m.Chunks)
 	if err != nil {
 		panic(err)
 	}
@@ -93,6 +98,7 @@ func udpCreateReplier(s *Server) tlcom.UDPReplyCallback {
 				r.KnownChunks = append(r.KnownChunks, i)
 			}
 		}
+		fmt.Println("SERVER", s.m.Chunks)
 		b, err := json.Marshal(r)
 		if err != nil {
 			panic(err)

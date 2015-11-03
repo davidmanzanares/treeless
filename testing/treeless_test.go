@@ -22,7 +22,7 @@ const OpPut = 1
 const OpDel = 2
 const OpSet = 3
 
-const serverIP = "127.0.0.1"
+const serverIP = "192.168.55.10"
 
 var db *tlserver.Server
 
@@ -36,7 +36,7 @@ func TestMain(m *testing.M) {
 
 func startServer() {
 	if !noserver {
-		db = tlserver.Start()
+		db = tlserver.Start(true)
 		tlcom.UDPRequest("127.0.0.1:9876", time.Second)
 	}
 }
@@ -51,7 +51,7 @@ func stopServer() {
 func TestSimple(t *testing.T) {
 	startServer()
 	defer stopServer()
-	tlcom.CreateAccess(tlcom.DefaultAccessConf)
+	tlcom.CreateAccess(&tlcom.AccessConf{8, []string{"192.168.55.10:9876", "192.168.55.11:9876"}})
 }
 
 func TestCmplx(t *testing.T) {
