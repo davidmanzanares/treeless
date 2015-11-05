@@ -1,4 +1,4 @@
-package tlcom
+package tlLowCom
 
 import (
 	"encoding/binary"
@@ -22,6 +22,10 @@ const (
 	OpSet
 	OpGetResponse
 	OpGetResponseError
+	OpGetConf
+	OpGetConfResponse
+	OpAddServerToGroup
+	OpAddServerToGroupACK
 	OpErr
 	OpNil
 )

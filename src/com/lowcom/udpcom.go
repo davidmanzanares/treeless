@@ -1,22 +1,21 @@
-package tlcom
+package tlLowCom
 
 import (
 	"net"
 	"time"
 )
 
-const udpPort = 9876
 const maxUDPMessageSize = 1024 * 16
 
 //UDPReplyCallback is a function type that should return the server status in []byte form
 type UDPReplyCallback func() []byte
 
 type UDPResponse struct {
-	KnownChunks []int
+	HeldChunks []int
 }
 
 //ReplyToPings listens and response to UDP requests
-func ReplyToPings(callback UDPReplyCallback) net.Conn {
+func ReplyToPings(callback UDPReplyCallback, udpPort int) net.Conn {
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{Port: udpPort})
 	if err != nil {
 		panic(err)

@@ -1,12 +1,8 @@
 package tlcom
 
-import (
-	"sync"
-	"time"
-)
-
+/*
 type serverRank struct {
-	server *ServerAccess
+	server *VirtualServer
 	rank   uint64
 }
 type byRank []serverRank
@@ -42,3 +38,4 @@ func rebalance(thisServer *ServerAccess, chunks serverChunkList, chunkId int, mu
 	}
 	mutex.RUnlock()
 }
+*/

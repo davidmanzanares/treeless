@@ -1,4 +1,4 @@
-package tlserver
+package tlcom
 
 import (
 	"encoding/json"
@@ -8,10 +8,11 @@ import (
 	"net"
 	"os"
 	"runtime/pprof"
+	"strconv"
 	"sync/atomic"
 	"time"
-	"treeless/com"
-	"treeless/core"
+	"treeless/src/com/lowcom"
+	"treeless/src/core"
 )
 
 //Server listen to TCP & UDP, accepting connections and responding to clients
@@ -21,14 +22,29 @@ type Server struct {
 	udpCon      net.Conn
 	tcpListener *net.TCPListener
 	stopped     int32
+	sg          *ServerGroup
 }
-
-const bufferSize = 2048
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
+func getLocalIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, address := range addrs {
+		// check the address type and if it is not a loopback the display it
+		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String()
+			}
+		}
+	}
+	return ""
+}
+
 //Start a Treeless server
-func Start(newDB bool) *Server {
+func Start(newGroup bool, addr string, port string) *Server {
 	//go http.ListenAndServe("localhost:8080", nil)
 	//Recover
 	defer func() {
@@ -39,7 +55,7 @@ func Start(newDB bool) *Server {
 	}()
 
 	//Default values
-	dbPath := "tmpDB"
+	dbPath := "tmpDB" + getLocalIP() + port
 	//Parse args
 	flag.Parse()
 	if *cpuprofile != "" {
@@ -61,18 +77,29 @@ func Start(newDB bool) *Server {
 	var s Server
 	s.coreDB = tlcore.Create(dbPath)
 	var err error
-	if newDB {
+	if newGroup {
 		s.m, err = s.coreDB.AllocMap("map1")
+		if err != nil {
+			panic(err)
+		}
+		s.sg = CreateServerGroup(len(s.m.Chunks), port)
 	} else {
 		s.m, err = s.coreDB.DefineMap("map1")
+		if err != nil {
+			panic(err)
+		}
+		s.sg, err = ConnectAsServer(addr, port)
+		if err != nil {
+			panic(err)
+		}
 	}
-	fmt.Println(s.m.Chunks)
+	//Init server
+	listenConnections(&s, port)
+	iport, err := strconv.Atoi(port)
 	if err != nil {
 		panic(err)
 	}
-	//Init server
-	listenConnections(&s)
-	s.udpCon = tlcom.ReplyToPings(udpCreateReplier(&s))
+	s.udpCon = tlLowCom.ReplyToPings(udpCreateReplier(&s), iport)
 	return &s
 }
 
@@ -89,16 +116,15 @@ func (s *Server) Stop() {
 	s.coreDB.Close()
 }
 
-func udpCreateReplier(s *Server) tlcom.UDPReplyCallback {
+func udpCreateReplier(s *Server) tlLowCom.UDPReplyCallback {
 	return func() []byte {
-		var r tlcom.UDPResponse
-		r.KnownChunks = make([]int, 0, len(s.m.Chunks))
+		var r tlLowCom.UDPResponse
+		r.HeldChunks = make([]int, 0, len(s.m.Chunks))
 		for i := 0; i < len(s.m.Chunks); i++ {
 			if s.m.Chunks[i] != nil {
-				r.KnownChunks = append(r.KnownChunks, i)
+				r.HeldChunks = append(r.HeldChunks, i)
 			}
 		}
-		fmt.Println("SERVER", s.m.Chunks)
 		b, err := json.Marshal(r)
 		if err != nil {
 			panic(err)
@@ -111,21 +137,21 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 	//log.Println("New connection accepted. Connection ID:", id)
 	//tcpWriter will buffer TCP writes to send more message in less TCP packets
 	//this technique allows bigger throughtputs, but latency in increased a little
-	writeCh := make(chan tlcom.Message, 1024)
-	go tlcom.TCPWriter(conn, writeCh)
+	writeCh := make(chan tlLowCom.Message, 1024)
+	go tlLowCom.TCPWriter(conn, writeCh)
 
-	processMessage := func(message tlcom.Message) {
+	processMessage := func(message tlLowCom.Message) {
 		switch message.Type {
 		case tlcore.OpGet:
-			var response tlcom.Message
+			var response tlLowCom.Message
 			rval, err := s.m.Get(message.Key)
 			//fmt.Println("Get operation", key, rval, err)
 			response.ID = message.ID
 			if err != nil {
-				response.Type = tlcom.OpGetResponseError
+				response.Type = tlLowCom.OpGetResponseError
 				response.Value = []byte(err.Error())
 			} else {
-				response.Type = tlcom.OpGetResponse
+				response.Type = tlLowCom.OpGetResponse
 				response.Value = rval
 			}
 			writeCh <- response
@@ -136,10 +162,35 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 			//if err != nil {
 			//	panic(err)
 			//}
+		case tlLowCom.OpGetConf:
+			var response tlLowCom.Message
+			response.ID = message.ID
+			response.Type = tlLowCom.OpGetConfResponse
+			b, _ := s.sg.Marshal()
+			response.Value = b
+			writeCh <- response
+		case tlLowCom.OpAddServerToGroup:
+			var response tlLowCom.Message
+			response.ID = message.ID
+			err := s.sg.addServerToGroup(string(message.Key))
+			if err != nil {
+				response.Type = tlLowCom.OpErr
+				response.Value = []byte(err.Error())
+				writeCh <- response
+			} else {
+				response.Type = tlLowCom.OpAddServerToGroupACK
+				writeCh <- response
+			}
+		default:
+			var response tlLowCom.Message
+			response.ID = message.ID
+			response.Type = tlLowCom.OpErr
+			response.Value = []byte("Operation not supported")
+			writeCh <- response
 		}
 	}
 
-	tlcom.TCPReader(conn, processMessage)
+	tlLowCom.TCPReader(conn, processMessage)
 
 	close(writeCh)
 
@@ -147,11 +198,16 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 	//log.Println("Connection closed. Connection ID:", id)
 }
 
-func listenConnections(s *Server) {
-	ln, err := net.ListenTCP("tcp", &net.TCPAddr{Port: 9876})
+func listenConnections(s *Server, port string) {
+	taddr, err := net.ResolveTCPAddr("tcp", getLocalIP()+":"+port)
 	if err != nil {
 		panic(err)
 	}
+	ln, err := net.ListenTCP("tcp", taddr)
+	if err != nil {
+		panic(err)
+	}
+	log.Println("TCP listening on:", ln.Addr())
 	s.tcpListener = ln
 	go func(s *Server) {
 		var tcpConnections []*net.TCPConn
