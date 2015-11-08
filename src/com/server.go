@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"log"
 	"net"
 	"os"
@@ -44,7 +45,7 @@ func getLocalIP() string {
 }
 
 //Start a Treeless server
-func Start(newGroup bool, addr string, port string) *Server {
+func Start(newGroup bool, addr string, port string, redundancy int) *Server {
 	//go http.ListenAndServe("localhost:8080", nil)
 	//Recover
 	defer func() {
@@ -55,7 +56,7 @@ func Start(newGroup bool, addr string, port string) *Server {
 	}()
 
 	//Default values
-	dbPath := "tmpDB" + getLocalIP() + port
+	dbPath := "tmpDB" + getLocalIP() + ":" + port
 	//Parse args
 	flag.Parse()
 	if *cpuprofile != "" {
@@ -82,7 +83,7 @@ func Start(newGroup bool, addr string, port string) *Server {
 		if err != nil {
 			panic(err)
 		}
-		s.sg = CreateServerGroup(len(s.m.Chunks), port)
+		s.sg = CreateServerGroup(len(s.m.Chunks), port, redundancy)
 	} else {
 		s.m, err = s.coreDB.DefineMap("map1")
 		if err != nil {
@@ -101,6 +102,12 @@ func Start(newGroup bool, addr string, port string) *Server {
 	}
 	s.udpCon = tlLowCom.ReplyToPings(udpCreateReplier(&s), iport)
 	return &s
+}
+
+func chunkHash(x int, y time.Time) uint64 {
+	hasher := fnv.New64a()
+	hasher.Write([]byte(time.Now().String()))
+	return hasher.Sum64()
 }
 
 //IsStopped returns true if the server is not running
@@ -207,7 +214,7 @@ func listenConnections(s *Server, port string) {
 	if err != nil {
 		panic(err)
 	}
-	log.Println("TCP listening on:", ln.Addr())
+	log.Println("Listening on:", ln.Addr())
 	s.tcpListener = ln
 	go func(s *Server) {
 		var tcpConnections []*net.TCPConn

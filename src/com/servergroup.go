@@ -12,15 +12,20 @@ import (
 
 //ServerGroup provides an access to a DB server group
 type ServerGroup struct {
+	Redundancy    int
 	Servers       map[string]*VirtualServer //Set of all servers
 	Chunks        []VirtualChunk            //Array of all chunks
-	mutex         sync.RWMutex
+	mutex         sync.Mutex
 	heartbeatList *list.List
 }
 
 //VirtualChunk stores generical chunk info, including server holders
 type VirtualChunk struct {
-	holders map[*VirtualServer]bool //Each chunk has a list of holders, servers that has this chunk
+	id           int
+	holders      map[*VirtualServer]bool //Each chunk has a list of holders, servers that has this chunk
+	timeToReview time.Time
+	rank         uint64
+	index        int
 }
 
 //VirtualServer stores generical server info
@@ -34,7 +39,6 @@ type VirtualServer struct {
 //NeedConnection tries to create a connection to the server
 func (s *VirtualServer) NeedConnection() (err error) {
 	if s.conn == nil || s.conn.isClosed() {
-		log.Println(s.Phy)
 		s.conn, err = CreateConnection(s.Phy)
 		return err
 	}
@@ -81,8 +85,9 @@ func (sg *ServerGroup) Unmarshal(b []byte) error {
 }
 
 //CreateServerGroup creates a new DB server group, without connecting to an existing group
-func CreateServerGroup(numChunks int, port string) *ServerGroup {
+func CreateServerGroup(numChunks int, port string, redundancy int) *ServerGroup {
 	sg := new(ServerGroup)
+	sg.Redundancy = redundancy
 	sg.Servers = make(map[string]*VirtualServer)
 	localhost := getLocalIP() + ":" + port
 	s := new(VirtualServer)
@@ -93,10 +98,17 @@ func CreateServerGroup(numChunks int, port string) *ServerGroup {
 	sg.Chunks = make([]VirtualChunk, numChunks)
 	for i := 0; i < numChunks; i++ {
 		sg.Servers[localhost].heldChunks[i] = i
+		sg.Chunks[i].id = i
 		sg.Chunks[i].holders = make(map[*VirtualServer]bool, 1)
 		sg.Chunks[i].holders[sg.Servers[localhost]] = true
 	}
-	heartbeatRequester(sg)
+	//Rank chunks
+	t := time.Now()
+	for i, c := range sg.Chunks {
+		c.rank = chunkHash(i, t)
+	}
+	ch := rebalancer(sg)
+	heartbeatRequester(sg, ch)
 	return sg
 }
 
@@ -113,6 +125,7 @@ func ConnectAsClient(addr string) (*ServerGroup, error) {
 		return nil, err2
 	}
 	c.Close()
+
 	//Create a new server group by unmarshaling the provided information
 	sg := new(ServerGroup)
 	err = sg.Unmarshal(b)
@@ -128,7 +141,7 @@ func ConnectAsClient(addr string) (*ServerGroup, error) {
 			var udpr tlLowCom.UDPResponse
 			err = json.Unmarshal(b, &udpr)
 			if err != nil {
-				log.Println(err)
+				log.Println("UDPResponse unmarshalling error", err)
 				continue
 			}
 			s.lastHeartbeat = time.Now()
@@ -137,11 +150,22 @@ func ConnectAsClient(addr string) (*ServerGroup, error) {
 				sg.Chunks[c].holders[s] = true
 			}
 		} else {
-			log.Println(err)
+			log.Println("UDP initial request transmission error", err)
 		}
 	}
+	//Rank chunks
+	t := time.Now()
+	for i := range sg.Chunks {
+		sg.Chunks[i].id = i
+		sg.Chunks[i].rank = chunkHash(i, t)
+	}
+	ch := rebalancer(sg)
+	//All existing chunks must be checked
+	for i := range sg.Chunks {
+		ch <- &sg.Chunks[i]
+	}
 	//Launch UDP heartbeat requester
-	heartbeatRequester(sg)
+	heartbeatRequester(sg, ch)
 	return sg, nil
 }
 
@@ -160,7 +184,7 @@ func ConnectAsServer(destAddr string, localport string) (*ServerGroup, error) {
 	for _, s := range sg.Servers {
 		err := s.NeedConnection()
 		if err != nil {
-			log.Println(err)
+			log.Println("TCP transmission error when trying to add server", err)
 			continue
 		}
 		err = s.conn.AddServerToGroup(localhost)
@@ -176,7 +200,7 @@ func ConnectAsServer(destAddr string, localport string) (*ServerGroup, error) {
 	return sg, nil
 }
 
-func heartbeatRequester(sg *ServerGroup) {
+func heartbeatRequester(sg *ServerGroup, ch chan *VirtualChunk) {
 	d := time.Second * 1
 	l := list.New()
 	sg.heartbeatList = l
@@ -201,20 +225,48 @@ func heartbeatRequester(sg *ServerGroup) {
 				if err != nil {
 					panic(err)
 				}
+
+				//Detect added chunks
+				for _, c := range udpr.HeldChunks {
+					ok := false
+					for _, c2 := range s.heldChunks {
+						if c == c2 {
+							ok = true
+							break
+						}
+					}
+					if !ok {
+						ch <- &sg.Chunks[c]
+					}
+				}
+				//Detect forgotten chunks
+				for _, c := range s.heldChunks {
+					ok := false
+					for _, c2 := range udpr.HeldChunks {
+						if c == c2 {
+							ok = true
+							break
+						}
+					}
+					if !ok {
+						ch <- &sg.Chunks[c]
+					}
+				}
+
 				//Remove old chunks
 				for c := range s.heldChunks {
 					delete(sg.Chunks[c].holders, s)
 				}
 				s.heldChunks = udpr.HeldChunks
-				//Add enw chunks
+				//Add new chunks
 				for c := range s.heldChunks {
 					sg.Chunks[c].holders[s] = true
 				}
 				s.lastHeartbeat = time.Now()
 			} else {
-				log.Println("UDP request timeout. Server", s, "UDP error:", err)
+				log.Println("UDP request timeout. Server", s.Phy, "UDP error:", err)
 			}
-			log.Println(sg)
+			//log.Println(sg)
 			l.MoveToBack(l.Front())
 		}
 	}()

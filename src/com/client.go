@@ -66,7 +66,7 @@ func CreateConnection(addr string) (*ClientConn, error) {
 	if errp != nil {
 		return nil, errp
 	}
-	log.Println("dial", taddr)
+	log.Println("Dialing", taddr)
 	tcpconn, err := net.DialTCP("tcp", nil, taddr)
 	if err != nil {
 		return nil, err
@@ -105,8 +105,8 @@ func listenToResponses(c *ClientConn) {
 			ch <- result{nil, errors.New("Response error: " + string(err))}
 		}
 	}
-	err := tlLowCom.TCPReader(c.conn, f)
-	log.Println(err)
+	tlLowCom.TCPReader(c.conn, f)
+	log.Println("Connection closed", c.conn.RemoteAddr().String())
 }
 
 func (c *ClientConn) isClosed() bool {
@@ -118,8 +118,7 @@ func (c *ClientConn) Close() {
 	if !c.isClosed() {
 		atomic.StoreInt32(&c.closed, 1)
 		close(c.writeChannel)
-		err := c.conn.Close()
-		log.Println(c, "closed", err)
+		c.conn.Close()
 	}
 }
 
