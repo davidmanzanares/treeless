@@ -10,10 +10,6 @@ const maxUDPMessageSize = 1024 * 16
 //UDPReplyCallback is a function type that should return the server status in []byte form
 type UDPReplyCallback func() []byte
 
-type UDPResponse struct {
-	HeldChunks []int
-}
-
 //ReplyToPings listens and response to UDP requests
 func ReplyToPings(callback UDPReplyCallback, udpPort int) net.Conn {
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{Port: udpPort})

@@ -3,6 +3,9 @@ package tlcom
 import (
 	"container/heap"
 	"log"
+	"math/rand"
+	"os"
+	"syscall"
 	"time"
 )
 
@@ -44,15 +47,41 @@ func (pq *PriorityQueue) update(c *VirtualChunk, t time.Time) {
 }
 
 func rebalancer(sg *ServerGroup) chan *VirtualChunk {
-	ch := make(chan *VirtualChunk)
+	ch := sg.chunkUpdate
 	mutex := &sg.mutex
-	mutex.Lock()
 	duplicate := duplicator()
+
 	go func() {
+		time.Sleep(time.Second * 100)
+		mutex.Lock()
+		for {
+			known := float64(len(sg.localhost.heldChunks))
+			total := float64(len(sg.Chunks))
+			avg := total / float64(len(sg.Servers))
+			timetowait := 1.0 / (avg - known)
+			if timetowait < 0.0 || timetowait > 100 {
+				mutex.Unlock()
+				time.Sleep(time.Second * 100)
+				mutex.Lock()
+				continue
+			}
+			mutex.Unlock()
+			time.Sleep(time.Duration(float64(time.Second) * timetowait))
+			mutex.Lock()
+			c := &sg.Chunks[rand.Int31n(int32(len(sg.Chunks)))]
+			if !c.holders[sg.localhost] {
+				duplicate(c)
+			}
+		}
+	}()
+
+	go func() {
+		mutex.Lock()
 		pq := make(PriorityQueue, 0)
 		heap.Init(&pq)
 		inQueue := make(map[*VirtualChunk]bool)
 		tick := time.Tick(time.Second * 10000000)
+		//Rebalance chunks with low redundancy
 		for {
 			if pq.Len() > 0 {
 				//log.Println("time", pq[0].timeToReview)
@@ -63,13 +92,13 @@ func rebalancer(sg *ServerGroup) chan *VirtualChunk {
 				}
 				tick = time.Tick(timeToWait)
 			} else {
-				tick = time.Tick(time.Second * 10000000)
+				tick = time.Tick(time.Second * 10)
 			}
 			mutex.Unlock()
 			select {
 			case chunk := <-ch:
 				mutex.Lock()
-				chunk.timeToReview = time.Now().Add(time.Millisecond * time.Duration(chunk.rank%(16*1024))) //ToDo add constant
+				chunk.timeToReview = time.Now().Add(time.Microsecond * time.Duration(60*1000*1000*rand.Float32())) //TODO add variable server k
 				//log.Println("Chunk eta:", chunk.timeToReview, chunk.rank)
 				if inQueue[chunk] {
 					pq.update(chunk, time.Now())
@@ -79,25 +108,54 @@ func rebalancer(sg *ServerGroup) chan *VirtualChunk {
 				}
 			case <-tick:
 				mutex.Lock()
-				c := heap.Pop(&pq).(*VirtualChunk)
-				if len(c.holders) < sg.Redundancy {
-					duplicate(c)
+				if len(pq) > 0 {
+					c := heap.Pop(&pq).(*VirtualChunk)
+					if len(c.holders) < sg.Redundancy && c.holders[sg.localhost] == false {
+						duplicate(c)
+					}
+					delete(inQueue, c)
+					//log.Println("Checking", c.rank, c.timeToReview)
 				}
-				delete(inQueue, c)
-				//log.Println("Checking", c.rank, c.timeToReview)
 			}
 		}
 	}()
 	return ch
 }
 
+func getFreeDiskSpace() uint64 {
+	var stat syscall.Statfs_t
+	wd, err := os.Getwd()
+	if err != nil {
+		log.Println("GetFreeDiskSpace error", err)
+	}
+	syscall.Statfs(wd, &stat)
+	// Available blocks * size per block = available space in bytes
+	return stat.Bavail * uint64(stat.Bsize)
+}
+
 func duplicator() (duplicate func(c *VirtualChunk)) {
 	ch := make(chan *VirtualChunk, 1024)
 	duplicate = func(c *VirtualChunk) {
 		//Execute this code as soon as possible, adding the chunk to the known list is time critical
-		log.Println("Request chunk duplication, ID:", c.id, "Rank:", c.rank)
+		log.Println(time.Now().String()+"Request chunk duplication, ID:", c.id)
 		//Ask for chunk size (op)
+		var s *VirtualServer
+		for k := range c.holders {
+			s = k
+		}
+		if s == nil {
+			log.Println("No servers available, duplication aborted")
+			return
+		}
 		//Check free space (OS)
+		//log.Println(getFreeDiskSpace() / 1024 / 1024 / 1024)
+		s.NeedConnection()
+		size, err := s.conn.GetChunkInfo(c.id)
+		if err != nil {
+			log.Println("GetChunkInfo failed, duplication aborted", err)
+			return
+		}
+		log.Println("Size", size)
 		//Add chunk to known list (servergroup)
 		ch <- c
 	}

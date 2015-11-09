@@ -26,6 +26,8 @@ const (
 	OpGetConfResponse
 	OpAddServerToGroup
 	OpAddServerToGroupACK
+	OpGetChunkInfo
+	OpGetChunkInfoResponse
 	OpErr
 	OpNil
 )

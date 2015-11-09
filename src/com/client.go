@@ -1,6 +1,7 @@
 package tlcom
 
 import (
+	"encoding/binary"
 	"errors"
 	"log"
 	"net"
@@ -99,6 +100,10 @@ func listenToResponses(c *ClientConn) {
 			ch <- result{rval, nil}
 		case tlLowCom.OpAddServerToGroupACK:
 			ch <- result{nil, nil}
+		case tlLowCom.OpGetChunkInfoResponse:
+			rval := make([]byte, len(m.Value))
+			copy(rval, m.Value)
+			ch <- result{rval, nil}
 		default:
 			err := make([]byte, len(m.Value))
 			copy(err, m.Value)
@@ -210,4 +215,34 @@ func (c *ClientConn) AddServerToGroup(addr string) error {
 	delete(c.waits, mytid)
 	c.waitLock.Unlock()
 	return r.err
+}
+
+//GetChunkInfo request chunk info
+func (c *ClientConn) GetChunkInfo(chunkID int) (size uint64, err error) {
+	var mess tlLowCom.Message
+
+	ch := c.chanPool.Get().(chan result)
+	c.waitLock.Lock()
+	mytid := c.tid
+	c.waits[c.tid] = ch
+	c.tid++
+	c.waitLock.Unlock()
+
+	mess.Type = tlLowCom.OpGetChunkInfo
+	mess.ID = mytid
+	b := make([]byte, 4)
+	binary.LittleEndian.PutUint32(b, uint32(chunkID))
+	mess.Key = b
+
+	c.writeChannel <- mess
+	r := <-ch
+	c.chanPool.Put(ch)
+	c.waitLock.Lock()
+	delete(c.waits, mytid)
+	c.waitLock.Unlock()
+	if r.err != nil {
+		return 0, r.err
+	}
+	size = binary.LittleEndian.Uint64(r.value)
+	return size, nil
 }

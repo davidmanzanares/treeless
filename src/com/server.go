@@ -1,6 +1,7 @@
 package tlcom
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -125,11 +126,10 @@ func (s *Server) Stop() {
 
 func udpCreateReplier(s *Server) tlLowCom.UDPReplyCallback {
 	return func() []byte {
-		var r tlLowCom.UDPResponse
-		r.HeldChunks = make([]int, 0, len(s.m.Chunks))
+		var r []int
 		for i := 0; i < len(s.m.Chunks); i++ {
 			if s.m.Chunks[i] != nil {
-				r.HeldChunks = append(r.HeldChunks, i)
+				r = append(r, i)
 			}
 		}
 		b, err := json.Marshal(r)
@@ -188,6 +188,14 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 				response.Type = tlLowCom.OpAddServerToGroupACK
 				writeCh <- response
 			}
+		case tlLowCom.OpGetChunkInfo:
+			var response tlLowCom.Message
+			response.ID = message.ID
+			c := s.m.Chunks[binary.LittleEndian.Uint32(message.Key)]
+			response.Type = tlLowCom.OpGetChunkInfoResponse
+			response.Value = make([]byte, 8)
+			binary.LittleEndian.PutUint64(response.Value, c.St.Length+1)
+			writeCh <- response
 		default:
 			var response tlLowCom.Message
 			response.ID = message.ID
