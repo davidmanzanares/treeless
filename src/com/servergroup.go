@@ -13,15 +13,17 @@ import (
 //ServerGroup provides an access to a DB server group
 type ServerGroup struct {
 	//External things
-	Redundancy int                       //DB target redundancy
-	Servers    map[string]*VirtualServer //Set of all DB servers
-	Chunks     []VirtualChunk            //Array of all DB chunks
+	sync.Mutex                                   //All ServerGroup read/writes are mutex-protected
+	Redundancy         int                       //DB target redundancy
+	Servers            map[string]*VirtualServer //Set of all DB servers
+	Chunks             []VirtualChunk            //Array of all DB chunks
+	Localhost          *VirtualServer
+	ChunkUpdateChannel chan *VirtualChunk //Each time a chunk status is updated the chunk is sent to the channel
 	//Local things
-	localhost     *VirtualServer
-	mutex         sync.Mutex //All ServerGroup read/writes are mutex-protected
 	heartbeatList *list.List //List of pending chunk reviews
-	chunkUpdate   chan *VirtualChunk
 }
+
+const channelUpdateChannelBufferSize = 1024
 
 //String returns a human-readable representation of the server group
 func (sg *ServerGroup) String() string {
@@ -29,12 +31,12 @@ func (sg *ServerGroup) String() string {
 	t := time.Now()
 	for _, s := range sg.Servers {
 		str += "\t Address: " + s.Phy +
-			"\n\t\tKnown chunks: " + fmt.Sprint(s.heldChunks) + " Last heartbeat: " + (t.Sub(s.lastHeartbeat)).String() + "\n"
+			"\n\t\tKnown chunks: " + fmt.Sprint(s.HeldChunks) + " Last heartbeat: " + (t.Sub(s.LastHeartbeat)).String() + "\n"
 	}
 	str += fmt.Sprint(len(sg.Chunks)) + " chunks:\n"
 	for i := range sg.Chunks {
 		srv := ""
-		for k := range sg.Chunks[i].holders {
+		for k := range sg.Chunks[i].Holders {
 			srv += "\n\t\t" + k.Phy
 		}
 		str += "\tChunk " + fmt.Sprint(i) + srv + "\n"
@@ -44,8 +46,8 @@ func (sg *ServerGroup) String() string {
 
 //Marshal number of chunks and servers physical address
 func (sg *ServerGroup) Marshal() ([]byte, error) {
-	sg.mutex.Lock()
-	defer sg.mutex.Unlock()
+	sg.Lock()
+	defer sg.Unlock()
 	return json.Marshal(sg)
 }
 
@@ -56,7 +58,7 @@ func (sg *ServerGroup) Unmarshal(b []byte) error {
 		return err
 	}
 	for i := range sg.Chunks {
-		sg.Chunks[i].holders = make(map[*VirtualServer]bool)
+		sg.Chunks[i].Holders = make(map[*VirtualServer]bool)
 	}
 	return nil
 }
@@ -66,23 +68,27 @@ func CreateServerGroup(numChunks int, port string, redundancy int) *ServerGroup 
 	sg := new(ServerGroup)
 	sg.Redundancy = redundancy
 	sg.Servers = make(map[string]*VirtualServer)
-	localhost := tlLowCom.GetLocalIP() + ":" + port
-	s := new(VirtualServer)
-	sg.localhost = s
-	s.lastHeartbeat = time.Now()
-	sg.Servers[localhost] = s
-	s.Phy = localhost
-	s.heldChunks = make([]int, numChunks)
-	sg.Chunks = make([]VirtualChunk, numChunks)
+	sg.ChunkUpdateChannel = make(chan *VirtualChunk, channelUpdateChannelBufferSize)
+
 	//Add this server
+	localhost := new(VirtualServer)
+	localhost.LastHeartbeat = time.Now()
+	localhost.Phy = tlLowCom.GetLocalIP() + ":" + port
+	localhost.HeldChunks = make([]int, numChunks)
 	for i := 0; i < numChunks; i++ {
-		sg.Servers[localhost].heldChunks[i] = i
-		sg.Chunks[i].id = i
-		sg.Chunks[i].holders = make(map[*VirtualServer]bool, 1)
-		sg.Chunks[i].holders[sg.Servers[localhost]] = true
+		//Add all chunks to this server
+		localhost.HeldChunks[i] = i
 	}
-	sg.chunkUpdate = make(chan *VirtualChunk, 1024)
-	rebalancer(sg)
+	sg.Localhost = localhost
+	sg.Servers[localhost.Phy] = localhost
+
+	//Add all chunks to the servergroup
+	sg.Chunks = make([]VirtualChunk, numChunks)
+	for i := 0; i < numChunks; i++ {
+		sg.Chunks[i].ID = i
+		sg.Chunks[i].Holders = make(map[*VirtualServer]bool)
+		sg.Chunks[i].Holders[localhost] = true
+	}
 	heartbeatRequester(sg)
 	return sg
 }
@@ -119,37 +125,37 @@ func ConnectAsClient(addr string) (*ServerGroup, error) {
 				log.Println("UDPResponse unmarshalling error", err)
 				continue
 			}
-			s.lastHeartbeat = time.Now()
-			s.heldChunks = udpr
-			for i := range s.heldChunks {
-				sg.Chunks[i].holders[s] = true
+			s.LastHeartbeat = time.Now()
+			s.HeldChunks = udpr
+			for i := range s.HeldChunks {
+				sg.Chunks[i].Holders[s] = true
 			}
 		} else {
 			log.Println("UDP initial request transmission error", err)
 		}
 	}
 	for i := range sg.Chunks {
-		sg.Chunks[i].id = i
+		sg.Chunks[i].ID = i
 	}
-	sg.chunkUpdate = make(chan *VirtualChunk, 1024)
+	sg.ChunkUpdateChannel = make(chan *VirtualChunk, 1024)
 	//Launch UDP heartbeat requester
 	heartbeatRequester(sg)
 	//All existing chunks must be checked
 	for i := range sg.Chunks {
-		sg.chunkUpdate <- &sg.Chunks[i]
+		sg.ChunkUpdateChannel <- &sg.Chunks[i]
 	}
 	return sg, nil
 }
 
-//ConnectAsServer connects to an existing server group and adds this server to it
-func ConnectAsServer(destAddr string, localport string) (*ServerGroup, error) {
+//Associate connects to an existing server group and adds this server to it
+func Associate(destAddr string, localport string) (*ServerGroup, error) {
 	//Create a client connection first
 	sg, err := ConnectAsClient(destAddr)
 	if err != nil {
 		panic(err)
 	}
-	sg.mutex.Lock()
-	defer sg.mutex.Unlock()
+	sg.Lock()
+	defer sg.Unlock()
 	localhost := tlLowCom.GetLocalIP() + ":" + localport
 	//Add to external servergroup instances
 	//For each other server: add localhost
@@ -159,18 +165,17 @@ func ConnectAsServer(destAddr string, localport string) (*ServerGroup, error) {
 			log.Println("TCP transmission error when trying to add server", err)
 			continue
 		}
-		err = s.conn.AddServerToGroup(localhost)
+		err = s.Conn.AddServerToGroup(localhost)
 		if err != nil {
 			panic(err)
 		}
 		log.Println("Server added to", s.Phy)
 	}
 	//Add to local servergroup instance
-	sg.mutex.Unlock()
-	sg.addServerToGroup(localhost)
-	sg.mutex.Lock()
-	sg.localhost = sg.Servers[localhost]
-	rebalancer(sg)
+	sg.Unlock()
+	sg.AddServerToGroup(localhost)
+	sg.Lock()
+	sg.Localhost = sg.Servers[localhost]
 	return sg, nil
 }
 
@@ -181,12 +186,12 @@ func heartbeatRequester(sg *ServerGroup) {
 	for _, s := range sg.Servers {
 		l.PushFront(s)
 	}
-	sg.mutex.Lock()
+	sg.Lock()
 	go func() {
 		for {
-			sg.mutex.Unlock()
+			sg.Unlock()
 			time.Sleep(d)
-			sg.mutex.Lock()
+			sg.Lock()
 
 			s := l.Front().Value.(*VirtualServer)
 
@@ -202,18 +207,18 @@ func heartbeatRequester(sg *ServerGroup) {
 				//Detect added chunks
 				for _, c := range udpr {
 					ok := false
-					for _, c2 := range s.heldChunks {
+					for _, c2 := range s.HeldChunks {
 						if c == c2 {
 							ok = true
 							break
 						}
 					}
 					if !ok {
-						sg.chunkUpdate <- &sg.Chunks[c]
+						sg.ChunkUpdateChannel <- &sg.Chunks[c]
 					}
 				}
 				//Detect forgotten chunks
-				for _, c := range s.heldChunks {
+				for _, c := range s.HeldChunks {
 					ok := false
 					for _, c2 := range udpr {
 						if c == c2 {
@@ -222,20 +227,20 @@ func heartbeatRequester(sg *ServerGroup) {
 						}
 					}
 					if !ok {
-						sg.chunkUpdate <- &sg.Chunks[c]
+						sg.ChunkUpdateChannel <- &sg.Chunks[c]
 					}
 				}
 
+				s.HeldChunks = udpr
 				//Remove old chunks
-				for c := range s.heldChunks {
-					delete(sg.Chunks[c].holders, s)
+				for c := range s.HeldChunks {
+					delete(sg.Chunks[c].Holders, s)
 				}
-				s.heldChunks = udpr
 				//Add new chunks
-				for c := range s.heldChunks {
-					sg.Chunks[c].holders[s] = true
+				for c := range s.HeldChunks {
+					sg.Chunks[c].Holders[s] = true
 				}
-				s.lastHeartbeat = time.Now()
+				s.LastHeartbeat = time.Now()
 			} else {
 				log.Println("UDP request timeout. Server", s.Phy, "UDP error:", err)
 			}
@@ -245,18 +250,18 @@ func heartbeatRequester(sg *ServerGroup) {
 	}()
 }
 
-func (sg *ServerGroup) addServerToGroup(addr string) error {
-	sg.mutex.Lock()
-	defer sg.mutex.Unlock()
+func (sg *ServerGroup) AddServerToGroup(addr string) error {
+	sg.Lock()
+	defer sg.Unlock()
 	s, ok := sg.Servers[addr]
 	if !ok {
 		s = new(VirtualServer)
 		sg.Servers[addr] = s
 		s.Phy = addr
-		s.lastHeartbeat = time.Now()
+		s.LastHeartbeat = time.Now()
 		sg.heartbeatList.PushBack(s)
 	} else {
-		s.lastHeartbeat = time.Now()
+		s.LastHeartbeat = time.Now()
 	}
 	log.Println("Server", addr, "added\n", sg)
 	return nil

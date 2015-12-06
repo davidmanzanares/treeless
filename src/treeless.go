@@ -8,16 +8,21 @@ import (
 	"runtime/pprof"
 	"time"
 	"treeless/src/com"
+	"treeless/src/server"
 )
 
 func main() {
-	create := flag.Bool("create", false, "Create a new DB server group")
-	redundancy := flag.Int("redundancy", 2, "Redundancy of the new DB server group")
+	//Operations
 	assoc := flag.String("assoc", "", "Associate to an existing DB server group")
-	port := flag.String("port", "9876", "Use this port as the localhost server port")
 	monitor := flag.String("monitor", "", "Monitor an existing DB")
+	//Options
+	port := flag.String("port", "9876", "Use this port as the localhost server port")
+	redundancy := flag.Int("redundancy", 2, "Redundancy of the new DB server group")
+	dbpath := flag.String("dbpath", "tmpDB"+time.Now().String(), "Filesystem path to store DB info")
 	cpuprofile := flag.Bool("cpuprofile", false, "write cpu profile to file")
+
 	flag.Parse()
+
 	if *cpuprofile {
 		f, err := os.Create("cpu.prof")
 		if err != nil {
@@ -33,6 +38,7 @@ func main() {
 			fmt.Println("go tool pprof --png treeless cpu.prof > a.png")
 		}()
 	}
+
 	if *monitor != "" {
 		_, err := tlcom.ConnectAsClient(*monitor)
 		if err != nil {
@@ -41,14 +47,8 @@ func main() {
 		} else {
 			select {}
 		}
-	} else if *assoc != "" {
-		tlcom.Start(false, *assoc, *port, -1)
-		select {}
-	} else if *create {
-		tlcom.Start(true, "", *port, *redundancy)
-		select {}
 	} else {
-		fmt.Println("No operations requested.")
-		flag.Usage()
+		tlserver.Start(*assoc, *port, *redundancy, *dbpath)
+		select {}
 	}
 }

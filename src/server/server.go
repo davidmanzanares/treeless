@@ -1,4 +1,4 @@
-package tlcom
+package tlserver
 
 import (
 	"encoding/binary"
@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"sync/atomic"
 	"time"
+	"treeless/src/com"
 	"treeless/src/com/lowcom"
 	"treeless/src/core"
 )
@@ -22,14 +23,14 @@ type Server struct {
 	udpCon      net.Conn
 	tcpListener *net.TCPListener
 	//Distribution
-	sg *ServerGroup
+	sg *tlcom.ServerGroup
 	//Status
 	stopped int32
 }
 
 //Start a Treeless server
-func Start(newGroup bool, addr string, port string, redundancy int) *Server {
-	//Recover
+func Start(addr string, localport string, redundancy int, dbpath string) *Server {
+	//Recover: log and quit
 	defer func() {
 		if r := recover(); r != nil {
 			log.Println("DB panic", r)
@@ -37,31 +38,31 @@ func Start(newGroup bool, addr string, port string, redundancy int) *Server {
 		}
 	}()
 
-	//Default values
-	dbPath := "tmpDB" + tlLowCom.GetLocalIP() + ":" + port
 	//Launch core
 	var s Server
-	s.coreDB = tlcore.Create(dbPath)
+	s.coreDB = tlcore.Create(dbpath)
 	var err error
-	if newGroup {
+	if addr == "" {
+		//New DB group
 		s.m, err = s.coreDB.AllocMap("map1")
 		if err != nil {
 			panic(err)
 		}
-		s.sg = CreateServerGroup(len(s.m.Chunks), port, redundancy)
+		s.sg = tlcom.CreateServerGroup(len(s.m.Chunks), localport, redundancy)
 	} else {
+		//Associate to an existing DB group
 		s.m, err = s.coreDB.DefineMap("map1")
 		if err != nil {
 			panic(err)
 		}
-		s.sg, err = ConnectAsServer(addr, port)
+		s.sg, err = tlcom.Associate(addr, localport)
 		if err != nil {
 			panic(err)
 		}
 	}
 	//Init server
-	listenConnections(&s, port)
-	iport, err := strconv.Atoi(port)
+	listenConnections(&s, localport)
+	iport, err := strconv.Atoi(localport)
 	if err != nil {
 		panic(err)
 	}
@@ -143,7 +144,7 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 		case tlLowCom.OpAddServerToGroup:
 			var response tlLowCom.Message
 			response.ID = message.ID
-			err := s.sg.addServerToGroup(string(message.Key))
+			err := s.sg.AddServerToGroup(string(message.Key))
 			if err != nil {
 				response.Type = tlLowCom.OpErr
 				response.Value = []byte(err.Error())

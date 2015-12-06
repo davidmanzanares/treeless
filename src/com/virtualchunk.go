@@ -4,8 +4,9 @@ import "time"
 
 //VirtualChunk stores generical chunk info, including server holders
 type VirtualChunk struct {
-	id           int
-	holders      map[*VirtualServer]bool //Each chunk has a list of holders, servers that has this chunk
+	ID      int
+	Holders map[*VirtualServer]bool //Set of server holders
+	//Rebalancer data
 	timeToReview time.Time
 	index        int
 }

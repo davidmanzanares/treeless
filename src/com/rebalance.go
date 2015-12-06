@@ -47,36 +47,35 @@ func (pq *PriorityQueue) update(c *VirtualChunk, t time.Time) {
 }
 
 func rebalancer(sg *ServerGroup) chan *VirtualChunk {
-	ch := sg.chunkUpdate
-	mutex := &sg.mutex
+	ch := sg.ChunkUpdateChannel
 	duplicate := duplicator()
 
 	go func() {
 		time.Sleep(time.Second * 100)
-		mutex.Lock()
+		sg.Lock()
 		for {
-			known := float64(len(sg.localhost.heldChunks))
+			known := float64(len(sg.Localhost.HeldChunks))
 			total := float64(len(sg.Chunks))
 			avg := total / float64(len(sg.Servers))
 			timetowait := 1.0 / (avg - known)
 			if timetowait < 0.0 || timetowait > 100 {
-				mutex.Unlock()
+				sg.Unlock()
 				time.Sleep(time.Second * 100)
-				mutex.Lock()
+				sg.Lock()
 				continue
 			}
-			mutex.Unlock()
+			sg.Unlock()
 			time.Sleep(time.Duration(float64(time.Second) * timetowait))
-			mutex.Lock()
+			sg.Lock()
 			c := &sg.Chunks[rand.Int31n(int32(len(sg.Chunks)))]
-			if !c.holders[sg.localhost] {
+			if !c.Holders[sg.Localhost] {
 				duplicate(c)
 			}
 		}
 	}()
 
 	go func() {
-		mutex.Lock()
+		sg.Lock()
 		pq := make(PriorityQueue, 0)
 		heap.Init(&pq)
 		inQueue := make(map[*VirtualChunk]bool)
@@ -94,10 +93,10 @@ func rebalancer(sg *ServerGroup) chan *VirtualChunk {
 			} else {
 				tick = time.Tick(time.Second * 10)
 			}
-			mutex.Unlock()
+			sg.Unlock()
 			select {
 			case chunk := <-ch:
-				mutex.Lock()
+				sg.Lock()
 				chunk.timeToReview = time.Now().Add(time.Microsecond * time.Duration(60*1000*1000*rand.Float32())) //TODO add variable server k
 				//log.Println("Chunk eta:", chunk.timeToReview, chunk.rank)
 				if inQueue[chunk] {
@@ -107,10 +106,10 @@ func rebalancer(sg *ServerGroup) chan *VirtualChunk {
 					inQueue[chunk] = true
 				}
 			case <-tick:
-				mutex.Lock()
+				sg.Lock()
 				if len(pq) > 0 {
 					c := heap.Pop(&pq).(*VirtualChunk)
-					if len(c.holders) < sg.Redundancy && c.holders[sg.localhost] == false {
+					if len(c.Holders) < sg.Redundancy && c.Holders[sg.Localhost] == false {
 						duplicate(c)
 					}
 					delete(inQueue, c)
@@ -137,10 +136,10 @@ func duplicator() (duplicate func(c *VirtualChunk)) {
 	ch := make(chan *VirtualChunk, 1024)
 	duplicate = func(c *VirtualChunk) {
 		//Execute this code as soon as possible, adding the chunk to the known list is time critical
-		log.Println(time.Now().String()+"Request chunk duplication, ID:", c.id)
+		log.Println(time.Now().String()+"Request chunk duplication, ID:", c.ID)
 		//Ask for chunk size (op)
 		var s *VirtualServer
-		for k := range c.holders {
+		for k := range c.Holders {
 			s = k
 		}
 		if s == nil {
@@ -150,7 +149,7 @@ func duplicator() (duplicate func(c *VirtualChunk)) {
 		//Check free space (OS)
 		//log.Println(getFreeDiskSpace() / 1024 / 1024 / 1024)
 		s.NeedConnection()
-		size, err := s.conn.GetChunkInfo(c.id)
+		size, err := s.Conn.GetChunkInfo(c.ID)
 		if err != nil {
 			log.Println("GetChunkInfo failed, duplication aborted", err)
 			return
@@ -163,7 +162,7 @@ func duplicator() (duplicate func(c *VirtualChunk)) {
 		for {
 			c := <-ch
 			//A chunk duplication has been confirmed, transfer it now
-			log.Println("Chunk duplication, confirmed:", c.id)
+			log.Println("Chunk duplication, confirmed:", c.ID)
 			//While transfer in course, set and get return chunk not synched
 			//Ready to transfer
 			//Request chunk transfer, get SYNC params
