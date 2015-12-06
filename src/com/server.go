@@ -3,13 +3,9 @@ package tlcom
 import (
 	"encoding/binary"
 	"encoding/json"
-	"flag"
-	"fmt"
 	"hash/fnv"
 	"log"
 	"net"
-	"os"
-	"runtime/pprof"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -19,35 +15,20 @@ import (
 
 //Server listen to TCP & UDP, accepting connections and responding to clients
 type Server struct {
-	coreDB      *tlcore.DB
-	m           *tlcore.Map
+	//Core
+	coreDB *tlcore.DB
+	m      *tlcore.Map
+	//Net
 	udpCon      net.Conn
 	tcpListener *net.TCPListener
-	stopped     int32
-	sg          *ServerGroup
-}
-
-var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
-
-func getLocalIP() string {
-	addrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return ""
-	}
-	for _, address := range addrs {
-		// check the address type and if it is not a loopback the display it
-		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				return ipnet.IP.String()
-			}
-		}
-	}
-	return ""
+	//Distribution
+	sg *ServerGroup
+	//Status
+	stopped int32
 }
 
 //Start a Treeless server
 func Start(newGroup bool, addr string, port string, redundancy int) *Server {
-	//go http.ListenAndServe("localhost:8080", nil)
 	//Recover
 	defer func() {
 		if r := recover(); r != nil {
@@ -57,24 +38,7 @@ func Start(newGroup bool, addr string, port string, redundancy int) *Server {
 	}()
 
 	//Default values
-	dbPath := "tmpDB" + getLocalIP() + ":" + port
-	//Parse args
-	flag.Parse()
-	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
-		if err != nil {
-			log.Fatal(err)
-		}
-		go func() {
-			time.Sleep(time.Second * 1)
-			fmt.Println("start")
-			pprof.StartCPUProfile(f)
-			time.Sleep(time.Second * 10)
-			pprof.StopCPUProfile()
-			f.Close()
-			fmt.Println("fflushed")
-		}()
-	}
+	dbPath := "tmpDB" + tlLowCom.GetLocalIP() + ":" + port
 	//Launch core
 	var s Server
 	s.coreDB = tlcore.Create(dbPath)
@@ -214,7 +178,7 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 }
 
 func listenConnections(s *Server, port string) {
-	taddr, err := net.ResolveTCPAddr("tcp", getLocalIP()+":"+port)
+	taddr, err := net.ResolveTCPAddr("tcp", tlLowCom.GetLocalIP()+":"+port)
 	if err != nil {
 		panic(err)
 	}

@@ -66,7 +66,7 @@ func CreateServerGroup(numChunks int, port string, redundancy int) *ServerGroup 
 	sg := new(ServerGroup)
 	sg.Redundancy = redundancy
 	sg.Servers = make(map[string]*VirtualServer)
-	localhost := getLocalIP() + ":" + port
+	localhost := tlLowCom.GetLocalIP() + ":" + port
 	s := new(VirtualServer)
 	sg.localhost = s
 	s.lastHeartbeat = time.Now()
@@ -150,7 +150,7 @@ func ConnectAsServer(destAddr string, localport string) (*ServerGroup, error) {
 	}
 	sg.mutex.Lock()
 	defer sg.mutex.Unlock()
-	localhost := getLocalIP() + ":" + localport
+	localhost := tlLowCom.GetLocalIP() + ":" + localport
 	//Add to external servergroup instances
 	//For each other server: add localhost
 	for _, s := range sg.Servers {
