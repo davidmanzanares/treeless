@@ -82,26 +82,8 @@ func (db *DB) AllocMap(name string) (*Map, error) {
 	}
 	db.mapsByName[name] = m
 	for i := 0; i < len(m.Chunks); i++ {
-		m.allocChunk(db.path, i)
+		m.AllocChunk(i)
 	}
-	return m, nil
-}
-
-//DefineMap adds a new map to the DB, but does *not* allocates map chunks
-func (db *DB) DefineMap(name string) (*Map, error) {
-	var id int
-	for id = 0; id < len(db.Maps); id++ {
-		if db.Maps[id] == nil {
-			break
-		}
-	}
-	m := newMap(id, db.path, name)
-	if id >= len(db.Maps) {
-		db.Maps = append(db.Maps, m)
-	} else {
-		db.Maps[id] = m
-	}
-	db.mapsByName[name] = m
 	return m, nil
 }
 

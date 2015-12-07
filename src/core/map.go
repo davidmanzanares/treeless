@@ -13,6 +13,7 @@ type Map struct {
 	ID     int                      //Id of this map, read-only
 	Name   string                   //Unique identifier name of this map, read-only
 	Chunks [defaultNumChunks]*Chunk //Internal use only
+	path   string
 }
 
 /*
@@ -22,7 +23,7 @@ type Map struct {
 //New returns a new Map
 func newMap(id int, path, name string) (m *Map) {
 	os.MkdirAll(path+"/maps/"+name+"/", filePerms)
-	return &Map{ID: id, Name: name}
+	return &Map{ID: id, Name: name, path: path}
 }
 
 func (m *Map) restore() error {
@@ -38,8 +39,8 @@ func (m *Map) free() {
 		m.Chunks[i].close()
 	}
 }
-func (m *Map) allocChunk(path string, chunkid int) error {
-	m.Chunks[chunkid] = newChunk(chunkid, path, m.Name)
+func (m *Map) AllocChunk(chunkid int) error {
+	m.Chunks[chunkid] = newChunk(chunkid, m.path, m.Name)
 	return nil
 }
 func (m *Map) deleteChunk(chunkid int) {

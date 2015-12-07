@@ -39,22 +39,19 @@ func Start(addr string, localport string, redundancy int, dbpath string) *Server
 	}()
 
 	//Launch core
+	var err error
 	var s Server
 	s.coreDB = tlcore.Create(dbpath)
-	var err error
+	s.m, err = s.coreDB.AllocMap("map1")
+	if err != nil {
+		panic(err)
+	}
+	//Servergroup initialization
 	if addr == "" {
 		//New DB group
-		s.m, err = s.coreDB.AllocMap("map1")
-		if err != nil {
-			panic(err)
-		}
 		s.sg = tlcom.CreateServerGroup(len(s.m.Chunks), localport, redundancy)
 	} else {
 		//Associate to an existing DB group
-		s.m, err = s.coreDB.DefineMap("map1")
-		if err != nil {
-			panic(err)
-		}
 		s.sg, err = tlcom.Associate(addr, localport)
 		if err != nil {
 			panic(err)
@@ -66,7 +63,9 @@ func Start(addr string, localport string, redundancy int, dbpath string) *Server
 	if err != nil {
 		panic(err)
 	}
-	s.udpCon = tlLowCom.ReplyToPings(udpCreateReplier(&s), iport)
+	s.udpCon = tlLowCom.ReplyToPings(udpCreateReplier(s.sg), iport)
+	//Rebalancer
+	tlcom.Rebalance(s.sg)
 	return &s
 }
 
@@ -89,11 +88,11 @@ func (s *Server) Stop() {
 	s.coreDB.Close()
 }
 
-func udpCreateReplier(s *Server) tlLowCom.UDPReplyCallback {
+func udpCreateReplier(sg *tlcom.ServerGroup) tlLowCom.UDPReplyCallback {
 	return func() []byte {
 		var r []int
-		for i := 0; i < len(s.m.Chunks); i++ {
-			if s.m.Chunks[i] != nil {
+		for i := 0; i < sg.NumChunks; i++ {
+			if sg.IsChunkPresent(i) {
 				r = append(r, i)
 			}
 		}
@@ -138,7 +137,10 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 			var response tlLowCom.Message
 			response.ID = message.ID
 			response.Type = tlLowCom.OpGetConfResponse
-			b, _ := s.sg.Marshal()
+			b, err := s.sg.Marshal()
+			if err != nil {
+				panic(err)
+			}
 			response.Value = b
 			writeCh <- response
 		case tlLowCom.OpAddServerToGroup:

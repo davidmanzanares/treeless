@@ -18,7 +18,7 @@ func main() {
 	//Options
 	port := flag.String("port", "9876", "Use this port as the localhost server port")
 	redundancy := flag.Int("redundancy", 2, "Redundancy of the new DB server group")
-	dbpath := flag.String("dbpath", "tmpDB"+time.Now().String(), "Filesystem path to store DB info")
+	dbpath := flag.String("dbpath", "tmp_DB", "Filesystem path to store DB info")
 	cpuprofile := flag.Bool("cpuprofile", false, "write cpu profile to file")
 
 	flag.Parse()
@@ -40,13 +40,12 @@ func main() {
 	}
 
 	if *monitor != "" {
-		_, err := tlcom.ConnectAsClient(*monitor)
+		s, err := tlcom.ConnectAsClient(*monitor)
 		if err != nil {
 			fmt.Println("Access couldn't be established")
 			fmt.Println(err)
-		} else {
-			select {}
 		}
+		fmt.Println(s)
 	} else {
 		tlserver.Start(*assoc, *port, *redundancy, *dbpath)
 		select {}

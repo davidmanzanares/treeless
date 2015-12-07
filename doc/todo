@@ -13,6 +13,7 @@ Dist:
     -tests: vagrant
     -test failures
     -Benchmarks
+	-servergroup id
 Others:
     -procedures: TTL procedure
     -java, python

@@ -6,24 +6,36 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 	"treeless/src/com/lowcom"
 )
 
 //ServerGroup provides an access to a DB server group
 type ServerGroup struct {
+	//All ServerGroup read/writes are mutex-protected
+	sync.Mutex
 	//External things
-	sync.Mutex                                   //All ServerGroup read/writes are mutex-protected
-	Redundancy         int                       //DB target redundancy
-	Servers            map[string]*VirtualServer //Set of all DB servers
-	Chunks             []VirtualChunk            //Array of all DB chunks
-	Localhost          *VirtualServer
-	ChunkUpdateChannel chan *VirtualChunk //Each time a chunk status is updated the chunk is sent to the channel
+	Redundancy int                       //DB target redundancy
+	Servers    map[string]*VirtualServer //Set of all DB servers
+	NumChunks  int
 	//Local things
-	heartbeatList *list.List //List of pending chunk reviews
+	localhost          *VirtualServer
+	chunkUpdateChannel chan *VirtualChunk //Each time a chunk status is updated the chunk is sent to the channel
+	heartbeatList      *list.List         //List of pending chunk reviews
+	chunks             []VirtualChunk     //Array of all DB chunks
+	chunkStatus        []ChunkStatus      //Array of all DB chunks status
 }
 
 const channelUpdateChannelBufferSize = 1024
+
+type ChunkStatus int64
+
+const (
+	ChunkNotPresent ChunkStatus = iota
+	ChunkSynched
+	ChunkNotSynched
+)
 
 //String returns a human-readable representation of the server group
 func (sg *ServerGroup) String() string {
@@ -33,10 +45,10 @@ func (sg *ServerGroup) String() string {
 		str += "\t Address: " + s.Phy +
 			"\n\t\tKnown chunks: " + fmt.Sprint(s.HeldChunks) + " Last heartbeat: " + (t.Sub(s.LastHeartbeat)).String() + "\n"
 	}
-	str += fmt.Sprint(len(sg.Chunks)) + " chunks:\n"
-	for i := range sg.Chunks {
+	str += fmt.Sprint(sg.NumChunks) + " chunks:\n"
+	for i := range sg.chunks {
 		srv := ""
-		for k := range sg.Chunks[i].Holders {
+		for k := range sg.chunks[i].Holders {
 			srv += "\n\t\t" + k.Phy
 		}
 		str += "\tChunk " + fmt.Sprint(i) + srv + "\n"
@@ -57,8 +69,8 @@ func (sg *ServerGroup) Unmarshal(b []byte) error {
 	if err != nil {
 		return err
 	}
-	for i := range sg.Chunks {
-		sg.Chunks[i].Holders = make(map[*VirtualServer]bool)
+	for i := range sg.chunks {
+		sg.chunks[i].Holders = make(map[*VirtualServer]bool)
 	}
 	return nil
 }
@@ -68,7 +80,9 @@ func CreateServerGroup(numChunks int, port string, redundancy int) *ServerGroup 
 	sg := new(ServerGroup)
 	sg.Redundancy = redundancy
 	sg.Servers = make(map[string]*VirtualServer)
-	sg.ChunkUpdateChannel = make(chan *VirtualChunk, channelUpdateChannelBufferSize)
+	sg.NumChunks = numChunks
+	sg.chunkUpdateChannel = make(chan *VirtualChunk, channelUpdateChannelBufferSize)
+	sg.chunkStatus = make([]ChunkStatus, numChunks)
 
 	//Add this server
 	localhost := new(VirtualServer)
@@ -79,15 +93,19 @@ func CreateServerGroup(numChunks int, port string, redundancy int) *ServerGroup 
 		//Add all chunks to this server
 		localhost.HeldChunks[i] = i
 	}
-	sg.Localhost = localhost
+	sg.localhost = localhost
 	sg.Servers[localhost.Phy] = localhost
 
 	//Add all chunks to the servergroup
-	sg.Chunks = make([]VirtualChunk, numChunks)
+	sg.chunks = make([]VirtualChunk, numChunks)
 	for i := 0; i < numChunks; i++ {
-		sg.Chunks[i].ID = i
-		sg.Chunks[i].Holders = make(map[*VirtualServer]bool)
-		sg.Chunks[i].Holders[localhost] = true
+		sg.chunks[i].ID = i
+		sg.chunks[i].Holders = make(map[*VirtualServer]bool)
+		sg.chunks[i].Holders[localhost] = true
+	}
+	//Set chunk status
+	for i := 0; i < numChunks; i++ {
+		sg.chunkStatus[i] = ChunkSynched
 	}
 	heartbeatRequester(sg)
 	return sg
@@ -113,6 +131,12 @@ func ConnectAsClient(addr string) (*ServerGroup, error) {
 	if err != nil {
 		return nil, err
 	}
+	sg.chunks = make([]VirtualChunk, sg.NumChunks)
+	for i := range sg.chunks {
+		sg.chunks[i].ID = i
+		sg.chunks[i].Holders = make(map[*VirtualServer]bool)
+	}
+	sg.chunkStatus = make([]ChunkStatus, sg.NumChunks)
 	//Initial access configuration has been loaded
 	//Lookup for servers
 	for _, s := range sg.Servers {
@@ -128,21 +152,18 @@ func ConnectAsClient(addr string) (*ServerGroup, error) {
 			s.LastHeartbeat = time.Now()
 			s.HeldChunks = udpr
 			for i := range s.HeldChunks {
-				sg.Chunks[i].Holders[s] = true
+				sg.chunks[i].Holders[s] = true
 			}
 		} else {
 			log.Println("UDP initial request transmission error", err)
 		}
 	}
-	for i := range sg.Chunks {
-		sg.Chunks[i].ID = i
-	}
-	sg.ChunkUpdateChannel = make(chan *VirtualChunk, 1024)
+	sg.chunkUpdateChannel = make(chan *VirtualChunk, 1024)
 	//Launch UDP heartbeat requester
 	heartbeatRequester(sg)
 	//All existing chunks must be checked
-	for i := range sg.Chunks {
-		sg.ChunkUpdateChannel <- &sg.Chunks[i]
+	for i := range sg.chunks {
+		sg.chunkUpdateChannel <- &sg.chunks[i]
 	}
 	return sg, nil
 }
@@ -175,7 +196,7 @@ func Associate(destAddr string, localport string) (*ServerGroup, error) {
 	sg.Unlock()
 	sg.AddServerToGroup(localhost)
 	sg.Lock()
-	sg.Localhost = sg.Servers[localhost]
+	sg.localhost = sg.Servers[localhost]
 	return sg, nil
 }
 
@@ -214,7 +235,7 @@ func heartbeatRequester(sg *ServerGroup) {
 						}
 					}
 					if !ok {
-						sg.ChunkUpdateChannel <- &sg.Chunks[c]
+						sg.chunkUpdateChannel <- &sg.chunks[c]
 					}
 				}
 				//Detect forgotten chunks
@@ -227,24 +248,25 @@ func heartbeatRequester(sg *ServerGroup) {
 						}
 					}
 					if !ok {
-						sg.ChunkUpdateChannel <- &sg.Chunks[c]
+						sg.chunkUpdateChannel <- &sg.chunks[c]
 					}
 				}
 
 				s.HeldChunks = udpr
+				log.Println("held", s.Phy, udpr)
 				//Remove old chunks
 				for c := range s.HeldChunks {
-					delete(sg.Chunks[c].Holders, s)
+					delete(sg.chunks[c].Holders, s)
 				}
 				//Add new chunks
-				for c := range s.HeldChunks {
-					sg.Chunks[c].Holders[s] = true
+				for _, c := range s.HeldChunks {
+					sg.chunks[c].Holders[s] = true
 				}
 				s.LastHeartbeat = time.Now()
 			} else {
 				log.Println("UDP request timeout. Server", s.Phy, "UDP error:", err)
 			}
-			//log.Println(sg)
+			log.Println(sg)
 			l.MoveToBack(l.Front())
 		}
 	}()
@@ -273,4 +295,8 @@ func oldServersRemover() {
 		//check for dead servers
 		//remove them
 	}
+}
+
+func (sg *ServerGroup) IsChunkPresent(id int) bool {
+	return atomic.LoadInt64((*int64)(&sg.chunkStatus[id])) != 0
 }

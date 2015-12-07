@@ -5,6 +5,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -46,33 +47,45 @@ func (pq *PriorityQueue) update(c *VirtualChunk, t time.Time) {
 	heap.Fix(pq, c.index)
 }
 
-func rebalancer(sg *ServerGroup) chan *VirtualChunk {
-	ch := sg.ChunkUpdateChannel
-	duplicate := duplicator()
+func Rebalance(sg *ServerGroup) chan *VirtualChunk {
+	ch := sg.chunkUpdateChannel
+	duplicate := duplicator(sg)
 
+	//Constantly check for possible duplications to rebalance the servers,
+	//servers should have the more or less the same work
 	go func() {
 		time.Sleep(time.Second * 100)
 		sg.Lock()
 		for {
-			known := float64(len(sg.Localhost.HeldChunks))
-			total := float64(len(sg.Chunks))
+			known := float64(len(sg.localhost.HeldChunks))
+			total := float64(sg.NumChunks) * float64(sg.Redundancy)
 			avg := total / float64(len(sg.Servers))
-			timetowait := 1.0 / (avg - known)
-			if timetowait < 0.0 || timetowait > 100 {
-				sg.Unlock()
-				time.Sleep(time.Second * 100)
-				sg.Lock()
-				continue
+			if known < avg*0.95 {
+				c := &sg.chunks[rand.Int31n(int32(sg.NumChunks))]
+				if !c.Holders[sg.localhost] {
+					log.Println("Duplicate to rebalance")
+					duplicate(c)
+				}
 			}
+			timetowait := 1.0 / (avg - known)
+			if (avg-known) <= 0.0 || timetowait > 20 {
+				timetowait = 20
+			}
+			log.Println("Time to wait:", timetowait, "Avg: ", avg, "Known:", known)
 			sg.Unlock()
 			time.Sleep(time.Duration(float64(time.Second) * timetowait))
 			sg.Lock()
-			c := &sg.Chunks[rand.Int31n(int32(len(sg.Chunks)))]
-			if !c.Holders[sg.Localhost] {
-				duplicate(c)
-			}
 		}
 	}()
+
+	//Rebalance chunks with low redundancy
+	//Rebalance algorithm:
+	//	For each chunk with low redundancy:
+	//		wait a random lapse of time
+	//		check chunk status
+	//		if still with low redundancy / noone claimed it:
+	//			Claim it
+	//			transfer it
 
 	go func() {
 		sg.Lock()
@@ -80,7 +93,6 @@ func rebalancer(sg *ServerGroup) chan *VirtualChunk {
 		heap.Init(&pq)
 		inQueue := make(map[*VirtualChunk]bool)
 		tick := time.Tick(time.Second * 10000000)
-		//Rebalance chunks with low redundancy
 		for {
 			if pq.Len() > 0 {
 				//log.Println("time", pq[0].timeToReview)
@@ -97,8 +109,8 @@ func rebalancer(sg *ServerGroup) chan *VirtualChunk {
 			select {
 			case chunk := <-ch:
 				sg.Lock()
-				chunk.timeToReview = time.Now().Add(time.Microsecond * time.Duration(60*1000*1000*rand.Float32())) //TODO add variable server k
-				//log.Println("Chunk eta:", chunk.timeToReview, chunk.rank)
+				chunk.timeToReview = time.Now().Add(time.Microsecond * time.Duration(10*1000*1000*rand.Float32())) //TODO add variable server k
+				//log.Println("Chunk eta:", chunk.timeToReview, "ID:", chunk.ID)
 				if inQueue[chunk] {
 					pq.update(chunk, time.Now())
 				} else {
@@ -109,11 +121,12 @@ func rebalancer(sg *ServerGroup) chan *VirtualChunk {
 				sg.Lock()
 				if len(pq) > 0 {
 					c := heap.Pop(&pq).(*VirtualChunk)
-					if len(c.Holders) < sg.Redundancy && c.Holders[sg.Localhost] == false {
+					if len(c.Holders) < sg.Redundancy && c.Holders[sg.localhost] == false {
 						duplicate(c)
+					} else {
+						//log.Println("Chunk duplication aborted: chunk not needed", c.ID, c, c.Holders[sg.localhost])
 					}
 					delete(inQueue, c)
-					//log.Println("Checking", c.rank, c.timeToReview)
 				}
 			}
 		}
@@ -132,8 +145,9 @@ func getFreeDiskSpace() uint64 {
 	return stat.Bavail * uint64(stat.Bsize)
 }
 
-func duplicator() (duplicate func(c *VirtualChunk)) {
+func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 	ch := make(chan *VirtualChunk, 1024)
+
 	duplicate = func(c *VirtualChunk) {
 		//Execute this code as soon as possible, adding the chunk to the known list is time critical
 		log.Println(time.Now().String()+"Request chunk duplication, ID:", c.ID)
@@ -141,9 +155,10 @@ func duplicator() (duplicate func(c *VirtualChunk)) {
 		var s *VirtualServer
 		for k := range c.Holders {
 			s = k
+			break
 		}
 		if s == nil {
-			log.Println("No servers available, duplication aborted")
+			log.Println("No servers available, duplication aborted, data loss?")
 			return
 		}
 		//Check free space (OS)
@@ -155,19 +170,21 @@ func duplicator() (duplicate func(c *VirtualChunk)) {
 			return
 		}
 		log.Println("Size", size)
-		//Add chunk to known list (servergroup)
 		ch <- c
 	}
+
 	go func() {
 		for {
 			c := <-ch
 			//A chunk duplication has been confirmed, transfer it now
-			log.Println("Chunk duplication, confirmed:", c.ID)
+			atomic.StoreInt64((*int64)(&sg.chunkStatus[c.ID]), 1)
+			log.Println("Chunk duplication confirmed, transfering...", c.ID)
 			//While transfer in course, set and get return chunk not synched
 			//Ready to transfer
 			//Request chunk transfer, get SYNC params
 			//Set chunk as ready
 		}
 	}()
+
 	return duplicate
 }

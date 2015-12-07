@@ -1,6 +1,7 @@
 package tlcom
 
 import "time"
+import "fmt"
 
 //VirtualChunk stores generical chunk info, including server holders
 type VirtualChunk struct {
@@ -9,4 +10,12 @@ type VirtualChunk struct {
 	//Rebalancer data
 	timeToReview time.Time
 	index        int
+}
+
+func (c *VirtualChunk) String() {
+	str := "Chunk" + fmt.Sprint(c.ID)
+	str += "\nHolders:"
+	for k, _ := range c.Holders {
+		str += " " + k.Phy
+	}
 }
