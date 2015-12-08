@@ -3,13 +3,11 @@ Core:
     -IO error?
 	- 1 map
 Server:
-	-ipport
+	-ipport variable naming
     -add primitives
     -add tests
     -add benchmarks
 Dist:
-    -Rendezvous hashing and rebalance
-    -UDP heartbeat: server & client
     -tests: vagrant
     -test failures
     -Benchmarks
@@ -18,3 +16,4 @@ Others:
     -procedures: TTL procedure
     -java, python
     -security
+	-transactions
