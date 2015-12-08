@@ -300,3 +300,16 @@ func oldServersRemover() {
 func (sg *ServerGroup) IsChunkPresent(id int) bool {
 	return atomic.LoadInt64((*int64)(&sg.chunkStatus[id])) != 0
 }
+
+func (sg *ServerGroup) GetChunkHolders(chunkID int) []*VirtualServer {
+	sg.Lock()
+	defer sg.Unlock()
+	c := sg.chunks[chunkID]
+	holders := make([]*VirtualServer, len(c.Holders))
+	i := 0
+	for h := range c.Holders {
+		holders[i] = h
+		i++
+	}
+	return holders
+}
