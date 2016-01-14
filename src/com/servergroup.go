@@ -143,14 +143,14 @@ func ConnectAsClient(addr string) (*ServerGroup, error) {
 		//Request known chunks list
 		b, err := tlLowCom.UDPRequest(s.Phy, time.Millisecond*50)
 		if err == nil {
-			var udpr []int
+			var udpr Keepalive
 			err = json.Unmarshal(b, &udpr)
 			if err != nil {
 				log.Println("UDPResponse unmarshalling error", err)
 				continue
 			}
 			s.LastHeartbeat = time.Now()
-			s.HeldChunks = udpr
+			s.HeldChunks = udpr.KnownChunks
 			for i := range s.HeldChunks {
 				sg.chunks[i].Holders[s] = true
 			}
@@ -220,13 +220,22 @@ func heartbeatRequester(sg *ServerGroup) {
 			b, err := tlLowCom.UDPRequest(s.Phy, time.Millisecond*50)
 			if err == nil {
 				//Unmarshal response
-				var udpr []int
+				var udpr Keepalive
 				err = json.Unmarshal(b, &udpr)
 				if err != nil {
 					panic(err)
 				}
+				//Detect added servers
+				for _, addr := range udpr.KnownServers {
+					_, exists := sg.Servers[addr]
+					if !exists {
+						sg.Servers[addr] = new(VirtualServer)
+						sg.Servers[addr].Phy = addr
+						l.PushFront(sg.Servers[addr])
+					}
+				}
 				//Detect added chunks
-				for _, c := range udpr {
+				for _, c := range udpr.KnownChunks {
 					ok := false
 					for _, c2 := range s.HeldChunks {
 						if c == c2 {
@@ -241,7 +250,7 @@ func heartbeatRequester(sg *ServerGroup) {
 				//Detect forgotten chunks
 				for _, c := range s.HeldChunks {
 					ok := false
-					for _, c2 := range udpr {
+					for _, c2 := range udpr.KnownChunks {
 						if c == c2 {
 							ok = true
 							break
@@ -252,8 +261,8 @@ func heartbeatRequester(sg *ServerGroup) {
 					}
 				}
 
-				s.HeldChunks = udpr
-				log.Println("held", s.Phy, udpr)
+				s.HeldChunks = udpr.KnownChunks
+				//log.Println("held", s.Phy, udpr)
 				//Remove old chunks
 				for c := range s.HeldChunks {
 					delete(sg.chunks[c].Holders, s)
@@ -266,7 +275,7 @@ func heartbeatRequester(sg *ServerGroup) {
 			} else {
 				log.Println("UDP request timeout. Server", s.Phy, "UDP error:", err)
 			}
-			log.Println(sg)
+			//log.Println(sg)
 			l.MoveToBack(l.Front())
 		}
 	}()

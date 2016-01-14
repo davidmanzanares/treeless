@@ -83,6 +83,11 @@ func (m *Map) Delete(key []byte) error {
 	return m.Chunks[chunkIndex].del(h, key)
 }
 
+//Iterate all key-value pairs
+func (m *Map) Iterate(chunkID int, foreach func(key, value []byte)) error {
+	return m.Chunks[chunkID].iterate(foreach)
+}
+
 /*
 	Helper functions
 */

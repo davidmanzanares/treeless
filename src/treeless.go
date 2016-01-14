@@ -13,6 +13,7 @@ import (
 
 func main() {
 	//Operations
+	create := flag.Bool("create", false, "Create a new DB server group")
 	assoc := flag.String("assoc", "", "Associate to an existing DB server group")
 	monitor := flag.String("monitor", "", "Monitor an existing DB")
 	//Options
@@ -46,8 +47,10 @@ func main() {
 			fmt.Println(err)
 		}
 		fmt.Println(s)
-	} else {
+	} else if *create {
 		tlserver.Start(*assoc, *port, *redundancy, *dbpath)
 		select {}
+	} else {
+		log.Fatal("No operations passed. See usage with --help.")
 	}
 }

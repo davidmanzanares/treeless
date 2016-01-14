@@ -88,13 +88,21 @@ func (s *Server) Stop() {
 	s.coreDB.Close()
 }
 
+func (s *Server) LogInfo() {
+	log.Println("Info log")
+	log.Println(s.sg)
+}
+
 func udpCreateReplier(sg *tlcom.ServerGroup) tlLowCom.UDPReplyCallback {
 	return func() []byte {
-		var r []int
+		var r tlcom.Keepalive
 		for i := 0; i < sg.NumChunks; i++ {
 			if sg.IsChunkPresent(i) {
-				r = append(r, i)
+				r.KnownChunks = append(r.KnownChunks, i)
 			}
+		}
+		for _, s := range sg.Servers {
+			r.KnownServers = append(r.KnownServers, s.Phy)
 		}
 		b, err := json.Marshal(r)
 		if err != nil {
@@ -110,8 +118,10 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 	//this technique allows bigger throughtputs, but latency in increased a little
 	writeCh := make(chan tlLowCom.Message, 1024)
 	go tlLowCom.TCPWriter(conn, writeCh)
+	//fmt.Println("Server", conn.LocalAddr(), "listening")
 
 	processMessage := func(message tlLowCom.Message) {
+		//fmt.Println("Server", conn.LocalAddr(), "message recieved", string(message.Key), string(message.Value))
 		switch message.Type {
 		case tlcore.OpGet:
 			var response tlLowCom.Message
@@ -133,6 +143,42 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 			//if err != nil {
 			//	panic(err)
 			//}
+		case tlLowCom.OpTransfer:
+			var chunkID int
+			err := json.Unmarshal(message.Key, &chunkID)
+			if err != nil {
+				panic(string(message.Key) + err.Error())
+			}
+			transferFail := func() {
+				var response tlLowCom.Message
+				response.ID = message.ID
+				response.Type = tlLowCom.OpErr
+				writeCh <- response
+			}
+			if s.sg.IsChunkPresent(chunkID) {
+				//New goroutine will put every key value pair into destination, it will manage the OpOK response
+				addr := string(message.Value)
+				c, err := tlcom.CreateConnection(addr)
+				if err != nil {
+					log.Println(1111111111, err)
+					transferFail()
+				} else {
+					go func(c *tlcom.ClientConn) {
+						s.m.Iterate(chunkID, func(key, value []byte) {
+							c.Put(key, value)
+						})
+						c.GetAccessInfo()
+						c.Close()
+						var response tlLowCom.Message
+						response.ID = message.ID
+						response.Type = tlLowCom.OpOK
+						writeCh <- response
+					}(c)
+				}
+			} else {
+				transferFail()
+			}
+
 		case tlLowCom.OpGetConf:
 			var response tlLowCom.Message
 			response.ID = message.ID

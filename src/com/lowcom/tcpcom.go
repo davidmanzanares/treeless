@@ -28,6 +28,8 @@ const (
 	OpAddServerToGroupACK
 	OpGetChunkInfo
 	OpGetChunkInfoResponse
+	OpTransfer
+	OpOK
 	OpErr
 	OpNil
 )

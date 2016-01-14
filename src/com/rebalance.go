@@ -109,7 +109,7 @@ func Rebalance(sg *ServerGroup) chan *VirtualChunk {
 			select {
 			case chunk := <-ch:
 				sg.Lock()
-				chunk.timeToReview = time.Now().Add(time.Microsecond * time.Duration(10*1000*1000*rand.Float32())) //TODO add variable server k
+				chunk.timeToReview = time.Now().Add(time.Millisecond * time.Duration(time.Duration(100*rand.Float32()))) //TODO add variable server k
 				//log.Println("Chunk eta:", chunk.timeToReview, "ID:", chunk.ID)
 				if inQueue[chunk] {
 					pq.update(chunk, time.Now())
@@ -179,10 +179,24 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 			//A chunk duplication has been confirmed, transfer it now
 			atomic.StoreInt64((*int64)(&sg.chunkStatus[c.ID]), 1)
 			log.Println("Chunk duplication confirmed, transfering...", c.ID)
-			//While transfer in course, set and get return chunk not synched
-			//Ready to transfer
-			//Request chunk transfer, get SYNC params
-			//Set chunk as ready
+			//While transfer in course, set and get return "chunk not synched"
+
+			//Ready to transfer: request chunk transfer, get SYNC params
+			for s := range c.Holders {
+				err := s.NeedConnection()
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+				err = s.Conn.Transfer(sg.localhost.Phy, c.ID)
+				if err != nil {
+					log.Println(err)
+					continue
+				}
+				//Set chunk as ready
+				log.Println("Chunk duplication finished", c.ID)
+				break
+			}
 		}
 	}()
 

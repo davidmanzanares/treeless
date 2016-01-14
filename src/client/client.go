@@ -1,6 +1,10 @@
 package tlclient
 
-import "treeless/src/com"
+import (
+	"errors"
+	"treeless/src/com"
+)
+
 import "treeless/src/hash"
 
 type Client struct {
@@ -20,13 +24,21 @@ func Connect(addr string) (*Client, error) {
 func (c *Client) Put(key, value []byte) error {
 	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks)
 	holders := c.sg.GetChunkHolders(chunkID)
+	conns := make([]*tlcom.ClientConn, 0, 4)
 	var firstError error
-	for h := range holders {
+	c.sg.Mutex.Lock()
+	for _, h := range holders {
 		err := h.NeedConnection()
+		if err == nil {
+			conns = append(conns, h.Conn)
+		}
 		if err != nil && firstError == nil {
 			firstError = err
 		}
-		err = h.Conn.Put(key, value)
+	}
+	c.sg.Mutex.Unlock()
+	for _, c := range conns {
+		err := c.Put(key, value)
 		if err != nil && firstError == nil {
 			firstError = err
 		}
@@ -37,19 +49,33 @@ func (c *Client) Put(key, value []byte) error {
 func (c *Client) Get(key []byte) ([]byte, error) {
 	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks)
 	holders := c.sg.GetChunkHolders(chunkID)
-	var firstError error
-	for h := range holders {
+	var errs error = nil
+	var value, v []byte
+	for _, h := range holders {
 		//TODO get policy
 		err := h.NeedConnection()
-		if err != nil && firstError == nil {
-			firstError = err
+		if err != nil {
+			if errs == nil {
+				errs = err
+			} else {
+				errs = errors.New(errs.Error() + err.Error())
+			}
 		}
-		value, err2 := h.Conn.Get(key)
-		if err2 != nil && firstError == nil {
-			firstError = err2
+
+		if err == nil {
+			v, err = h.Conn.Get(key)
+			if err == nil {
+				value = v
+			} else {
+				if errs == nil {
+					errs = err
+				} else {
+					errs = errors.New("Multiple errors: " + errs.Error() + ", " + err.Error())
+				}
+			}
 		}
 	}
-	return firstError
+	return value, errs
 }
 
 func (c *Client) Close() {

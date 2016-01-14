@@ -123,6 +123,18 @@ func (c *Chunk) get(h64 uint64, key []byte) ([]byte, error) {
 	}
 }
 
+func (c *Chunk) iterate(foreach func(key, value []byte)) error {
+	for index := uint64(0); index < c.St.Length; {
+		if c.St.isPresent(index) {
+			key := c.St.key(index)
+			val := c.St.val(index)
+			foreach(key, val)
+		}
+		index += 8 + uint64(c.St.totalLen(index))
+	}
+	return nil
+}
+
 func (c *Chunk) del(h64 uint64, key []byte) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()

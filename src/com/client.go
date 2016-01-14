@@ -2,11 +2,13 @@ package tlcom
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"log"
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 	"treeless/src/com/lowcom"
 )
 
@@ -67,7 +69,7 @@ func CreateConnection(addr string) (*ClientConn, error) {
 	if errp != nil {
 		return nil, errp
 	}
-	log.Println("Dialing", taddr)
+	log.Println("Dialing for new connection", taddr)
 	tcpconn, err := net.DialTCP("tcp", nil, taddr)
 	if err != nil {
 		return nil, err
@@ -104,6 +106,8 @@ func listenToResponses(c *ClientConn) {
 			rval := make([]byte, len(m.Value))
 			copy(rval, m.Value)
 			ch <- result{rval, nil}
+		case tlLowCom.OpOK:
+			ch <- result{nil, nil}
 		default:
 			err := make([]byte, len(m.Value))
 			copy(err, m.Value)
@@ -143,12 +147,17 @@ func (c *ClientConn) Get(key []byte) ([]byte, error) {
 	mess.ID = mytid
 
 	c.writeChannel <- mess
-	r := <-ch
-	c.chanPool.Put(ch)
-	c.waitLock.Lock()
-	delete(c.waits, mytid)
-	c.waitLock.Unlock()
-	return r.value, r.err
+
+	select {
+	case <-time.After(time.Millisecond * 100):
+		return nil, errors.New("response timeout")
+	case r := <-ch:
+		c.chanPool.Put(ch)
+		c.waitLock.Lock()
+		delete(c.waits, mytid)
+		c.waitLock.Unlock()
+		return r.value, r.err
+	}
 }
 
 //Put a new key/value pair
@@ -165,8 +174,44 @@ func (c *ClientConn) Put(key, value []byte) error {
 	mess.Key = key
 	mess.Value = value
 
+	//fmt.Println("sending put", key, value, len(string(key)), len(key), c.conn.LocalAddr(), c.conn.RemoteAddr())
+	c.writeChannel <- mess
+	return nil
+}
+
+//Transfer a chunk
+func (c *ClientConn) Transfer(addr string, chunkID int) error {
+	var mess tlLowCom.Message
+
+	ch := c.chanPool.Get().(chan result)
+	c.waitLock.Lock()
+	mytid := c.tid
+	c.waits[c.tid] = ch
+	c.tid++
+	c.waitLock.Unlock()
+
+	mess.Type = tlLowCom.OpTransfer
+	mess.ID = mytid
+	var err error
+	mess.Key, err = json.Marshal(chunkID)
+	mess.Value = []byte(addr)
+	if err != nil {
+		panic(err)
+	}
+
 	//fmt.Println("sending put", key, value, len(string(key)), len(key))
 	c.writeChannel <- mess
+
+	select {
+	case <-time.After(time.Millisecond * 1000000):
+		return errors.New("response timeout")
+	case r := <-ch:
+		c.chanPool.Put(ch)
+		c.waitLock.Lock()
+		delete(c.waits, mytid)
+		c.waitLock.Unlock()
+		return r.err
+	}
 	return nil
 }
 
