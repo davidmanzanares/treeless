@@ -150,7 +150,7 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 
 	duplicate = func(c *VirtualChunk) {
 		//Execute this code as soon as possible, adding the chunk to the known list is time critical
-		log.Println(time.Now().String()+"Request chunk duplication, ID:", c.ID)
+		//log.Println(time.Now().String()+"Request chunk duplication, ID:", c.ID)
 		//Ask for chunk size (op)
 		var s *VirtualServer
 		for k := range c.Holders {
@@ -169,7 +169,11 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 			log.Println("GetChunkInfo failed, duplication aborted", err)
 			return
 		}
-		log.Println("Size", size)
+		freeSpace := uint64(1000000000)
+		if size > freeSpace {
+			log.Println("Chunk duplication aborted, low free space. Chunk size:", size, "Free space:", freeSpace)
+			return
+		}
 		ch <- c
 	}
 
@@ -178,7 +182,7 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 			c := <-ch
 			//A chunk duplication has been confirmed, transfer it now
 			atomic.StoreInt64((*int64)(&sg.chunkStatus[c.ID]), 1)
-			log.Println("Chunk duplication confirmed, transfering...", c.ID)
+			//log.Println("Chunk duplication confirmed, transfering...", c.ID)
 			//While transfer in course, set and get return "chunk not synched"
 
 			//Ready to transfer: request chunk transfer, get SYNC params
@@ -194,7 +198,7 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 					continue
 				}
 				//Set chunk as ready
-				log.Println("Chunk duplication finished", c.ID)
+				log.Println("Chunk duplication completed", c.ID)
 				break
 			}
 		}

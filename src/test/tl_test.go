@@ -6,23 +6,56 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"runtime"
+	"os/exec"
 	"sync"
 	"testing"
 	"time"
 	"treeless/src/client"
 	"treeless/src/com/lowcom"
-	"treeless/src/server"
 )
+
+func TestMain(m *testing.M) {
+	os.Chdir("..")
+	cmd := exec.Command("go", "build", "-o", "treeless")
+	cmd.Start()
+	os.Exit(m.Run())
+}
+
+var id = 0
+
+func LaunchServer(assoc string) (addr string, stop func()) {
+	var cmd *exec.Cmd
+	dbpath := "testDB" + fmt.Sprint(id)
+	if assoc == "" {
+		id = 0
+		dbpath = "testDB" + fmt.Sprint(id)
+		cmd = exec.Command("./treeless", "-create", "-port", fmt.Sprint(10000+id), "-dbpath", dbpath)
+	} else {
+		cmd = exec.Command("./treeless", "-assoc", assoc, "-port", fmt.Sprint(10000+id), "-dbpath", dbpath)
+	}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	id++
+	err := cmd.Start()
+	if err != nil {
+		panic(err)
+	}
+	time.Sleep(time.Second)
+	return string(tlLowCom.GetLocalIP()) + ":" + fmt.Sprint(10000+id-1),
+		func() {
+			cmd.Process.Kill()
+			os.RemoveAll(dbpath)
+			//fmt.Println(cmd.Path + cmd.Args[1] + cmd.Args[2] + cmd.Args[3] + cmd.Args[4] + " killed")
+		}
+}
 
 //Test just a few hard-coded operations with one server - one client
 func TestSimple(t *testing.T) {
 	//Server set-up
-	server := tlserver.Start("", "9876", 1, "testDB")
-	defer os.RemoveAll("testDB/")
-	defer server.Stop()
+	addr, stop := LaunchServer("")
+	defer stop()
 	//Client set-up
-	client, err := tlclient.Connect(string(tlLowCom.GetLocalIP()) + ":9876")
+	client, err := tlclient.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,13 +77,11 @@ func TestSimple(t *testing.T) {
 	}
 }
 
-func TestBasicRebalace(t *testing.T) {
+func TestBasicRebalance(t *testing.T) {
 	//Server set-up
-	server1 := tlserver.Start("", "9876", 2, "testDB")
-	defer os.RemoveAll("testDB/")
-	defer server1.Stop()
+	addr1, stop1 := LaunchServer("")
 	//Client set-up
-	client, err := tlclient.Connect(string(tlLowCom.GetLocalIP()) + ":9876")
+	client, err := tlclient.Connect(addr1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,14 +92,12 @@ func TestBasicRebalace(t *testing.T) {
 		t.Fatal(err)
 	}
 	//Second server set-up
-	server2 := tlserver.Start(string(tlLowCom.GetLocalIP())+":9876", "9877", 0, "testDB2")
-	defer os.RemoveAll("testDB2/")
-	defer server2.Stop()
+	_, stop2 := LaunchServer(addr1)
+	defer stop2()
 	//Wait for rebalance
 	time.Sleep(time.Second * 5)
-	server2.LogInfo()
 	//First server shut down
-	server1.Stop()
+	stop1()
 	//Read operation
 	value, err2 := client.Get([]byte("hola"))
 	if string(value) != "mundo" {
@@ -79,12 +108,10 @@ func TestBasicRebalace(t *testing.T) {
 //Test lots of operations made by a single client against a single DB server
 func TestCmplx1_1(t *testing.T) {
 	//Server set-up
-	runtime.GOMAXPROCS(4)
-	server := tlserver.Start("", "9876", 1, "testDB")
-	defer os.RemoveAll("testDB/")
-	defer server.Stop()
+	addr, stop := LaunchServer("")
+	defer stop()
 	//Client set-up
-	client, err := tlclient.Connect(string(tlLowCom.GetLocalIP()) + ":9876")
+	client, err := tlclient.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}

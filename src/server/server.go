@@ -30,6 +30,8 @@ type Server struct {
 
 //Start a Treeless server
 func Start(addr string, localport string, redundancy int, dbpath string) *Server {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	log.SetPrefix(tlLowCom.GetLocalIP() + ":" + localport + " ")
 	//Recover: log and quit
 	defer func() {
 		if r := recover(); r != nil {
@@ -66,6 +68,7 @@ func Start(addr string, localport string, redundancy int, dbpath string) *Server
 	s.udpCon = tlLowCom.ReplyToPings(udpCreateReplier(s.sg), iport)
 	//Rebalancer
 	tlcom.Rebalance(s.sg)
+	log.Println("Server boot-up completed")
 	return &s
 }
 
@@ -86,6 +89,7 @@ func (s *Server) Stop() {
 	s.udpCon.Close()
 	s.tcpListener.Close()
 	s.coreDB.Close()
+	s.sg.Stop()
 }
 
 func (s *Server) LogInfo() {
@@ -235,7 +239,6 @@ func listenConnections(s *Server, port string) {
 	if err != nil {
 		panic(err)
 	}
-	log.Println("Listening on:", ln.Addr())
 	s.tcpListener = ln
 	go func(s *Server) {
 		var tcpConnections []*net.TCPConn

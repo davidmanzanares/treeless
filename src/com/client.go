@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"log"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -69,7 +68,7 @@ func CreateConnection(addr string) (*ClientConn, error) {
 	if errp != nil {
 		return nil, errp
 	}
-	log.Println("Dialing for new connection", taddr)
+	//log.Println("Dialing for new connection", taddr)
 	tcpconn, err := net.DialTCP("tcp", nil, taddr)
 	if err != nil {
 		return nil, err
@@ -115,7 +114,7 @@ func listenToResponses(c *ClientConn) {
 		}
 	}
 	tlLowCom.TCPReader(c.conn, f)
-	log.Println("Connection closed", c.conn.RemoteAddr().String())
+	//log.Println("Connection closed", c.conn.RemoteAddr().String())
 }
 
 func (c *ClientConn) isClosed() bool {

@@ -20,6 +20,7 @@ type ServerGroup struct {
 	Servers    map[string]*VirtualServer //Set of all DB servers
 	NumChunks  int
 	//Local things
+	stopped            bool
 	localhost          *VirtualServer
 	chunkUpdateChannel chan *VirtualChunk //Each time a chunk status is updated the chunk is sent to the channel
 	heartbeatList      *list.List         //List of pending chunk reviews
@@ -36,6 +37,12 @@ const (
 	ChunkSynched
 	ChunkNotSynched
 )
+
+func (sg *ServerGroup) Stop() {
+	sg.Mutex.Lock()
+	sg.stopped = true
+	sg.Mutex.Unlock()
+}
 
 //String returns a human-readable representation of the server group
 func (sg *ServerGroup) String() string {
@@ -190,7 +197,6 @@ func Associate(destAddr string, localport string) (*ServerGroup, error) {
 		if err != nil {
 			panic(err)
 		}
-		log.Println("Server added to", s.Phy)
 	}
 	//Add to local servergroup instance
 	sg.Unlock()
@@ -213,6 +219,10 @@ func heartbeatRequester(sg *ServerGroup) {
 			sg.Unlock()
 			time.Sleep(d)
 			sg.Lock()
+
+			if sg.stopped {
+				return
+			}
 
 			s := l.Front().Value.(*VirtualServer)
 
@@ -294,7 +304,7 @@ func (sg *ServerGroup) AddServerToGroup(addr string) error {
 	} else {
 		s.LastHeartbeat = time.Now()
 	}
-	log.Println("Server", addr, "added\n", sg)
+	log.Println("Server", addr, "added")
 	return nil
 }
 

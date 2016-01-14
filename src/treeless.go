@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 	"runtime/pprof"
 	"time"
 	"treeless/src/com"
@@ -12,6 +13,7 @@ import (
 )
 
 func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	//Operations
 	create := flag.Bool("create", false, "Create a new DB server group")
 	assoc := flag.String("assoc", "", "Associate to an existing DB server group")
@@ -48,6 +50,9 @@ func main() {
 		}
 		fmt.Println(s)
 	} else if *create {
+		tlserver.Start("", *port, *redundancy, *dbpath)
+		select {}
+	} else if *assoc != "" {
 		tlserver.Start(*assoc, *port, *redundancy, *dbpath)
 		select {}
 	} else {
