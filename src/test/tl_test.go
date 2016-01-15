@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io/ioutil"
+	"log"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -16,10 +18,13 @@ import (
 
 func TestMain(m *testing.M) {
 	cmd := exec.Command("killall", "treeless")
-	cmd.Start()
+	cmd.Run()
 	os.Chdir("..")
 	cmd = exec.Command("go", "build", "-o", "treeless")
-	cmd.Start()
+	cmd.Run()
+	if !testing.Verbose() {
+		log.SetOutput(ioutil.Discard)
+	}
 	os.Exit(m.Run())
 }
 
@@ -35,15 +40,25 @@ func LaunchServer(assoc string) (addr string, stop func()) {
 	} else {
 		cmd = exec.Command("./treeless", "-assoc", assoc, "-port", fmt.Sprint(10000+id), "-dbpath", dbpath)
 	}
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	if testing.Verbose() {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
 	id++
 	err := cmd.Start()
 	if err != nil {
 		panic(err)
 	}
-	time.Sleep(time.Second)
-	return string(tlLowCom.GetLocalIP()) + ":" + fmt.Sprint(10000+id-1),
+	newAddr := string(tlLowCom.GetLocalIP()) + ":" + fmt.Sprint(10000+id-1)
+	for i := 0; i < 50; i++ {
+		time.Sleep(time.Millisecond * 50)
+		client, err := tlclient.Connect(newAddr)
+		if err == nil {
+			client.Close()
+			break
+		}
+	}
+	return newAddr,
 		func() {
 			cmd.Process.Kill()
 			os.RemoveAll(dbpath)

@@ -41,6 +41,12 @@ const (
 func (sg *ServerGroup) Stop() {
 	sg.Mutex.Lock()
 	sg.stopped = true
+	for _, s := range sg.Servers {
+		if s.Conn != nil {
+			s.Conn.Close()
+			s.Conn = nil
+		}
+	}
 	sg.Mutex.Unlock()
 }
 

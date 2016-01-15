@@ -79,8 +79,7 @@ func (c *Client) Get(key []byte) ([]byte, error) {
 }
 
 func (c *Client) Close() {
-	for _, s := range c.sg.Servers {
-		s.Conn.Close()
+	if c.sg != nil {
+		c.sg.Stop()
 	}
-	c.sg.Stop()
 }

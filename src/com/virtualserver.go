@@ -12,7 +12,7 @@ type VirtualServer struct {
 
 //NeedConnection tries to create a connection to the server
 func (s *VirtualServer) NeedConnection() (err error) {
-	if s.Conn == nil || s.Conn.isClosed() {
+	if s.Conn == nil {
 		s.Conn, err = CreateConnection(s.Phy)
 		return err
 	}

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 	"treeless/src/com/lowcom"
 )
@@ -25,13 +24,13 @@ type ClientConn struct {
 	waits        map[uint32](chan result)
 	tid          uint32
 	chanPool     sync.Pool
-	closed       int32
 }
 
 const writeTimeWindow = 1000
 
 //CreateConnection returns a new DB connection
 func CreateConnection(addr string) (*ClientConn, error) {
+
 	var c ClientConn
 	c.chanPool.New = func() interface{} {
 		return make(chan result)
@@ -91,16 +90,12 @@ func listenToResponses(c *ClientConn) {
 	//log.Println("Connection closed", c.conn.RemoteAddr().String())
 }
 
-func (c *ClientConn) isClosed() bool {
-	return atomic.LoadInt32(&c.closed) != 0
-}
-
 //Close this connection
 func (c *ClientConn) Close() {
-	if !c.isClosed() {
-		atomic.StoreInt32(&c.closed, 1)
+	if c != nil && c.conn != nil && c.conn.Close() == nil {
 		close(c.writeChannel)
-		c.conn.Close()
+		c.writeChannel = nil
+		c.conn = nil
 	}
 }
 
