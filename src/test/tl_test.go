@@ -15,8 +15,10 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	cmd := exec.Command("killall", "treeless")
+	cmd.Start()
 	os.Chdir("..")
-	cmd := exec.Command("go", "build", "-o", "treeless")
+	cmd = exec.Command("go", "build", "-o", "treeless")
 	cmd.Start()
 	os.Exit(m.Run())
 }
@@ -62,7 +64,7 @@ func TestSimple(t *testing.T) {
 	defer client.Close()
 
 	//Write operation
-	err = client.Put([]byte("hola"), []byte("mundo"))
+	err = client.Set([]byte("hola"), []byte("mundo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +89,7 @@ func TestBasicRebalance(t *testing.T) {
 	}
 	defer client.Close()
 	//Write operation
-	err = client.Put([]byte("hola"), []byte("mundo"))
+	err = client.Set([]byte("hola"), []byte("mundo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +119,7 @@ func TestCmplx1_1(t *testing.T) {
 	}
 	defer client.Close()
 
-	metaTest(client, 10*1000, 8, 8, 10, 256*256*256)
+	metaTest(client, 10*1000, 8, 8, 10, 1024)
 }
 
 //Test lots of operations made by multiple clients against a single DB server
@@ -141,7 +143,7 @@ func metaTest(c *tlclient.Client, numOperations, maxKeySize, maxValueSize, threa
 		base := make([]byte, 4)
 		base2 := make([]byte, 4)
 		for i := 0; i < numOperations; i++ {
-			opType := 1 //r.Intn(3)
+			opType := 1 //r.Intn(2)
 			opKeySize := r.Intn(maxKeySize-1) + 4
 			opValueSize := r.Intn(maxValueSize-1) + 1
 			binary.LittleEndian.PutUint32(base, (uint32(i*64)+uint32(core))%uint32(maxKeys))
@@ -154,22 +156,12 @@ func metaTest(c *tlclient.Client, numOperations, maxKeySize, maxValueSize, threa
 			switch opType {
 			case 1:
 				//Put
-				if _, ok := goMap[string(key)]; !ok {
-					goMap[string(key)] = value
-				} else {
-					//fmt.Println(key)
-					//panic("repetition")
-				}
+				goMap[string(key)] = value
 			case 2:
 				//Delete
 				if _, ok := goMap[string(key)]; ok {
 					//delete(goMap, string(key))
 					//goDeletes = append(goDeletes, key)
-				}
-			case 3:
-				//Set
-				if _, ok := goMap[string(key)]; ok {
-					//goMap[string(key)] = value
 				}
 			}
 		}
@@ -195,11 +187,9 @@ func metaTest(c *tlclient.Client, numOperations, maxKeySize, maxValueSize, threa
 				//fmt.Println("db   ", opType, key, value)
 				switch opType {
 				case 1:
-					c.Put(key, value)
+					c.Set(key, value)
 				case 2:
 					//Delete(c, key)
-				case 3:
-					//m1.Set(key, value)
 				}
 			}
 			w.Done()

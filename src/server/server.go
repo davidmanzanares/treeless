@@ -140,8 +140,8 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 				response.Value = rval
 			}
 			writeCh <- response
-		case tlcore.OpPut:
-			s.m.Put(message.Key, message.Value)
+		case tlcore.OpSet:
+			s.m.Set(message.Key, message.Value)
 			//TODO err response
 			//fmt.Println("Put operation", message.Key, message.Value, err)
 			//if err != nil {
@@ -169,7 +169,7 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 				} else {
 					go func(c *tlcom.ClientConn) {
 						s.m.Iterate(chunkID, func(key, value []byte) {
-							c.Put(key, value)
+							c.Set(key, value)
 						})
 						c.GetAccessInfo()
 						c.Close()
@@ -182,7 +182,6 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 			} else {
 				transferFail()
 			}
-
 		case tlLowCom.OpGetConf:
 			var response tlLowCom.Message
 			response.ID = message.ID

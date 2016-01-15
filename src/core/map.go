@@ -51,14 +51,6 @@ func (m *Map) deleteChunk(chunkid int) {
 	Primitives
 */
 
-//Put a new key-value pair
-func (m *Map) Put(key, value []byte) error {
-	h := fnv1a64(key)
-	//Opt: use AND operator
-	chunkIndex := int((h >> 32) % uint64(len(m.Chunks)))
-	return m.Chunks[chunkIndex].put(h, key, value)
-}
-
 //Get the value for the provided key
 func (m *Map) Get(key []byte) ([]byte, error) {
 	h := fnv1a64(key)

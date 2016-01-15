@@ -56,7 +56,7 @@ func (c *Chunk) close() {
 	Primitives
 */
 
-func (c *Chunk) put(h64 uint64, key, value []byte) error {
+func (c *Chunk) set(h64 uint64, key, value []byte) error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
@@ -90,7 +90,14 @@ func (c *Chunk) put(h64 uint64, key, value []byte) error {
 			storedKey := c.St.key(uint64(stIndex))
 			if bytes.Equal(storedKey, key) {
 				//Full match, the key was in the map
-				return errors.New("Key already preset")
+				c.St.del(stIndex)
+				storeIndex, err := c.St.put(key, value)
+				if err != nil {
+					return err
+				}
+				c.Map.setHash(index, h)
+				c.Map.setStoreIndex(index, storeIndex)
+				return nil
 			}
 		}
 		index = (index + 1) & c.Map.SizeMask
@@ -156,38 +163,6 @@ func (c *Chunk) del(h64 uint64, key []byte) error {
 				//Full match, the key was in the map
 				c.St.del(stIndex)
 				c.Map.setHash(index, deletedBucket)
-				return nil
-			}
-		}
-		index = (index + 1) & c.Map.SizeMask
-	}
-}
-
-func (c *Chunk) set(h64 uint64, key, value []byte) error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-
-	h := hashReMap(uint32(h64))
-
-	//Search for the key by using open adressing with linear probing
-	index := h & c.Map.SizeMask
-	for {
-		storedHash := c.Map.getHash(index)
-		if storedHash == emptyBucket {
-			return errors.New("Key not present")
-		}
-		if h == storedHash {
-			//Same hash: perform full key comparison
-			stIndex := c.Map.getStoreIndex(index)
-			storedKey := c.St.key(uint64(stIndex))
-			if bytes.Equal(storedKey, key) {
-				//Full match, the key was in the map
-				c.St.del(stIndex)
-				storeIndex, err := c.St.put(key, value)
-				if err != nil {
-					return err
-				}
-				c.Map.setStoreIndex(index, storeIndex)
 				return nil
 			}
 		}

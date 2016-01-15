@@ -17,9 +17,8 @@ type Operation uint8
 //These constants represents the different message types
 const (
 	OpGet Operation = iota
-	OpPut
-	OpDel
 	OpSet
+	OpDel
 	OpGetResponse
 	OpGetResponseError
 	OpGetConf

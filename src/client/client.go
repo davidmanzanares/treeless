@@ -21,7 +21,7 @@ func Connect(addr string) (*Client, error) {
 	return c, nil
 }
 
-func (c *Client) Put(key, value []byte) error {
+func (c *Client) Set(key, value []byte) error {
 	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks)
 	holders := c.sg.GetChunkHolders(chunkID)
 	conns := make([]*tlcom.ClientConn, 0, 4)
@@ -38,7 +38,7 @@ func (c *Client) Put(key, value []byte) error {
 	}
 	c.sg.Mutex.Unlock()
 	for _, c := range conns {
-		err := c.Put(key, value)
+		err := c.Set(key, value)
 		if err != nil && firstError == nil {
 			firstError = err
 		}

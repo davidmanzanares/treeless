@@ -12,15 +12,12 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-	"treeless/client"
-	"treeless/com"
-	"treeless/server"
+	"treeless/src/server"
 )
 
 const OpGet = 0
-const OpPut = 1
+const OpSet = 1
 const OpDel = 2
-const OpSet = 3
 
 const serverIP = "192.168.55.10"
 

@@ -28,32 +28,6 @@ type ClientConn struct {
 	closed       int32
 }
 
-/*
-const (
-	GetPolicyKnownServers = 0
-	GetPolicyOneServer    = 1
-	GetPolicy51Server     = 0.51
-)
-
-type ClientAccess struct {
-	GetPolicy float64
-}
-
-func (a *ClientAccess) Get(key []byte) ([]byte, error) {
-	//Calc hash
-	//get vChunk
-	//for each needed read
-	//	get server, get conn
-	//	r[i]=conn.get
-	//for each result
-	//	if r[i]!=r[i+1]{
-	//		return nil, error
-	//return value, ok
-	return nil, nil
-}*/
-
-//ToDo: use external Connection struct, and let it decide how many TCP connection must be used simultaneously
-
 const writeTimeWindow = 1000
 
 //CreateConnection returns a new DB connection
@@ -159,8 +133,8 @@ func (c *ClientConn) Get(key []byte) ([]byte, error) {
 	}
 }
 
-//Put a new key/value pair
-func (c *ClientConn) Put(key, value []byte) error {
+//Set a new key/value pair
+func (c *ClientConn) Set(key, value []byte) error {
 	var mess tlLowCom.Message
 
 	c.waitLock.Lock()
@@ -168,7 +142,7 @@ func (c *ClientConn) Put(key, value []byte) error {
 	c.tid++
 	c.waitLock.Unlock()
 
-	mess.Type = tlLowCom.OpPut
+	mess.Type = tlLowCom.OpSet
 	mess.ID = mytid
 	mess.Key = key
 	mess.Value = value

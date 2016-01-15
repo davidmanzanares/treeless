@@ -21,9 +21,8 @@ type DB struct {
 
 //OpGet represents a Get operation
 const OpGet = 0
-const OpPut = 1
+const OpSet = 1
 const OpDel = 2
-const OpSet = 3
 
 const filePerms = 0700
 
