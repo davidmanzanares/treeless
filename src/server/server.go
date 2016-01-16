@@ -17,8 +17,7 @@ import (
 //Server listen to TCP & UDP, accepting connections and responding to clients
 type Server struct {
 	//Core
-	coreDB *tlcore.DB
-	m      *tlcore.Map
+	m *tlcore.Map
 	//Net
 	udpCon      net.Conn
 	tcpListener *net.TCPListener
@@ -43,8 +42,7 @@ func Start(addr string, localport string, redundancy int, dbpath string) *Server
 	//Launch core
 	var err error
 	var s Server
-	s.coreDB = tlcore.Create(dbpath)
-	s.m, err = s.coreDB.AllocMap("map1")
+	s.m = tlcore.NewMap(dbpath)
 	if err != nil {
 		panic(err)
 	}
@@ -88,7 +86,7 @@ func (s *Server) Stop() {
 	atomic.StoreInt32(&s.stopped, 1)
 	s.udpCon.Close()
 	s.tcpListener.Close()
-	s.coreDB.Close()
+	s.m.Close()
 	s.sg.Stop()
 }
 

@@ -1,22 +1,25 @@
-Core:
-	- 1 map
+Core: 1sem
     -resizing
-    -IO error?
-Com:
+Com: 2sem
 	-big messages TCP bug
 	-ipport variable naming
     -add primitives
     -add tests
     -add benchmarks
-Dist:
+Dist: 4 sem
+	-SYNCHED mechanism
 	-rebalanceo: eliminacion de trozos por exceso de redundancia
     -tests: vagrant
     -test failures
     -Benchmarks
 	-servergroup id
-Others:
+Others: 3 sem
 	-constantes
-    -procedures: TTL procedure
-    -java, python
     -security
 	-transactions
+	-stop
+
+...:
+    -procedures: TTL procedure
+    -java, python
+	-IO error?

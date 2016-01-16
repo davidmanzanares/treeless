@@ -19,11 +19,11 @@ type Chunk struct {
 	mutex sync.RWMutex
 }
 
-func newChunk(ID int, path, mapname string) *Chunk {
+func newChunk(ID int, path string) *Chunk {
 	c := new(Chunk)
 	c.ID = ID
 	c.Map = newHashMap()
-	c.St = newStore(path + "/maps/" + mapname + "/" + strconv.Itoa(ID) + ".dat")
+	c.St = newStore(path + strconv.Itoa(ID) + ".dat")
 	return c
 }
 

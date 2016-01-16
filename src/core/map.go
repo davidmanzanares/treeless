@@ -6,13 +6,17 @@ This module implements DB maps.
 
 import "os"
 
+//TODO parametrizar
 const defaultNumChunks = 8
+const filePerms = 0700
+
+const OpGet = 0
+const OpSet = 1
+const OpDel = 2
 
 //Map is a TreeLess map
 type Map struct {
-	ID     int                      //Id of this map, read-only
-	Name   string                   //Unique identifier name of this map, read-only
-	Chunks [defaultNumChunks]*Chunk //Internal use only
+	Chunks [defaultNumChunks]*Chunk
 	path   string
 }
 
@@ -21,11 +25,16 @@ type Map struct {
 */
 
 //New returns a new Map
-func newMap(id int, path, name string) (m *Map) {
-	os.MkdirAll(path+"/maps/"+name+"/", filePerms)
-	return &Map{ID: id, Name: name, path: path}
+func NewMap(path string) (m *Map) {
+	os.MkdirAll(path+"/chunks/", filePerms)
+	m = &Map{path: path}
+	for i := 0; i < len(m.Chunks); i++ {
+		m.Chunks[i] = newChunk(i, m.path+"/chunks/")
+	}
+	return m
 }
 
+//TODO FIXME
 func (m *Map) restore() error {
 	for i := 0; i < len(m.Chunks); i++ {
 		if m.Chunks[i] != nil {
@@ -34,17 +43,10 @@ func (m *Map) restore() error {
 	}
 	return nil
 }
-func (m *Map) free() {
+func (m *Map) Close() {
 	for i := 0; i < len(m.Chunks); i++ {
 		m.Chunks[i].close()
 	}
-}
-func (m *Map) AllocChunk(chunkid int) error {
-	m.Chunks[chunkid] = newChunk(chunkid, m.path, m.Name)
-	return nil
-}
-func (m *Map) deleteChunk(chunkid int) {
-	m.Chunks[chunkid].delete()
 }
 
 /*
@@ -83,7 +85,7 @@ func (m *Map) Iterate(chunkID int, foreach func(key, value []byte)) error {
 /*
 	Helper functions
 */
-
+//TODO DELETEME
 const (
 	offset32 = 2166136261
 	offset64 = 14695981039346656037
