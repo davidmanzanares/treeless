@@ -1,15 +1,15 @@
 package tlcore
 
-//HashMap stores an open-addressed hashmap
+//HashMap stores an open-addressed hashmap and all its meta-data
 type HashMap struct {
-	SizeLimit       uint32 //maximum size, the map won't be expanded more than this value
-	Size            uint32 //size must be a power of 2
-	SizeMask        uint32 //sizeMask must have its log2Size least significant bits set to one
-	Sizelog2        uint32 //log2(size)
-	NumKeysToExpand uint32 //maximum number of keys until a expand operation is forced
-	NumStoredKeys   uint32 //number of stored keys, included deleted, but not freed keys
-	NumDeletedKeys  uint32 //number of non freed deleted keys
-	mem             []uint32
+	SizeLimit       uint32   //Maximum size, the map won't be expanded more than this value
+	Size            uint32   //Size of mem, must be a power of 2
+	SizeMask        uint32   //SizeMask must have its log2(Size) least significant bits set to one
+	Sizelog2        uint32   //Log2(Size)
+	NumKeysToExpand uint32   //Maximum number of keys until a expand operation is forced
+	NumStoredKeys   uint32   //Number of stored keys, included deleted, but not freed keys
+	NumDeletedKeys  uint32   //Number of non freed deleted keys
+	mem             []uint32 //Hashmap memory
 }
 
 const defaultHashMapInitialLog2Size = 16

@@ -3,8 +3,8 @@ package tlcore
 import (
 	"bytes"
 	"errors"
-	"strconv"
 	"sync"
+	"treeless/src/hash"
 )
 
 /*
@@ -13,39 +13,33 @@ This module implements DB chunks.
 
 //Chunk is a DB chunk
 type Chunk struct {
-	ID    int
-	Map   *HashMap
-	St    *Store
-	mutex sync.RWMutex
+	Map *HashMap
+	St  *Store
+	sync.RWMutex
 }
 
-func newChunk(ID int, path string) *Chunk {
+func newChunk(path string) *Chunk {
 	c := new(Chunk)
-	c.ID = ID
 	c.Map = newHashMap()
-	c.St = newStore(path + strconv.Itoa(ID) + ".dat")
+	c.St = newStore(path)
 	return c
 }
 
+//TODO:FIXME?
 func (c *Chunk) restore() {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.Lock()
+	defer c.Unlock()
 	c.St.open()
 	c.Map.open()
-	//TODO restore keys
 	for index := uint64(0); index < c.St.Length; {
 		if c.St.isPresent(index) {
 			key := c.St.key(index)
 			val := c.St.val(index)
-			h64 := fnv1a64(key)
+			h64 := tlhash.FNV1a64(key)
 			c.keyRestore(h64, key, val, uint32(index))
 		}
 		index += 8 + uint64(c.St.totalLen(index))
 	}
-}
-
-func (c *Chunk) delete() {
-	c.St.delete()
 }
 
 func (c *Chunk) close() {
@@ -56,11 +50,35 @@ func (c *Chunk) close() {
 	Primitives
 */
 
-func (c *Chunk) set(h64 uint64, key, value []byte) error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+func (c *Chunk) get(h64 uint64, key []byte) ([]byte, error) {
+	c.RLock()
+	defer c.RUnlock()
 
 	h := hashReMap(uint32(h64))
+
+	//Search for the key by using open adressing with linear probing
+	index := h & c.Map.SizeMask
+	for {
+		storedHash := c.Map.getHash(index)
+		if storedHash == emptyBucket {
+			return nil, errors.New("Key not present")
+		}
+		if h == storedHash {
+			//Same hash: perform full key comparison
+			stIndex := c.Map.getStoreIndex(index)
+			storedKey := c.St.key(uint64(stIndex))
+			if bytes.Equal(storedKey, key) {
+				//Full match, the key was in the map
+				return c.St.val(uint64(stIndex)), nil
+			}
+		}
+		index = (index + 1) & c.Map.SizeMask
+	}
+}
+
+func (c *Chunk) set(h64 uint64, key, value []byte) error {
+	c.Lock()
+	defer c.Unlock()
 
 	//Check for available space
 	if c.Map.NumStoredKeys >= c.Map.NumKeysToExpand {
@@ -70,6 +88,7 @@ func (c *Chunk) set(h64 uint64, key, value []byte) error {
 		}
 	}
 
+	h := hashReMap(uint32(h64))
 	index := h & c.Map.SizeMask
 	for {
 		storedHash := c.Map.getHash(index)
@@ -104,47 +123,9 @@ func (c *Chunk) set(h64 uint64, key, value []byte) error {
 	}
 }
 
-func (c *Chunk) get(h64 uint64, key []byte) ([]byte, error) {
-	c.mutex.RLock()
-	defer c.mutex.RUnlock()
-
-	h := hashReMap(uint32(h64))
-
-	//Search for the key by using open adressing with linear probing
-	index := h & c.Map.SizeMask
-	for {
-		storedHash := c.Map.getHash(index)
-		if storedHash == emptyBucket {
-			return nil, errors.New("Key not present")
-		}
-		if h == storedHash {
-			//Same hash: perform full key comparison
-			stIndex := c.Map.getStoreIndex(index)
-			storedKey := c.St.key(uint64(stIndex))
-			if bytes.Equal(storedKey, key) {
-				//Full match, the key was in the map
-				return c.St.val(uint64(stIndex)), nil
-			}
-		}
-		index = (index + 1) & c.Map.SizeMask
-	}
-}
-
-func (c *Chunk) iterate(foreach func(key, value []byte)) error {
-	for index := uint64(0); index < c.St.Length; {
-		if c.St.isPresent(index) {
-			key := c.St.key(index)
-			val := c.St.val(index)
-			foreach(key, val)
-		}
-		index += 8 + uint64(c.St.totalLen(index))
-	}
-	return nil
-}
-
 func (c *Chunk) del(h64 uint64, key []byte) error {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.Lock()
+	defer c.Unlock()
 
 	h := hashReMap(uint32(h64))
 
@@ -170,6 +151,21 @@ func (c *Chunk) del(h64 uint64, key []byte) error {
 	}
 }
 
+func (c *Chunk) iterate(foreach func(key, value []byte)) error {
+	c.RLock()
+	defer c.RUnlock()
+	for index := uint64(0); index < c.St.Length; {
+		if c.St.isPresent(index) {
+			key := c.St.key(index)
+			val := c.St.val(index)
+			foreach(key, val)
+		}
+		index += 8 + uint64(c.St.totalLen(index))
+	}
+	return nil
+}
+
+//TODO eliminar para usar el metodo set en su lugar
 func (c *Chunk) keyRestore(h64 uint64, key, value []byte, storeIndex uint32) error {
 	h := hashReMap(uint32(h64))
 

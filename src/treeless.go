@@ -50,10 +50,11 @@ func main() {
 		}
 		fmt.Println(s)
 	} else if *create {
-		tlserver.Start("", *port, *redundancy, *dbpath)
+		//TODO 8 parametrizar
+		tlserver.Start("", *port, 8, *redundancy, *dbpath)
 		select {}
 	} else if *assoc != "" {
-		tlserver.Start(*assoc, *port, *redundancy, *dbpath)
+		tlserver.Start(*assoc, *port, 8, *redundancy, *dbpath)
 		select {}
 	} else {
 		log.Fatal("No operations passed. See usage with --help.")

@@ -8,18 +8,38 @@ import (
 	"github.com/edsrzf/mmap-go"
 )
 
-//Store stores a list of pairs, *unordered*
+/*
+Binary structure of the Store
+
+The store is composed of key-value pairs.
+Each pair is represented this way:
+	4 bytes:
+		1  bit (MSB)	present?
+		31 bits			key len
+	4 bytes: value len
+	Key len   bytes: key
+	Value len bytes: value
+The memory mapped file won't hold anymore information.
+*/
+
+//Store stores a list of pairs, in an *unordered* way
 type Store struct {
-	Path      string
-	Deleted   uint64    //Deleted bytes
+	Path      string    //File system localitation
+	Deleted   uint64    //Deleted number of bytes
 	Length    uint64    //Total length, index of new items
 	Size      uint64    //Allocated size
-	SizeLimit uint64    //Maximum size
-	file      mmap.MMap //Memory mapped file
-	osFile    *os.File  //OS mapped file
+	SizeLimit uint64    //Maximum size, the Store wont allocate more than this number of bytes
+	osFile    *os.File  //OS mapped file located at Path
+	file      mmap.MMap //Memory mapped file located at Path
 }
 
-const itemHeaderSize = 8
+const (
+	headerKeyOffset   = 0
+	headerValueOffset = 4
+	headerSize        = 8
+)
+
+//TODO FIXME
 const defaultStoreSizeLimit = 1024 * 1024 * 2
 const defaultStoreSize = 1024 * 1024 * 32
 
@@ -46,6 +66,7 @@ func newStore(path string) *Store {
 	return st
 }
 
+//TODO: return pointer
 func (st *Store) open() {
 	var err error
 	st.osFile, err = os.OpenFile(st.Path, os.O_RDWR, filePerms)
@@ -61,10 +82,6 @@ func (st *Store) close() {
 	st.file.Unmap()
 	st.osFile.Close()
 }
-func (st *Store) delete() {
-	st.close()
-	os.Remove(st.Path)
-}
 
 func (st *Store) isPresent(index uint64) bool {
 	return (binary.LittleEndian.Uint32(st.file[index:]) & 0x80000000) == 0
@@ -73,7 +90,7 @@ func (st *Store) keyLen(index uint64) uint32 {
 	return binary.LittleEndian.Uint32(st.file[index:]) & 0x7FFFFFFF
 }
 func (st *Store) valLen(index uint64) uint32 {
-	return binary.LittleEndian.Uint32(st.file[index+4:])
+	return binary.LittleEndian.Uint32(st.file[index+headerValueOffset:])
 }
 func (st *Store) totalLen(index uint64) uint32 {
 	return st.keyLen(index) + st.valLen(index)
@@ -82,21 +99,21 @@ func (st *Store) setKeyLen(index uint64, x uint32) {
 	binary.LittleEndian.PutUint32(st.file[index:], x)
 }
 func (st *Store) setValLen(index uint64, x uint32) {
-	binary.LittleEndian.PutUint32(st.file[index+4:], x)
+	binary.LittleEndian.PutUint32(st.file[index+headerValueOffset:], x)
 }
 
 //Returns a slice to the selected key
 func (st *Store) key(index uint64) []byte {
-	return st.file[index+8 : index+8+uint64(st.keyLen(index))]
+	return st.file[index+headerSize : index+headerSize+uint64(st.keyLen(index))]
 }
 
 //Returns a slice to the selected value
 func (st *Store) val(index uint64) []byte {
-	return st.file[index+8+uint64(st.keyLen(index)) : index+8+uint64(st.totalLen(index))]
+	return st.file[index+8+uint64(st.keyLen(index)) : index+headerSize+uint64(st.totalLen(index))]
 }
 
 func (st *Store) put(key, val []byte) (uint32, error) {
-	size := uint64(itemHeaderSize + len(key) + len(val))
+	size := uint64(headerSize + len(key) + len(val))
 	index := st.Length
 	st.Length += size
 	for st.Length >= st.Size {

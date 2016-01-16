@@ -28,7 +28,7 @@ type Server struct {
 }
 
 //Start a Treeless server
-func Start(addr string, localport string, redundancy int, dbpath string) *Server {
+func Start(addr string, localport string, numChunks, redundancy int, dbpath string) *Server {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.SetPrefix(tlLowCom.GetLocalIP() + ":" + localport + " ")
 	//Recover: log and quit
@@ -42,7 +42,7 @@ func Start(addr string, localport string, redundancy int, dbpath string) *Server
 	//Launch core
 	var err error
 	var s Server
-	s.m = tlcore.NewMap(dbpath)
+	s.m = tlcore.NewMap(dbpath, numChunks)
 	if err != nil {
 		panic(err)
 	}
