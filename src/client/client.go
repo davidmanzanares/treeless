@@ -1,7 +1,9 @@
 package tlclient
 
 import (
+	"encoding/binary"
 	"errors"
+	"time"
 	"treeless/src/com"
 )
 
@@ -37,8 +39,11 @@ func (c *Client) Set(key, value []byte) error {
 		}
 	}
 	c.sg.Mutex.Unlock()
+	valueWithTime := make([]byte, 8+len(value))
+	binary.LittleEndian.PutUint64(valueWithTime, uint64(time.Now().UnixNano()))
+	copy(valueWithTime[8:], value)
 	for _, c := range conns {
-		err := c.Set(key, value)
+		err := c.Set(key, valueWithTime)
 		if err != nil && firstError == nil {
 			firstError = err
 		}
@@ -46,36 +51,42 @@ func (c *Client) Set(key, value []byte) error {
 	return firstError
 }
 
-func (c *Client) Get(key []byte) ([]byte, error) {
+func (c *Client) Get(key []byte) ([]byte, time.Time, error) {
 	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks)
 	holders := c.sg.GetChunkHolders(chunkID)
 	var errs error = nil
-	var value, v []byte
+	var value []byte
+	//Last write wins policy
+	lastTime := time.Unix(0, 0)
 	for _, h := range holders {
-		//TODO get policy
-		err := h.NeedConnection()
-		if err != nil {
+		cerr := h.NeedConnection()
+		if cerr != nil {
+			if errs == nil {
+				errs = cerr
+			} else {
+				errs = errors.New(errs.Error() + cerr.Error())
+			}
+			continue
+		}
+		v, err := h.Conn.Get(key)
+		if err == nil {
+			t := time.Unix(0, int64(binary.LittleEndian.Uint64(v[:8])))
+			if lastTime.Before(t) {
+				lastTime = t
+				value = v
+			}
+		} else {
 			if errs == nil {
 				errs = err
 			} else {
-				errs = errors.New(errs.Error() + err.Error())
-			}
-		}
-
-		if err == nil {
-			v, err = h.Conn.Get(key)
-			if err == nil {
-				value = v
-			} else {
-				if errs == nil {
-					errs = err
-				} else {
-					errs = errors.New("Multiple errors: " + errs.Error() + ", " + err.Error())
-				}
+				errs = errors.New("Multiple errors: " + errs.Error() + ", " + err.Error())
 			}
 		}
 	}
-	return value, errs
+	if value != nil {
+		return value[8:], lastTime, errs
+	}
+	return nil, time.Unix(0, 0), errs
 }
 
 func (c *Client) Close() {

@@ -1,18 +1,21 @@
 Core:
+	- 1 map
     -resizing
     -IO error?
-	- 1 map
-Server:
+Com:
+	-big messages TCP bug
 	-ipport variable naming
     -add primitives
     -add tests
     -add benchmarks
 Dist:
+	-rebalanceo: eliminacion de trozos por exceso de redundancia
     -tests: vagrant
     -test failures
     -Benchmarks
 	-servergroup id
 Others:
+	-constantes
     -procedures: TTL procedure
     -java, python
     -security
