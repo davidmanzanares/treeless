@@ -159,31 +159,21 @@ func TestParSimpleLotsRestore(t *testing.T) {
 //Test simple set
 //Test simple del
 
-//Test complex get, put, set, del mix
+//Test get, set, del
 
 //Common functions test
-func TestCmplx1(t *testing.T) {
+func TestMix(t *testing.T) {
 	metaTest(2000, 11, 129, 64)
 }
 
-//Low key size: test delete operation
-func TestCmplx2(t *testing.T) {
-	metaTest(2000, 2, 129, 64)
-}
-
 //Large key size
-func TestCmplx3(t *testing.T) {
+func TestMixLargeKey(t *testing.T) {
 	metaTest(2000, 130, 129, 64)
 }
 
 //Large value size
-func TestCmplx4(t *testing.T) {
+func TestMixLargeValue(t *testing.T) {
 	metaTest(2000, 11, 555, 64)
-}
-
-//Test low value size
-func TestCmplx5(t *testing.T) {
-	metaTest(2000, 11, 2, 64)
 }
 
 func operate() {
@@ -199,7 +189,21 @@ func checkDB() {
 
 }
 
-//TODO dejar bien, quitar chapuzas
+func randKVOpGenerator(maxKeySize, maxValueSize, seed, mult, offset int) func() (op int, k, v []byte) {
+	r := rand.New(rand.NewSource(int64(seed)))
+	base := make([]byte, 4)
+	base2 := make([]byte, 4)
+	return func() (op int, k, v []byte) {
+		opKeySize := r.Intn(maxKeySize-1) + 1
+		opValueSize := r.Intn(maxValueSize-1) + 1
+		binary.LittleEndian.PutUint32(base, uint32(r.Int31())*uint32(mult)+uint32(offset))
+		binary.LittleEndian.PutUint32(base2, uint32(r.Int31())*uint32(mult)+uint32(offset))
+		key := bytes.Repeat([]byte(base), opKeySize)[0:opKeySize]
+		value := bytes.Repeat([]byte(base2), opValueSize)[0:opValueSize]
+		return 1 + r.Intn(2), key, value
+	}
+}
+
 func metaTest(numOperations, maxKeySize, maxValueSize, threads int) {
 	defer os.RemoveAll("testdb/")
 
@@ -207,18 +211,9 @@ func metaTest(numOperations, maxKeySize, maxValueSize, threads int) {
 	goMap := make(map[string][]byte)
 	var goDeletes []([]byte)
 	for core := 0; core < threads; core++ {
-		r := rand.New(rand.NewSource(int64(core)))
-		base := make([]byte, 4)
-		base2 := make([]byte, 4)
+		rNext := randKVOpGenerator(maxKeySize, maxValueSize, core, 64, core)
 		for i := 0; i < numOperations; i++ {
-			opType := 1 + r.Intn(2)
-			opKeySize := r.Intn(maxKeySize-1) + 1
-			opValueSize := r.Intn(maxValueSize-1) + 1
-			binary.LittleEndian.PutUint32(base, uint32(r.Int31()*64)+uint32(core))
-			binary.LittleEndian.PutUint32(base2, uint32(i*64+core))
-			key := bytes.Repeat([]byte(base), opKeySize)[0:opKeySize]
-			value := bytes.Repeat([]byte(base2), opValueSize)[0:opValueSize]
-			//fmt.Println("gomap", opType, key, value)
+			opType, key, value := rNext()
 			switch opType {
 			case OpSet:
 				goMap[string(key)] = value
@@ -238,18 +233,9 @@ func metaTest(numOperations, maxKeySize, maxValueSize, threads int) {
 		w.Add(threads)
 		for core := 0; core < threads; core++ {
 			go func(core int) {
-				r := rand.New(rand.NewSource(int64(core)))
-				base := make([]byte, 4)
-				base2 := make([]byte, 4)
+				rNext := randKVOpGenerator(maxKeySize, maxValueSize, core, 64, core)
 				for i := 0; i < numOperations; i++ {
-					opType := 1 + r.Intn(2)
-					opKeySize := r.Intn(maxKeySize-1) + 1
-					opValueSize := r.Intn(maxValueSize-1) + 1
-					binary.LittleEndian.PutUint32(base, uint32(r.Int31()*64)+uint32(core))
-					binary.LittleEndian.PutUint32(base2, uint32(i*64+core))
-					key := bytes.Repeat([]byte(base), opKeySize)[0:opKeySize]
-					value := bytes.Repeat([]byte(base2), opValueSize)[0:opValueSize]
-					//fmt.Println("db   ", opType, key, value)
+					opType, key, value := rNext()
 					switch opType {
 					case OpSet:
 						m1.Set(key, value)
@@ -274,7 +260,6 @@ func metaTest(numOperations, maxKeySize, maxValueSize, threads int) {
 		}
 
 		//Check deleteds aren't in DB
-		fmt.Println("Tested deletes:", len(goDeletes))
 		for i := 0; i < len(goDeletes); i++ {
 			key := goDeletes[i]
 			if _, ok := goMap[string(key)]; ok {
@@ -307,7 +292,7 @@ func metaTest(numOperations, maxKeySize, maxValueSize, threads int) {
 		}
 
 		//Check deleteds aren't in DB
-		fmt.Println("Tested deletes:", len(goDeletes))
+		testedDeletes := 0
 		for i := 0; i < len(goDeletes); i++ {
 			key := goDeletes[i]
 			if _, ok := goMap[string(key)]; ok {
@@ -318,15 +303,15 @@ func metaTest(numOperations, maxKeySize, maxValueSize, threads int) {
 			if err == nil {
 				panic(2)
 			}
+			testedDeletes++
 		}
+		fmt.Println("Tested deletes:", testedDeletes)
 	}
 }
 
-//Test parallel complex get, put, set, del mix
+//Test parallel complex get, set, del mix
 
 //Tests operational limits: size
-
-//Test sync/nosync file
 
 //Bench with diferents sizes
 
