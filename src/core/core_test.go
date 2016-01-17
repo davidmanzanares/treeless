@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 import "bytes"
@@ -15,7 +16,7 @@ This file contains all core testing functions.
 
 */
 
-const numChunks = 8
+const numChunks = 256
 
 //Test a simple put & get
 func TestSimple(t *testing.T) {
@@ -315,35 +316,31 @@ func metaTest(numOperations, maxKeySize, maxValueSize, threads int) {
 
 //Bench with diferents sizes
 
-/*
-//Bench lots of gets
+//Bench lots of parallel gets
 func BenchmarkGet(b *testing.B) {
-	defer os.RemoveAll("benchdb/")
-	defer os.Chdir("../")
+	defer os.RemoveAll("testdb/")
 	if testing.Verbose() {
 		fmt.Println("\tInserting", b.N, "keys...")
 	}
-	db := Create("benchdb/")
-	m, _ := db.AllocMap("mapA")
+	m := NewMap("testdb/", numChunks)
 	key := make([]byte, 4)
 	lenValue := 100
 	value := bytes.Repeat([]byte("X"), lenValue)
 	for i := 0; i < b.N/32+1; i++ {
 		binary.LittleEndian.PutUint32(key, uint32(3*i))
 		binary.LittleEndian.PutUint32(value, uint32(3*i))
-		err := m.Put(key, value)
+		err := m.Set(key, value)
 		if err != nil {
 			panic(err)
 		}
 	}
 	gid := uint64(0)
-	fmt.Println("get...")
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
 		sum := 0
 		key := make([]byte, 4)
 		id := uint32(atomic.AddUint64(&gid, 1))
-		fmt.Println(id)
+		//fmt.Println(id)
 		r := rand.New(rand.NewSource(int64(id)))
 		for i := 0; pb.Next(); i++ {
 			binary.LittleEndian.PutUint32(key, uint32(3*r.Intn(b.N/32+1)))
@@ -355,7 +352,7 @@ func BenchmarkGet(b *testing.B) {
 		}
 	})
 	b.StopTimer()
-	db.Close()
+	m.Close()
 }
 
 //Bench lots of gets, in a parallel way
@@ -363,4 +360,3 @@ func BenchmarkGet(b *testing.B) {
 //Bench lots of puts
 
 //Bench lots of puts, in a parallel way
-*/
