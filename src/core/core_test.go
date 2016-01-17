@@ -3,6 +3,7 @@ package tlcore
 import (
 	"encoding/binary"
 	"os"
+	"sync"
 	"testing"
 )
 import "bytes"
@@ -81,51 +82,79 @@ func TestSimpleLots(t *testing.T) {
 	}
 }
 
-/*
 //Test lots of simple put & get, in a parallel way, test multi thread safety
 func TestParSimpleLots(t *testing.T) {
 	defer os.RemoveAll("testdb/")
-	defer os.Chdir("../")
-	k := make([]byte, 4)
-	v := make([]byte, 4)
-	{
-		db := Create("testdb")
-		m1, _ := db.AllocMap("mapa1")
-
-		for tid := 0; tid < 27; tid++ {
+	m1 := NewMap("testdb/", numChunks)
+	var w sync.WaitGroup
+	w.Add(27)
+	for tid := 0; tid < 27; tid++ {
+		go func(tid int) {
+			k := make([]byte, 4)
+			v := make([]byte, 4)
 			for i := 0; i < 1024; i++ {
 				binary.LittleEndian.PutUint32(k, uint32(i*27+tid))
 				binary.LittleEndian.PutUint32(v, uint32(i*27+tid))
-				m1.Put(k, v)
+				m1.Set(k, v)
 			}
-		}
+			w.Done()
+		}(tid)
+	}
+	w.Wait()
 
-		for i := 0; i < 27*1024; i++ {
-			binary.LittleEndian.PutUint32(k, uint32(i))
-			binary.LittleEndian.PutUint32(v, uint32(i))
-			rval, _ := m1.Get(k)
-			if !bytes.Equal(v, rval) {
-				t.Fatal("Err 1: mismatch")
-			}
+	k := make([]byte, 4)
+	v := make([]byte, 4)
+	for i := 0; i < 27*1024; i++ {
+		binary.LittleEndian.PutUint32(k, uint32(i))
+		binary.LittleEndian.PutUint32(v, uint32(i))
+		rval, _ := m1.Get(k)
+		if !bytes.Equal(v, rval) {
+			t.Fatal("Error 1: value mismatch")
 		}
+	}
 
-		db.Close()
+	m1.Close()
+}
+
+//Test lots of simple put & get, in a parallel way, test multi thread safety, after a map close
+func TestParSimpleLotsRestore(t *testing.T) {
+	defer os.RemoveAll("testdb/")
+	{
+		m1 := NewMap("testdb/", numChunks)
+		var w sync.WaitGroup
+		w.Add(27)
+		for tid := 0; tid < 27; tid++ {
+			go func(tid int) {
+				k := make([]byte, 4)
+				v := make([]byte, 4)
+				for i := 0; i < 1024; i++ {
+					binary.LittleEndian.PutUint32(k, uint32(i*27+tid))
+					binary.LittleEndian.PutUint32(v, uint32(i*27+tid))
+					m1.Set(k, v)
+				}
+				w.Done()
+			}(tid)
+		}
+		w.Wait()
+		m1.Close()
 	}
 	{
-		db := Open("testdb")
-		m1 := db.mapsByName["mapa1"]
+		m2 := OpenMap("testdb/")
+		k := make([]byte, 4)
+		v := make([]byte, 4)
 		for i := 0; i < 27*1024; i++ {
 			binary.LittleEndian.PutUint32(k, uint32(i))
 			binary.LittleEndian.PutUint32(v, uint32(i))
-			rval, _ := m1.Get(k)
+			rval, _ := m2.Get(k)
 			if !bytes.Equal(v, rval) {
-				t.Fatal("Err 2: mismatch")
+				t.Fatal("Error 2: value mismatch")
 			}
 		}
-		db.Close()
+		m2.Close()
 	}
 }
 
+/*
 //Test simple set
 //Test simple del
 
