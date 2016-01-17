@@ -2,6 +2,8 @@ package tlcore
 
 import (
 	"encoding/binary"
+	"fmt"
+	"math/rand"
 	"os"
 	"sync"
 	"testing"
@@ -154,7 +156,6 @@ func TestParSimpleLotsRestore(t *testing.T) {
 	}
 }
 
-/*
 //Test simple set
 //Test simple del
 
@@ -162,27 +163,27 @@ func TestParSimpleLotsRestore(t *testing.T) {
 
 //Common functions test
 func TestCmplx1(t *testing.T) {
-	coreTest(100000, 11, 129, 64)
+	metaTest(2000, 11, 129, 64)
 }
 
 //Low key size: test delete operation
 func TestCmplx2(t *testing.T) {
-	coreTest(100000, 2, 129, 64)
+	metaTest(2000, 2, 129, 64)
 }
 
 //Large key size
 func TestCmplx3(t *testing.T) {
-	coreTest(10000, 130, 129, 64)
+	metaTest(2000, 130, 129, 64)
 }
 
 //Large value size
 func TestCmplx4(t *testing.T) {
-	coreTest(10000, 11, 555, 64)
+	metaTest(2000, 11, 555, 64)
 }
 
 //Test low value size
 func TestCmplx5(t *testing.T) {
-	coreTest(10000, 11, 2, 64)
+	metaTest(2000, 11, 2, 64)
 }
 
 func operate() {
@@ -198,9 +199,11 @@ func checkDB() {
 
 }
 
-func coreTest(numOperations, maxKeySize, maxValueSize, threads int) {
-	//Operate on built-in map
+//TODO dejar bien, quitar chapuzas
+func metaTest(numOperations, maxKeySize, maxValueSize, threads int) {
+	defer os.RemoveAll("testdb/")
 
+	//Operate on built-in map
 	goMap := make(map[string][]byte)
 	var goDeletes []([]byte)
 	for core := 0; core < threads; core++ {
@@ -208,96 +211,56 @@ func coreTest(numOperations, maxKeySize, maxValueSize, threads int) {
 		base := make([]byte, 4)
 		base2 := make([]byte, 4)
 		for i := 0; i < numOperations; i++ {
-			opType := 1 + r.Intn(3)
+			opType := 1 + r.Intn(2)
 			opKeySize := r.Intn(maxKeySize-1) + 1
 			opValueSize := r.Intn(maxValueSize-1) + 1
 			binary.LittleEndian.PutUint32(base, uint32(r.Int31()*64)+uint32(core))
 			binary.LittleEndian.PutUint32(base2, uint32(i*64+core))
-			key := bytes.Repeat([]byte(base), opKeySize)
-			value := bytes.Repeat([]byte(base), opValueSize)
+			key := bytes.Repeat([]byte(base), opKeySize)[0:opKeySize]
+			value := bytes.Repeat([]byte(base2), opValueSize)[0:opValueSize]
 			//fmt.Println("gomap", opType, key, value)
 			switch opType {
-			case OpPut:
-				if _, ok := goMap[string(key)]; !ok {
-					goMap[string(key)] = value
-				}
+			case OpSet:
+				goMap[string(key)] = value
 			case OpDel:
 				if _, ok := goMap[string(key)]; ok {
 					delete(goMap, string(key))
 					goDeletes = append(goDeletes, key)
 				}
-			case OpSet:
-				if _, ok := goMap[string(key)]; ok {
-					goMap[string(key)] = value
-				}
 			}
 		}
 	}
-	//Operate on DB
-	db := Create("testdb2")
-	defer os.RemoveAll("testdb2/")
-	defer os.Chdir("../")
-
-	m1, _ := db.AllocMap("mapa1")
-
-	var w sync.WaitGroup
-	w.Add(threads)
-	for core := 0; core < threads; core++ {
-		go func(core int) {
-			r := rand.New(rand.NewSource(int64(core)))
-			base := make([]byte, 4)
-			base2 := make([]byte, 4)
-			for i := 0; i < numOperations; i++ {
-				opType := 1 + r.Intn(3)
-				opKeySize := r.Intn(maxKeySize-1) + 1
-				opValueSize := r.Intn(maxValueSize-1) + 1
-				binary.LittleEndian.PutUint32(base, uint32(r.Int31()*64)+uint32(core))
-				binary.LittleEndian.PutUint32(base2, uint32(i*64+core))
-				key := bytes.Repeat([]byte(base), opKeySize)[0:opKeySize]
-				value := bytes.Repeat([]byte(base2), opValueSize)[0:opValueSize]
-				//fmt.Println("db   ", opType, key, value)
-				switch opType {
-				case OpPut:
-					m1.Put(key, value)
-				case OpDel:
-					m1.Delete(key)
-				case OpSet:
-					m1.Set(key, value)
-				}
-			}
-			w.Done()
-		}(core)
-	}
-	w.Wait()
-	//Check map is in DB
-	for key, value := range goMap {
-		rval, err := m1.Get([]byte(key))
-		//fmt.Println([]byte(key), value)
-		if err != nil {
-			panic(err)
-		}
-		if !bytes.Equal(rval, value) {
-			panic(1)
-		}
-	}
-
-	//Check deleteds aren't in DB
-	fmt.Println("Tested deletes:", len(goDeletes))
-	for i := 0; i < len(goDeletes); i++ {
-		key := goDeletes[i]
-		_, err := m1.Get([]byte(key))
-		if err == nil {
-			panic(2)
-		}
-	}
-	//Close DB
-	db.Close()
-
 	{
-		//Restore DB
-		db := Open("testdb2")
-		m1 := db.mapsByName["mapa1"]
-		//Check again
+		//Operate on DB
+		m1 := NewMap("testdb/", numChunks)
+
+		var w sync.WaitGroup
+		w.Add(threads)
+		for core := 0; core < threads; core++ {
+			go func(core int) {
+				r := rand.New(rand.NewSource(int64(core)))
+				base := make([]byte, 4)
+				base2 := make([]byte, 4)
+				for i := 0; i < numOperations; i++ {
+					opType := 1 + r.Intn(2)
+					opKeySize := r.Intn(maxKeySize-1) + 1
+					opValueSize := r.Intn(maxValueSize-1) + 1
+					binary.LittleEndian.PutUint32(base, uint32(r.Int31()*64)+uint32(core))
+					binary.LittleEndian.PutUint32(base2, uint32(i*64+core))
+					key := bytes.Repeat([]byte(base), opKeySize)[0:opKeySize]
+					value := bytes.Repeat([]byte(base2), opValueSize)[0:opValueSize]
+					//fmt.Println("db   ", opType, key, value)
+					switch opType {
+					case OpSet:
+						m1.Set(key, value)
+					case OpDel:
+						m1.Delete(key)
+					}
+				}
+				w.Done()
+			}(core)
+		}
+		w.Wait()
 		//Check map is in DB
 		for key, value := range goMap {
 			rval, err := m1.Get([]byte(key))
@@ -314,7 +277,44 @@ func coreTest(numOperations, maxKeySize, maxValueSize, threads int) {
 		fmt.Println("Tested deletes:", len(goDeletes))
 		for i := 0; i < len(goDeletes); i++ {
 			key := goDeletes[i]
+			if _, ok := goMap[string(key)]; ok {
+				//The key was set after a delete
+				continue
+			}
 			_, err := m1.Get([]byte(key))
+			if err == nil {
+				panic(2)
+			}
+		}
+		//Close DB
+		m1.Close()
+	}
+	{
+		//Restore DB
+		m2 := OpenMap("testdb/")
+
+		//Check again
+		//Check map is in DB
+		for key, value := range goMap {
+			rval, err := m2.Get([]byte(key))
+			//fmt.Println([]byte(key), value)
+			if err != nil {
+				panic(err)
+			}
+			if !bytes.Equal(rval, value) {
+				panic(1)
+			}
+		}
+
+		//Check deleteds aren't in DB
+		fmt.Println("Tested deletes:", len(goDeletes))
+		for i := 0; i < len(goDeletes); i++ {
+			key := goDeletes[i]
+			if _, ok := goMap[string(key)]; ok {
+				//The key was set after a delete
+				continue
+			}
+			_, err := m2.Get([]byte(key))
 			if err == nil {
 				panic(2)
 			}
@@ -330,6 +330,7 @@ func coreTest(numOperations, maxKeySize, maxValueSize, threads int) {
 
 //Bench with diferents sizes
 
+/*
 //Bench lots of gets
 func BenchmarkGet(b *testing.B) {
 	defer os.RemoveAll("benchdb/")

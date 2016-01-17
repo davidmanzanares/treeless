@@ -22,7 +22,12 @@ func TestMain(m *testing.M) {
 	cmd.Run()
 	os.Chdir("..")
 	cmd = exec.Command("go", "build", "-o", "treeless")
-	cmd.Run()
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	err := cmd.Run()
+	if err != nil {
+		panic("Errors building the program, testing aborted.")
+	}
 	if !testing.Verbose() {
 		log.SetOutput(ioutil.Discard)
 	}
