@@ -1,4 +1,6 @@
 Core: 1sem
+	-bench & tests
+	-https://godoc.org/launchpad.net/gommap Protect and advise
     -resizing
 Com: 2sem
 	-big messages TCP bug

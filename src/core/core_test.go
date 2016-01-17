@@ -1,12 +1,7 @@
 package tlcore
 
 import (
-	"encoding/binary"
-	"fmt"
-	"math/rand"
 	"os"
-	"sync"
-	"sync/atomic"
 	"testing"
 )
 import "bytes"
@@ -16,31 +11,40 @@ This file contains all core testing functions.
 
 */
 
+const numChunks = 8
+
 //Test a simple put & get
 func TestSimple(t *testing.T) {
+	m := NewMap("testdb/", numChunks)
 	defer os.RemoveAll("testdb/")
-	defer os.Chdir("../")
-	{
-		db := Create("testdb")
-		m1, _ := db.AllocMap("mapa1")
-		m1.Put([]byte("k1"), []byte("v1"))
-		rval, _ := m1.Get([]byte("k1"))
-		if !bytes.Equal([]byte("v1"), rval) {
-			t.Fatal("Err 1: mismatch")
-		}
-		db.Close()
-	}
-	{
-		db := Open("testdb")
-		m1 := db.mapsByName["mapa1"]
-		rval, _ := m1.Get([]byte("k1"))
-		if !bytes.Equal([]byte("v1"), rval) {
-			t.Fatal("Err 2: mismatch")
-		}
-		db.Close()
+	defer m.Close()
+
+	m.Set([]byte("k1"), []byte("v1"))
+	rval, _ := m.Get([]byte("k1"))
+	if !bytes.Equal([]byte("v1"), rval) {
+		t.Fatal("Error: value mismatch")
 	}
 }
 
+//Test a simple put & get (after a map close())
+func TestSimpleRestore(t *testing.T) {
+	defer os.RemoveAll("testdb/")
+	{
+		m := NewMap("testdb/", numChunks)
+		m.Set([]byte("k1"), []byte("v1"))
+		m.Close()
+	}
+	{
+		m := OpenMap("testdb/")
+		rval, _ := m.Get([]byte("k1"))
+		if !bytes.Equal([]byte("v1"), rval) {
+			t.Fatal("Error: value mismatch")
+		}
+		m.Close()
+	}
+}
+
+/*
 //Test lots of simple put & get
 func TestSimpleLots(t *testing.T) {
 	defer os.RemoveAll("testdb/")
@@ -82,6 +86,8 @@ func TestSimpleLots(t *testing.T) {
 		db.Close()
 	}
 }
+
+
 
 //Test lots of simple put & get, in a parallel way, test multi thread safety
 func TestParSimpleLots(t *testing.T) {
@@ -349,3 +355,4 @@ func BenchmarkGet(b *testing.B) {
 //Bench lots of puts
 
 //Bench lots of puts, in a parallel way
+*/

@@ -24,7 +24,6 @@ The memory mapped file won't hold anymore information.
 
 //Store stores a list of pairs, in an *unordered* way
 type Store struct {
-	Path      string    //File system localitation
 	Deleted   uint64    //Deleted number of bytes
 	Length    uint64    //Total length, index of new items
 	Size      uint64    //Allocated size
@@ -46,10 +45,9 @@ const defaultStoreSize = 1024 * 1024 * 32
 func newStore(path string) *Store {
 	var err error
 	st := new(Store)
-	st.Path = path
 	st.Size = defaultStoreSize
 	st.SizeLimit = defaultStoreSizeLimit
-	st.osFile, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, filePerms)
+	st.osFile, err = os.OpenFile(path+".dat", os.O_RDWR|os.O_CREATE|os.O_TRUNC, filePerms)
 	if err != nil {
 		w, _ := os.Getwd()
 		fmt.Println(w)
@@ -66,10 +64,9 @@ func newStore(path string) *Store {
 	return st
 }
 
-//TODO: return pointer
-func (st *Store) open() {
+func (st *Store) open(path string) {
 	var err error
-	st.osFile, err = os.OpenFile(st.Path, os.O_RDWR, filePerms)
+	st.osFile, err = os.OpenFile(path+".dat", os.O_RDWR, filePerms)
 	if err != nil {
 		panic(err)
 	}

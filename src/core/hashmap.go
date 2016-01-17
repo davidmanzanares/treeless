@@ -3,12 +3,12 @@ package tlcore
 //HashMap stores an open-addressed hashmap and all its meta-data
 type HashMap struct {
 	SizeLimit       uint32   //Maximum size, the map won't be expanded more than this value
-	Size            uint32   //Size of mem, must be a power of 2
-	SizeMask        uint32   //SizeMask must have its log2(Size) least significant bits set to one
-	Sizelog2        uint32   //Log2(Size)
-	NumKeysToExpand uint32   //Maximum number of keys until a expand operation is forced
-	NumStoredKeys   uint32   //Number of stored keys, included deleted, but not freed keys
-	NumDeletedKeys  uint32   //Number of non freed deleted keys
+	size            uint32   //Size of mem, must be a power of 2
+	sizeMask        uint32   //SizeMask must have its log2(Size) least significant bits set to one
+	sizelog2        uint32   //Log2(Size)
+	numKeysToExpand uint32   //Maximum number of keys until a expand operation is forced
+	numStoredKeys   uint32   //Number of stored keys, included deleted, but not freed keys
+	numDeletedKeys  uint32   //Number of non freed deleted keys
 	mem             []uint32 //Hashmap memory
 }
 
@@ -25,22 +25,23 @@ func newHashMap() *HashMap {
 	m := new(HashMap)
 	m.setSize(defaultHashMapInitialLog2Size)
 	m.SizeLimit = defaultHashMapSizeLimit
-	m.mem = make([]uint32, m.Size*8)
+	m.mem = make([]uint32, m.size*8)
 	return m
 }
 
-func (m *HashMap) open() {
-	m.mem = make([]uint32, m.Size*8)
+func (m *HashMap) alloc() {
+	m.setSize(defaultHashMapInitialLog2Size)
+	m.mem = make([]uint32, m.size*8)
 }
 
 func (m *HashMap) setSize(log2Size uint32) {
-	m.Sizelog2 = log2Size
-	m.Size = 1 << log2Size
-	m.SizeMask = 0
+	m.sizelog2 = log2Size
+	m.size = 1 << log2Size
+	m.sizeMask = 0
 	for i := uint32(0); i < log2Size; i++ {
-		m.SizeMask |= 1 << i
+		m.sizeMask |= 1 << i
 	}
-	m.NumKeysToExpand = uint32(float64(m.Size) * defaultHashMapMaxLoadFactor)
+	m.numKeysToExpand = uint32(float64(m.size) * defaultHashMapMaxLoadFactor)
 }
 
 func (m *HashMap) expand() error {

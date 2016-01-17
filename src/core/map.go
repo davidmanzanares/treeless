@@ -5,6 +5,8 @@ This module implements DB maps.
 */
 
 import (
+	"encoding/json"
+	"io/ioutil"
 	"os"
 	"strconv"
 	"treeless/src/hash"
@@ -26,30 +28,46 @@ type Map struct {
 	Utils functions
 */
 
-//New returns a new Map
+//NewMap returns a new Map located at path and divided in numChunks fragments
 func NewMap(path string, numChunks int) (m *Map) {
 	os.MkdirAll(path+"/chunks/", filePerms)
 	m = &Map{path: path}
 	m.Chunks = make([]*Chunk, numChunks)
 	for i := 0; i < len(m.Chunks); i++ {
-		m.Chunks[i] = newChunk(m.path + "/chunks/" + strconv.Itoa(i) + ".dat")
+		m.Chunks[i] = newChunk(m.path + "/chunks/" + strconv.Itoa(i))
 	}
 	return m
 }
 
-//TODO FIXME
-func (m *Map) restore() error {
-	for i := 0; i < len(m.Chunks); i++ {
-		if m.Chunks[i] != nil {
-			m.Chunks[i].restore()
-		}
+//OpenMap loads an existing map located at path
+func OpenMap(path string) *Map {
+	str, err := ioutil.ReadFile(path + "meta.json")
+	if err != nil {
+		panic(err)
 	}
-	return nil
+	m := &Map{path: path}
+	err = json.Unmarshal(str, m)
+	if err != nil {
+		panic(err)
+	}
+	for i := 0; i < len(m.Chunks); i++ {
+		m.Chunks[i].restore(m.path + "/chunks/" + strconv.Itoa(i))
+	}
+	return m
 }
 
+//Close the map writting all changes to the file system
 func (m *Map) Close() {
 	for i := 0; i < len(m.Chunks); i++ {
 		m.Chunks[i].close()
+	}
+	str, err := json.Marshal(m)
+	if err != nil {
+		panic(err)
+	}
+	err = ioutil.WriteFile(m.path+"meta.json", str, filePerms)
+	if err != nil {
+		panic(err)
 	}
 }
 
