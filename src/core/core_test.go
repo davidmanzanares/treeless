@@ -1,6 +1,7 @@
 package tlcore
 
 import (
+	"encoding/binary"
 	"os"
 	"testing"
 )
@@ -44,51 +45,43 @@ func TestSimpleRestore(t *testing.T) {
 	}
 }
 
-/*
-//Test lots of simple put & get
+//Test lots of simple put & get before and after closing the map
 func TestSimpleLots(t *testing.T) {
 	defer os.RemoveAll("testdb/")
-	defer os.Chdir("../")
 	k := make([]byte, 4)
 	v := make([]byte, 4)
 	{
-		db := Create("testdb")
-		m1, _ := db.AllocMap("mapa1")
-
+		m1 := NewMap("testdb/", numChunks)
 		for i := 0; i < 128*1024; i++ {
 			binary.LittleEndian.PutUint32(k, uint32(i))
 			binary.LittleEndian.PutUint32(v, uint32(i))
-			m1.Put(k, v)
+			m1.Set(k, v)
 		}
-
 		for i := 0; i < 128*1024; i++ {
 			binary.LittleEndian.PutUint32(k, uint32(i))
 			binary.LittleEndian.PutUint32(v, uint32(i))
 			rval, _ := m1.Get(k)
 			if !bytes.Equal(v, rval) {
-				t.Fatal("Err 1: mismatch")
+				t.Fatal("Error 1: value mismatch")
 			}
 		}
-
-		db.Close()
+		m1.Close()
 	}
 	{
-		db := Open("testdb")
-		m1 := db.mapsByName["mapa1"]
+		m2 := OpenMap("testdb/")
 		for i := 0; i < 128*1024; i++ {
 			binary.LittleEndian.PutUint32(k, uint32(i))
 			binary.LittleEndian.PutUint32(v, uint32(i))
-			rval, _ := m1.Get(k)
+			rval, _ := m2.Get(k)
 			if !bytes.Equal(v, rval) {
-				t.Fatal("Err 2: mismatch")
+				t.Fatal("Error 2: value mismatch")
 			}
 		}
-		db.Close()
+		m2.Close()
 	}
 }
 
-
-
+/*
 //Test lots of simple put & get, in a parallel way, test multi thread safety
 func TestParSimpleLots(t *testing.T) {
 	defer os.RemoveAll("testdb/")
