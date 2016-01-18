@@ -2,10 +2,11 @@ package tlcore
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 
-	"github.com/edsrzf/mmap-go"
+	"launchpad.net/gommap"
 )
 
 /*
@@ -24,12 +25,12 @@ The memory mapped file won't hold anymore information.
 
 //Store stores a list of pairs, in an *unordered* way
 type Store struct {
-	Deleted   uint64    //Deleted number of bytes
-	Length    uint64    //Total length, index of new items
-	Size      uint64    //Allocated size
-	SizeLimit uint64    //Maximum size, the Store wont allocate more than this number of bytes
-	osFile    *os.File  //OS mapped file located at Path
-	file      mmap.MMap //Memory mapped file located at Path
+	Deleted   uint64      //Deleted number of bytes
+	Length    uint64      //Total length, index of new items
+	Size      uint64      //Allocated size
+	SizeLimit uint64      //Maximum size, the Store wont allocate more than this number of bytes
+	osFile    *os.File    //OS mapped file located at Path
+	file      gommap.MMap //Memory mapped file located at Path
 }
 
 const (
@@ -38,9 +39,11 @@ const (
 	headerSize        = 8
 )
 
+var mmapAdviseFlags = gommap.MADV_RANDOM
+
 //TODO FIXME
-const defaultStoreSizeLimit = 1024 * 1024 * 2
-const defaultStoreSize = 1024 * 1024 * 32
+const defaultStoreSizeLimit = 1024 * 1024 * 32
+const defaultStoreSize = 1024
 
 func newStore(path string) *Store {
 	var err error
@@ -57,7 +60,11 @@ func newStore(path string) *Store {
 	if err != nil {
 		panic(err)
 	}
-	st.file, err = mmap.Map(st.osFile, mmap.RDWR, 0)
+	st.file, err = gommap.Map(st.osFile.Fd(), gommap.PROT_READ|gommap.PROT_WRITE, gommap.MAP_SHARED)
+	if err != nil {
+		panic(err)
+	}
+	st.file.Advise(mmapAdviseFlags)
 	if err != nil {
 		panic(err)
 	}
@@ -70,14 +77,41 @@ func (st *Store) open(path string) {
 	if err != nil {
 		panic(err)
 	}
-	st.file, err = mmap.Map(st.osFile, mmap.RDWR, 0)
+	st.file, err = gommap.Map(st.osFile.Fd(), gommap.PROT_READ|gommap.PROT_WRITE, gommap.MAP_SHARED)
+	if err != nil {
+		panic(err)
+	}
+	st.file.Advise(mmapAdviseFlags)
 	if err != nil {
 		panic(err)
 	}
 }
 func (st *Store) close() {
-	st.file.Unmap()
+	st.file.UnsafeUnmap()
 	st.osFile.Close()
+}
+
+//Expand the store instance giving more available space for items
+func (st *Store) expand() (err error) {
+	if st.Size == st.SizeLimit {
+		return errors.New("Store size limit reached")
+	}
+	st.Size = st.Size * 2
+	if st.Size > st.SizeLimit {
+		st.Size = st.SizeLimit
+	}
+	//TODO: check order speed truncate vs unmap, need set benchmarks
+	st.osFile.Truncate(int64(st.Size))
+	st.file.UnsafeUnmap()
+	st.file, err = gommap.Map(st.osFile.Fd(), gommap.PROT_READ|gommap.PROT_WRITE, gommap.MAP_SHARED)
+	if err != nil {
+		panic(err)
+	}
+	st.file.Advise(mmapAdviseFlags)
+	if err != nil {
+		panic(err)
+	}
+	return nil
 }
 
 func (st *Store) isPresent(index uint64) bool {
@@ -128,11 +162,5 @@ func (st *Store) put(key, val []byte) (uint32, error) {
 
 func (st *Store) del(index uint32) error {
 	st.setKeyLen(uint64(index), 0x80000000|st.keyLen(uint64(index)))
-	return nil
-}
-
-//Expand the store instance giving more available space for items
-func (st *Store) expand() (err error) {
-	panic("St expand")
 	return nil
 }
