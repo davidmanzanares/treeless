@@ -317,18 +317,25 @@ func metaTest(numOperations, maxKeySize, maxValueSize, threads int) {
 //Bench with diferents sizes
 
 //Bench lots of parallel gets
-func BenchmarkGet(b *testing.B) {
+func BenchmarkGet10(b *testing.B) {
+	benchGet(b, 10)
+}
+func BenchmarkGet100(b *testing.B) {
+	benchGet(b, 100)
+}
+func BenchmarkGet1000(b *testing.B) {
+	benchGet(b, 1000)
+}
+
+func benchGet(b *testing.B, valueSize int) {
+	//fmt.Println("BN", b.N)
+	numKeys := 1024 * 1024
 	defer os.RemoveAll("testdb/")
-	if testing.Verbose() {
-		fmt.Println("\tInserting", b.N, "keys...")
-	}
 	m := NewMap("testdb/", numChunks)
 	key := make([]byte, 4)
-	lenValue := 100
-	value := bytes.Repeat([]byte("X"), lenValue)
-	for i := 0; i < b.N/32+1; i++ {
-		binary.LittleEndian.PutUint32(key, uint32(3*i))
-		binary.LittleEndian.PutUint32(value, uint32(3*i))
+	value := bytes.Repeat([]byte("X"), valueSize)
+	for i := 0; i < numKeys; i++ {
+		binary.LittleEndian.PutUint32(key, uint32(i))
 		err := m.Set(key, value)
 		if err != nil {
 			panic(err)
@@ -337,17 +344,18 @@ func BenchmarkGet(b *testing.B) {
 	gid := uint64(0)
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
-		sum := 0
 		key := make([]byte, 4)
+		value := bytes.Repeat([]byte("X"), valueSize)
 		id := uint32(atomic.AddUint64(&gid, 1))
-		//fmt.Println(id)
 		r := rand.New(rand.NewSource(int64(id)))
 		for i := 0; pb.Next(); i++ {
-			binary.LittleEndian.PutUint32(key, uint32(3*r.Intn(b.N/32+1)))
+			binary.LittleEndian.PutUint32(key, uint32(r.Intn(numKeys)))
 			v, err := m.Get(key)
-			sum += int(v[len(v)-1])
-			if err != nil || !bytes.Equal(v, v) {
-				b.Fatal("Key not present", key, id, i, v, sum)
+			if err != nil {
+				b.Fatal(err)
+			}
+			if !bytes.Equal(v, value) {
+				b.Fatal("Values differ")
 			}
 		}
 	})
@@ -355,8 +363,38 @@ func BenchmarkGet(b *testing.B) {
 	m.Close()
 }
 
-//Bench lots of gets, in a parallel way
+//Bench lots of sets
 
-//Bench lots of puts
+func BenchmarkSet10(b *testing.B) {
+	benchSet(b, 10)
+}
 
-//Bench lots of puts, in a parallel way
+func BenchmarkSet100(b *testing.B) {
+	benchSet(b, 100)
+}
+
+func BenchmarkSet500(b *testing.B) {
+	benchSet(b, 500)
+}
+
+func benchSet(b *testing.B, valueSize int) {
+	defer os.RemoveAll("testdb/")
+	m := NewMap("testdb/", numChunks)
+	gid := uint64(0)
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		id := uint32(atomic.AddUint64(&gid, 1))
+		r := rand.New(rand.NewSource(int64(id)))
+		key := make([]byte, 4)
+		value := bytes.Repeat([]byte("X"), valueSize)
+		for i := 0; pb.Next(); i++ {
+			binary.LittleEndian.PutUint32(key, uint32(4*r.Int31())+id)
+			err := m.Set(key, value)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.StopTimer()
+	m.Close()
+}

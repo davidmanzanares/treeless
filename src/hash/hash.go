@@ -1,9 +1,7 @@
 package tlhash
 
 const (
-	offset32 = 2166136261
 	offset64 = 14695981039346656037
-	prime32  = 16777619
 	prime64  = 1099511628211
 )
 

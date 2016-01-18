@@ -41,9 +41,8 @@ const (
 
 var mmapAdviseFlags = gommap.MADV_RANDOM
 
-//TODO FIXME
-const defaultStoreSizeLimit = 1024 * 1024 * 32
-const defaultStoreSize = 1024
+const defaultStoreSizeLimit = 1024 * 1024 * 16
+const defaultStoreSize = 1024 * 4
 
 func newStore(path string) *Store {
 	var err error

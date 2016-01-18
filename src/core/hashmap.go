@@ -1,9 +1,6 @@
 package tlcore
 
-import (
-	"errors"
-	"log"
-)
+import "errors"
 
 //HashMap stores an open-addressed hashmap and all its meta-data
 type HashMap struct {
@@ -51,7 +48,6 @@ func (m *HashMap) setSize(log2Size uint32) {
 }
 
 func (m *HashMap) expand() error {
-	log.Println("ENTRY")
 	if m.size*2 > m.SizeLimit {
 		return errors.New("HashMap size limit reached")
 	}
@@ -78,7 +74,6 @@ func (m *HashMap) expand() error {
 		}
 	}
 	*m = *newHM
-	log.Println("EXIT")
 	return nil
 }
 
