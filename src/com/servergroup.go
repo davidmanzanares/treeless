@@ -8,7 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"treeless/src/com/lowcom"
+	"treeless/src/com/udp"
 )
 
 //ServerGroup provides an access to a DB server group
@@ -100,7 +100,7 @@ func CreateServerGroup(numChunks int, port string, redundancy int) *ServerGroup 
 	//Add this server
 	localhost := new(VirtualServer)
 	localhost.LastHeartbeat = time.Now()
-	localhost.Phy = tlLowCom.GetLocalIP() + ":" + port
+	localhost.Phy = GetLocalIP() + ":" + port
 	localhost.HeldChunks = make([]int, numChunks)
 	for i := 0; i < numChunks; i++ {
 		//Add all chunks to this server
@@ -154,7 +154,7 @@ func ConnectAsClient(addr string) (*ServerGroup, error) {
 	//Lookup for servers
 	for _, s := range sg.Servers {
 		//Request known chunks list
-		b, err := tlLowCom.UDPRequest(s.Phy, time.Millisecond*50)
+		b, err := tlUDP.Request(s.Phy, time.Millisecond*50)
 		if err == nil {
 			var udpr Keepalive
 			err = json.Unmarshal(b, &udpr)
@@ -190,7 +190,7 @@ func Associate(destAddr string, localport string) (*ServerGroup, error) {
 	}
 	sg.Lock()
 	defer sg.Unlock()
-	localhost := tlLowCom.GetLocalIP() + ":" + localport
+	localhost := GetLocalIP() + ":" + localport
 	//Add to external servergroup instances
 	//For each other server: add localhost
 	for _, s := range sg.Servers {
@@ -233,7 +233,7 @@ func heartbeatRequester(sg *ServerGroup) {
 			s := l.Front().Value.(*VirtualServer)
 
 			//Request known chunks list
-			b, err := tlLowCom.UDPRequest(s.Phy, time.Millisecond*50)
+			b, err := tlUDP.Request(s.Phy, time.Millisecond*50)
 			if err == nil {
 				//Unmarshal response
 				var udpr Keepalive

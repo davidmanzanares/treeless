@@ -1,25 +1,31 @@
-Core:
+Core: 1 sem
 	-old SSD
 	-cmplx tests
 	-size limit to map
-Com:
+	
+	-MurmurHash
+=>Com: 1sem
+	-refactor
 	-big messages TCP bug
 	-ipport variable naming
     -add primitives
     -add tests
     -add benchmarks
-Dist:
+Dist: 2 sem
+	-refactor
 	-SYNCHED mechanism
 	-rebalanceo: eliminacion de trozos por exceso de redundancia
-    -tests: vagrant
-    -test failures
-    -Benchmarks
-	-servergroup id
-Others:
-	-constantes
-    -security
-	-transactions
 	-stop
+Test: 1 sem
+	-2 modes of operation: N processes, N goroutines
+	-Benchmark
+	-real tests
+	-Profile with gouroutine mode of operation
+Others: 3 sem
+	-constantes use const or parametrizar
+    -security
+	-transactions: lock table
+	-info command
 
 ...:
     -procedures: TTL procedure

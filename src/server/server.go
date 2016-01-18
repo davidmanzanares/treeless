@@ -11,6 +11,7 @@ import (
 	"time"
 	"treeless/src/com"
 	"treeless/src/com/lowcom"
+	"treeless/src/com/udp"
 	"treeless/src/core"
 )
 
@@ -30,7 +31,7 @@ type Server struct {
 //Start a Treeless server
 func Start(addr string, localport string, numChunks, redundancy int, dbpath string) *Server {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	log.SetPrefix(tlLowCom.GetLocalIP() + ":" + localport + " ")
+	log.SetPrefix(tlcom.GetLocalIP() + ":" + localport + " ")
 	//Recover: log and quit
 	defer func() {
 		if r := recover(); r != nil {
@@ -63,7 +64,7 @@ func Start(addr string, localport string, numChunks, redundancy int, dbpath stri
 	if err != nil {
 		panic(err)
 	}
-	s.udpCon = tlLowCom.ReplyToPings(udpCreateReplier(s.sg), iport)
+	s.udpCon = tlUDP.Reply(udpCreateReplier(s.sg), iport)
 	//Rebalancer
 	tlcom.Rebalance(s.sg)
 	log.Println("Server boot-up completed")
@@ -95,7 +96,7 @@ func (s *Server) LogInfo() {
 	log.Println(s.sg)
 }
 
-func udpCreateReplier(sg *tlcom.ServerGroup) tlLowCom.UDPReplyCallback {
+func udpCreateReplier(sg *tlcom.ServerGroup) tlUDP.ReplyCallback {
 	return func() []byte {
 		var r tlcom.Keepalive
 		for i := 0; i < sg.NumChunks; i++ {
@@ -228,7 +229,7 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 }
 
 func listenConnections(s *Server, port string) {
-	taddr, err := net.ResolveTCPAddr("tcp", tlLowCom.GetLocalIP()+":"+port)
+	taddr, err := net.ResolveTCPAddr("tcp", tlcom.GetLocalIP()+":"+port)
 	if err != nil {
 		panic(err)
 	}
