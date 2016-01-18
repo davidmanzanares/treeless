@@ -20,7 +20,7 @@ type Chunk struct {
 
 func newChunk(path string) *Chunk {
 	c := new(Chunk)
-	c.Hm = newHashMap()
+	c.Hm = newHashMap(defaultHashMapInitialLog2Size, defaultHashMapSizeLimit)
 	c.St = newStore(path)
 	return c
 }

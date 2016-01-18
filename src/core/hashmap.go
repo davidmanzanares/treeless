@@ -1,11 +1,16 @@
 package tlcore
 
+import (
+	"errors"
+	"log"
+)
+
 //HashMap stores an open-addressed hashmap and all its meta-data
 type HashMap struct {
 	SizeLimit       uint32   //Maximum size, the map won't be expanded more than this value
 	size            uint32   //Size of mem, must be a power of 2
 	sizeMask        uint32   //SizeMask must have its log2(Size) least significant bits set to one
-	sizelog2        uint32   //Log2(Size)
+	Sizelog2        uint32   //Log2(Size)
 	numKeysToExpand uint32   //Maximum number of keys until a expand operation is forced
 	numStoredKeys   uint32   //Number of stored keys, included deleted, but not freed keys
 	numDeletedKeys  uint32   //Number of non freed deleted keys
@@ -21,21 +26,22 @@ const (
 	deletedBucket = 1
 )
 
-func newHashMap() *HashMap {
+func newHashMap(initialLog2Size, sizeLimit uint32) *HashMap {
 	m := new(HashMap)
-	m.setSize(defaultHashMapInitialLog2Size)
-	m.SizeLimit = defaultHashMapSizeLimit
+	m.setSize(initialLog2Size)
+	m.SizeLimit = sizeLimit
 	m.mem = make([]uint32, m.size*8)
 	return m
 }
 
 func (m *HashMap) alloc() {
-	m.setSize(defaultHashMapInitialLog2Size)
+	m.setSize(m.Sizelog2)
 	m.mem = make([]uint32, m.size*8)
 }
 
+//Sets sizelog2, size, sizeMask & numKeysToExpand
 func (m *HashMap) setSize(log2Size uint32) {
-	m.sizelog2 = log2Size
+	m.Sizelog2 = log2Size
 	m.size = 1 << log2Size
 	m.sizeMask = 0
 	for i := uint32(0); i < log2Size; i++ {
@@ -45,7 +51,34 @@ func (m *HashMap) setSize(log2Size uint32) {
 }
 
 func (m *HashMap) expand() error {
-	panic("expand todo")
+	log.Println("ENTRY")
+	if m.size*2 > m.SizeLimit {
+		return errors.New("HashMap size limit reached")
+	}
+	newHM := newHashMap(m.Sizelog2+1, m.SizeLimit)
+	for i := uint32(0); i < m.size; i++ {
+		h := m.getHash(i)
+		if h > deletedBucket {
+			//Put it in the new hashmap
+			storeIndex := m.getStoreIndex(i)
+			index := h & newHM.sizeMask
+			for {
+				storedHash := newHM.getHash(index)
+				if storedHash == emptyBucket {
+					//Empty bucket: put the pair
+					newHM.setHash(index, h)
+					newHM.setStoreIndex(index, storeIndex)
+					newHM.numStoredKeys++
+					break
+				}
+				//If the hash is the same there is a collision,
+				//just look in the next bucket
+				index = (index + 1) & newHM.sizeMask
+			}
+		}
+	}
+	*m = *newHM
+	log.Println("EXIT")
 	return nil
 }
 
