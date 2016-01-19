@@ -1,4 +1,4 @@
-package tlLowCom
+package tlTCP
 
 import (
 	"encoding/binary"
@@ -7,7 +7,7 @@ import (
 )
 
 const bufferSize = 2048
-
+const bufferSizeTrigger = 1350
 const minimumMessageSize = 13
 const windowTimeDuration = time.Microsecond * 1
 
@@ -16,6 +16,7 @@ type Operation uint8
 
 //These constants represents the different message types
 const (
+	//TODO error unify
 	OpGet Operation = iota
 	OpSet
 	OpDel
@@ -64,7 +65,7 @@ func read(src []byte) (m Message) {
 	return m
 }
 
-//TCPWriter will write to conn messages recieved by the channel
+//Writer will write to conn messages recieved by the channel
 //
 //This function implements buffering, and uses a time window:
 //messages won't be written instantly, they will be written
@@ -72,9 +73,9 @@ func read(src []byte) (m Message) {
 //
 //Close the channel to stop the infinite listening loop.
 //
-//This function blocks, typical usage will be "go TCPWriter(...)""
-func TCPWriter(conn *net.TCPConn, writeChannel chan Message) {
-	timer := time.NewTimer(time.Second * 10000)
+//This function blocks, typical usage will be "go Writer(...)""
+func Writer(conn *net.TCPConn, msgChannel chan Message) {
+	timer := time.NewTimer(time.Hour)
 	timer.Stop()
 
 	buffer := make([]byte, bufferSize)
@@ -87,15 +88,17 @@ func TCPWriter(conn *net.TCPConn, writeChannel chan Message) {
 				index = 0
 			}
 			timer.Stop()
-		case m, ok := <-writeChannel:
+		case m, ok := <-msgChannel:
 			if !ok {
+				//Channel closed, stop loop
 				timer.Stop()
 				return
 			}
-			//Bug big messages
+			//TODO: Bug big messages
+			//Append message to buffer
 			written := m.write(buffer[index:])
 			index += written
-			if index > 1350 {
+			if index > bufferSizeTrigger {
 				conn.Write(buffer[0:index])
 				index = 0
 				timer.Stop()
@@ -108,19 +111,21 @@ func TCPWriter(conn *net.TCPConn, writeChannel chan Message) {
 
 type ReaderCallback func(m Message)
 
-//TCPReader calls callback each time a message is recieved by the conn TCP connection
+//Reader calls callback each time a message is recieved by the conn TCP connection
 //Close the socket to end the infinite listening loop
-//This function blocks, typical usage: "go TCPReader(...)"
-func TCPReader(conn net.Conn, callback ReaderCallback) error {
+//This function blocks, typical usage: "go Reader(...)"
+func Reader(conn net.Conn, callback ReaderCallback) error {
+	//Ping-pong between buffers
 	var slices [2][]byte
 	slices[0] = make([]byte, bufferSize)
 	slices[1] = make([]byte, bufferSize)
-	sli := 0
-	buffer := slices[sli]
+	slot := 0
+	buffer := slices[slot]
 
-	index := 0
+	index := 0 //Write index
 	for {
 		if index < minimumMessageSize {
+			//Not enought bytes read to form a message, read more
 			n, err := conn.Read(buffer[index:])
 			if err != nil {
 				return err
@@ -129,7 +134,9 @@ func TCPReader(conn net.Conn, callback ReaderCallback) error {
 			continue
 		}
 		messageSize := int(binary.LittleEndian.Uint32(buffer[0:4]))
+		//TODO BUG big messages
 		if index < messageSize {
+			//Not enought bytes read to form *this* message, read more
 			n, err := conn.Read(buffer[index:])
 			if err != nil {
 				return err
@@ -140,9 +147,11 @@ func TCPReader(conn net.Conn, callback ReaderCallback) error {
 
 		callback(read(buffer[:messageSize]))
 
-		copy(slices[(sli+1)%2], buffer[messageSize:index])
-		sli = (sli + 1) % 2
+		//Buffer ping-pong
+		//TODO opt: dont need to copy everytime, be smart
+		copy(slices[(slot+1)%2], buffer[messageSize:index])
+		slot = (slot + 1) % 2
 		index = index - messageSize
-		buffer = slices[sli]
+		buffer = slices[slot]
 	}
 }

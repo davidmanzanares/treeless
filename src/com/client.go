@@ -7,7 +7,7 @@ import (
 	"net"
 	"sync"
 	"time"
-	"treeless/src/com/lowcom"
+	"treeless/src/com/tcp"
 )
 
 //Stores a DB operation result
@@ -19,7 +19,7 @@ type result struct {
 //ClientConn is a DB TCP client connection
 type ClientConn struct {
 	conn         net.Conn
-	writeChannel chan tlLowCom.Message
+	writeChannel chan tlTCP.Message
 	waitLock     sync.Mutex
 	waits        map[uint32](chan result)
 	tid          uint32
@@ -46,39 +46,39 @@ func CreateConnection(addr string) (*ClientConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	writeCh := make(chan tlLowCom.Message, 128)
+	writeCh := make(chan tlTCP.Message, 128)
 	c.conn = tcpconn
 	c.writeChannel = writeCh
 
-	go tlLowCom.TCPWriter(tcpconn, writeCh)
+	go tlTCP.Writer(tcpconn, writeCh)
 	go listenToResponses(&c)
 
 	return &c, nil
 }
 
 func listenToResponses(c *ClientConn) {
-	f := func(m tlLowCom.Message) {
+	f := func(m tlTCP.Message) {
 		c.waitLock.Lock()
 		ch := c.waits[m.ID]
 		c.waitLock.Unlock()
 		switch m.Type {
-		case tlLowCom.OpGetResponse:
+		case tlTCP.OpGetResponse:
 			rval := make([]byte, len(m.Value))
 			copy(rval, m.Value)
 			ch <- result{rval, nil}
-		case tlLowCom.OpGetResponseError:
+		case tlTCP.OpGetResponseError:
 			ch <- result{nil, errors.New(string(m.Value))}
-		case tlLowCom.OpGetConfResponse:
+		case tlTCP.OpGetConfResponse:
 			rval := make([]byte, len(m.Value))
 			copy(rval, m.Value)
 			ch <- result{rval, nil}
-		case tlLowCom.OpAddServerToGroupACK:
+		case tlTCP.OpAddServerToGroupACK:
 			ch <- result{nil, nil}
-		case tlLowCom.OpGetChunkInfoResponse:
+		case tlTCP.OpGetChunkInfoResponse:
 			rval := make([]byte, len(m.Value))
 			copy(rval, m.Value)
 			ch <- result{rval, nil}
-		case tlLowCom.OpOK:
+		case tlTCP.OpOK:
 			ch <- result{nil, nil}
 		default:
 			err := make([]byte, len(m.Value))
@@ -86,7 +86,7 @@ func listenToResponses(c *ClientConn) {
 			ch <- result{nil, errors.New("Response error: " + string(err))}
 		}
 	}
-	tlLowCom.TCPReader(c.conn, f)
+	tlTCP.Reader(c.conn, f)
 	//log.Println("Connection closed", c.conn.RemoteAddr().String())
 }
 
@@ -101,7 +101,7 @@ func (c *ClientConn) Close() {
 
 //Get the value of  key
 func (c *ClientConn) Get(key []byte) ([]byte, error) {
-	var mess tlLowCom.Message
+	var mess tlTCP.Message
 
 	ch := c.chanPool.Get().(chan result)
 	c.waitLock.Lock()
@@ -110,7 +110,7 @@ func (c *ClientConn) Get(key []byte) ([]byte, error) {
 	c.tid++
 	c.waitLock.Unlock()
 
-	mess.Type = tlLowCom.OpGet
+	mess.Type = tlTCP.OpGet
 	mess.Key = key
 	mess.ID = mytid
 
@@ -130,14 +130,14 @@ func (c *ClientConn) Get(key []byte) ([]byte, error) {
 
 //Set a new key/value pair
 func (c *ClientConn) Set(key, value []byte) error {
-	var mess tlLowCom.Message
+	var mess tlTCP.Message
 
 	c.waitLock.Lock()
 	mytid := c.tid
 	c.tid++
 	c.waitLock.Unlock()
 
-	mess.Type = tlLowCom.OpSet
+	mess.Type = tlTCP.OpSet
 	mess.ID = mytid
 	mess.Key = key
 	mess.Value = value
@@ -149,7 +149,7 @@ func (c *ClientConn) Set(key, value []byte) error {
 
 //Transfer a chunk
 func (c *ClientConn) Transfer(addr string, chunkID int) error {
-	var mess tlLowCom.Message
+	var mess tlTCP.Message
 
 	ch := c.chanPool.Get().(chan result)
 	c.waitLock.Lock()
@@ -158,7 +158,7 @@ func (c *ClientConn) Transfer(addr string, chunkID int) error {
 	c.tid++
 	c.waitLock.Unlock()
 
-	mess.Type = tlLowCom.OpTransfer
+	mess.Type = tlTCP.OpTransfer
 	mess.ID = mytid
 	var err error
 	mess.Key, err = json.Marshal(chunkID)
@@ -185,7 +185,7 @@ func (c *ClientConn) Transfer(addr string, chunkID int) error {
 
 //GetAccessInfo request DB access info
 func (c *ClientConn) GetAccessInfo() ([]byte, error) {
-	var mess tlLowCom.Message
+	var mess tlTCP.Message
 
 	ch := c.chanPool.Get().(chan result)
 	c.waitLock.Lock()
@@ -194,7 +194,7 @@ func (c *ClientConn) GetAccessInfo() ([]byte, error) {
 	c.tid++
 	c.waitLock.Unlock()
 
-	mess.Type = tlLowCom.OpGetConf
+	mess.Type = tlTCP.OpGetConf
 	mess.ID = mytid
 
 	c.writeChannel <- mess
@@ -208,7 +208,7 @@ func (c *ClientConn) GetAccessInfo() ([]byte, error) {
 
 //AddServerToGroup request to add this server to the server group
 func (c *ClientConn) AddServerToGroup(addr string) error {
-	var mess tlLowCom.Message
+	var mess tlTCP.Message
 
 	ch := c.chanPool.Get().(chan result)
 	c.waitLock.Lock()
@@ -217,7 +217,7 @@ func (c *ClientConn) AddServerToGroup(addr string) error {
 	c.tid++
 	c.waitLock.Unlock()
 
-	mess.Type = tlLowCom.OpAddServerToGroup
+	mess.Type = tlTCP.OpAddServerToGroup
 	mess.ID = mytid
 	mess.Key = []byte(addr)
 
@@ -232,7 +232,7 @@ func (c *ClientConn) AddServerToGroup(addr string) error {
 
 //GetChunkInfo request chunk info
 func (c *ClientConn) GetChunkInfo(chunkID int) (size uint64, err error) {
-	var mess tlLowCom.Message
+	var mess tlTCP.Message
 
 	ch := c.chanPool.Get().(chan result)
 	c.waitLock.Lock()
@@ -241,7 +241,7 @@ func (c *ClientConn) GetChunkInfo(chunkID int) (size uint64, err error) {
 	c.tid++
 	c.waitLock.Unlock()
 
-	mess.Type = tlLowCom.OpGetChunkInfo
+	mess.Type = tlTCP.OpGetChunkInfo
 	mess.ID = mytid
 	b := make([]byte, 4)
 	binary.LittleEndian.PutUint32(b, uint32(chunkID))

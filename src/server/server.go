@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 	"treeless/src/com"
-	"treeless/src/com/lowcom"
+	"treeless/src/com/tcp"
 	"treeless/src/com/udp"
 	"treeless/src/core"
 )
@@ -119,23 +119,23 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 	//log.Println("New connection accepted. Connection ID:", id)
 	//tcpWriter will buffer TCP writes to send more message in less TCP packets
 	//this technique allows bigger throughtputs, but latency in increased a little
-	writeCh := make(chan tlLowCom.Message, 1024)
-	go tlLowCom.TCPWriter(conn, writeCh)
+	writeCh := make(chan tlTCP.Message, 1024)
+	go tlTCP.Writer(conn, writeCh)
 	//fmt.Println("Server", conn.LocalAddr(), "listening")
 
-	processMessage := func(message tlLowCom.Message) {
+	processMessage := func(message tlTCP.Message) {
 		//fmt.Println("Server", conn.LocalAddr(), "message recieved", string(message.Key), string(message.Value))
 		switch message.Type {
 		case tlcore.OpGet:
-			var response tlLowCom.Message
+			var response tlTCP.Message
 			rval, err := s.m.Get(message.Key)
 			//fmt.Println("Get operation", key, rval, err)
 			response.ID = message.ID
 			if err != nil {
-				response.Type = tlLowCom.OpGetResponseError
+				response.Type = tlTCP.OpGetResponseError
 				response.Value = []byte(err.Error())
 			} else {
-				response.Type = tlLowCom.OpGetResponse
+				response.Type = tlTCP.OpGetResponse
 				response.Value = rval
 			}
 			writeCh <- response
@@ -146,16 +146,16 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 			//if err != nil {
 			//	panic(err)
 			//}
-		case tlLowCom.OpTransfer:
+		case tlTCP.OpTransfer:
 			var chunkID int
 			err := json.Unmarshal(message.Key, &chunkID)
 			if err != nil {
 				panic(string(message.Key) + err.Error())
 			}
 			transferFail := func() {
-				var response tlLowCom.Message
+				var response tlTCP.Message
 				response.ID = message.ID
-				response.Type = tlLowCom.OpErr
+				response.Type = tlTCP.OpErr
 				writeCh <- response
 			}
 			if s.sg.IsChunkPresent(chunkID) {
@@ -172,55 +172,55 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 						})
 						c.GetAccessInfo()
 						c.Close()
-						var response tlLowCom.Message
+						var response tlTCP.Message
 						response.ID = message.ID
-						response.Type = tlLowCom.OpOK
+						response.Type = tlTCP.OpOK
 						writeCh <- response
 					}(c)
 				}
 			} else {
 				transferFail()
 			}
-		case tlLowCom.OpGetConf:
-			var response tlLowCom.Message
+		case tlTCP.OpGetConf:
+			var response tlTCP.Message
 			response.ID = message.ID
-			response.Type = tlLowCom.OpGetConfResponse
+			response.Type = tlTCP.OpGetConfResponse
 			b, err := s.sg.Marshal()
 			if err != nil {
 				panic(err)
 			}
 			response.Value = b
 			writeCh <- response
-		case tlLowCom.OpAddServerToGroup:
-			var response tlLowCom.Message
+		case tlTCP.OpAddServerToGroup:
+			var response tlTCP.Message
 			response.ID = message.ID
 			err := s.sg.AddServerToGroup(string(message.Key))
 			if err != nil {
-				response.Type = tlLowCom.OpErr
+				response.Type = tlTCP.OpErr
 				response.Value = []byte(err.Error())
 				writeCh <- response
 			} else {
-				response.Type = tlLowCom.OpAddServerToGroupACK
+				response.Type = tlTCP.OpAddServerToGroupACK
 				writeCh <- response
 			}
-		case tlLowCom.OpGetChunkInfo:
-			var response tlLowCom.Message
+		case tlTCP.OpGetChunkInfo:
+			var response tlTCP.Message
 			response.ID = message.ID
 			c := s.m.Chunks[binary.LittleEndian.Uint32(message.Key)]
-			response.Type = tlLowCom.OpGetChunkInfoResponse
+			response.Type = tlTCP.OpGetChunkInfoResponse
 			response.Value = make([]byte, 8)
 			binary.LittleEndian.PutUint64(response.Value, c.St.Length+1)
 			writeCh <- response
 		default:
-			var response tlLowCom.Message
+			var response tlTCP.Message
 			response.ID = message.ID
-			response.Type = tlLowCom.OpErr
+			response.Type = tlTCP.OpErr
 			response.Value = []byte("Operation not supported")
 			writeCh <- response
 		}
 	}
 
-	tlLowCom.TCPReader(conn, processMessage)
+	tlTCP.Reader(conn, processMessage)
 
 	close(writeCh)
 
