@@ -315,6 +315,35 @@ func metaSyncTest(c *tlclient.Client, numOperations, maxKeySize, maxValueSize, t
 	fmt.Println("Max de-sync: ", maxDiff)
 }
 
+//TODO: DEL
+//TestBigMessages, send 8KB GET, SET, DEL messages
+func TestBigMessages(t *testing.T) {
+	//Server set-up
+	addr, stop := LaunchServer("")
+	defer stop()
+	//Client set-up
+	client, err := tlclient.Connect(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	//SET
+	err = client.Set([]byte("hola"), bytes.Repeat([]byte("X"), 8*1024))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	//GET
+	value, _, err2 := client.Get([]byte("hola"))
+	if err2 != nil {
+		t.Fatal(err2)
+	}
+	if string(value) != string(bytes.Repeat([]byte("X"), 8*1024)) {
+		t.Fatal("Get failed, returned string: ", string(value))
+	}
+}
+
 //Benchmark GET operations by issuing lots of GET operations from different goroutines.
 //The DB is clean, all operations will return a "Key not present" error
 func BenchmarkGetUnpopulated(b *testing.B) {

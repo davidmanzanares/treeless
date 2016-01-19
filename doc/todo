@@ -6,11 +6,11 @@ Core: 1 sem
 	-MurmurHash
 =>Com: 1sem
 	-refactor
-	-big messages TCP bug
 	-ipport variable naming
-    -add primitives
+    -add DEL
     -add tests
     -add benchmarks
+	-messages TCP opt
 Dist: 2 sem
 	-refactor
 	-SYNCHED mechanism

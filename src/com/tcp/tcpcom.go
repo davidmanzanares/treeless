@@ -42,8 +42,12 @@ type Message struct {
 }
 
 //Write serializes the message on the destination buffer
-func (m *Message) write(dest []byte) int {
+func (m *Message) write(dest []byte) (msgSize int, tooLong bool) {
 	size := len(m.Key) + len(m.Value) + 13
+
+	if size > len(dest) {
+		return size, true
+	}
 
 	binary.LittleEndian.PutUint32(dest[0:4], uint32(size))
 	binary.LittleEndian.PutUint32(dest[4:8], m.ID)
@@ -52,7 +56,7 @@ func (m *Message) write(dest []byte) int {
 	copy(dest[13:], m.Key)
 	copy(dest[13+len(m.Key):], m.Value)
 
-	return size
+	return size, false
 }
 
 //Read unserialize a message from a buffer
@@ -96,8 +100,22 @@ func Writer(conn *net.TCPConn, msgChannel chan Message) {
 			}
 			//TODO: Bug big messages
 			//Append message to buffer
-			written := m.write(buffer[index:])
-			index += written
+			msgSize, tooLong := m.write(buffer[index:])
+
+			if tooLong {
+				//Send previous buffer
+				if index > 0 {
+					conn.Write(buffer[0:index])
+					index = 0
+				}
+				timer.Stop()
+				//Send this message
+				bigMsg := make([]byte, msgSize)
+				m.write(bigMsg)
+				conn.Write(bigMsg)
+				continue
+			}
+			index += msgSize
 			if index > bufferSizeTrigger {
 				conn.Write(buffer[0:index])
 				index = 0
@@ -112,6 +130,7 @@ func Writer(conn *net.TCPConn, msgChannel chan Message) {
 type ReaderCallback func(m Message)
 
 //Reader calls callback each time a message is recieved by the conn TCP connection
+//The message passed to the callback wont live after the callback returns, it should copy the message
 //Close the socket to end the infinite listening loop
 //This function blocks, typical usage: "go Reader(...)"
 func Reader(conn net.Conn, callback ReaderCallback) error {
@@ -134,7 +153,23 @@ func Reader(conn net.Conn, callback ReaderCallback) error {
 			continue
 		}
 		messageSize := int(binary.LittleEndian.Uint32(buffer[0:4]))
-		//TODO BUG big messages
+		if messageSize > bufferSize {
+			//Big message
+			bigBuffer := make([]byte, messageSize)
+			//Copy read part of the message
+			copy(bigBuffer, buffer[:index])
+			//Read until the message is complete
+			for index < messageSize {
+				n, err := conn.Read(bigBuffer[index:])
+				if err != nil {
+					return err
+				}
+				index = index + n
+			}
+			callback(read(bigBuffer))
+			index = 0
+			continue
+		}
 		if index < messageSize {
 			//Not enought bytes read to form *this* message, read more
 			n, err := conn.Read(buffer[index:])
