@@ -6,12 +6,12 @@ Core: 1 sem
 	-MurmurHash
 =>Com: 1sem
 	-refactor
-	-ipport variable naming
     -add DEL
 	
     -add tests
     -add benchmarks
 	-messages TCP opt
+	-local ip set by parameter, defaultIP := getLocalIP()
 Dist: 2 sem
 	-refactor
 	-SYNCHED mechanism
@@ -23,6 +23,7 @@ Test: 1 sem
 	-real tests
 	-Profile with gouroutine mode of operation
 Others: 3 sem
+	-count lines
 	-constantes use const or parametrizar
     -security
 	-transactions: lock table
