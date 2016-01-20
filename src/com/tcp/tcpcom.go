@@ -16,12 +16,10 @@ type Operation uint8
 
 //These constants represents the different message types
 const (
-	//TODO error unify
 	OpGet Operation = iota
 	OpSet
 	OpDel
 	OpGetResponse
-	OpGetResponseError
 	OpGetConf
 	OpGetConfResponse
 	OpAddServerToGroup
@@ -29,9 +27,8 @@ const (
 	OpGetChunkInfo
 	OpGetChunkInfoResponse
 	OpTransfer
-	OpOK
+	OpTransferCompleted
 	OpErr
-	OpNil
 )
 
 //Message represents a DB message that can be sent and recieved using a network
@@ -98,11 +95,10 @@ func Writer(conn *net.TCPConn, msgChannel chan Message) {
 				timer.Stop()
 				return
 			}
-			//TODO: Bug big messages
 			//Append message to buffer
 			msgSize, tooLong := m.write(buffer[index:])
-
 			if tooLong {
+				//Big message
 				//Send previous buffer
 				if index > 0 {
 					conn.Write(buffer[0:index])

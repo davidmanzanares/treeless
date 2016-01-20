@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -16,58 +17,52 @@ type result struct {
 	err   error
 }
 
-//ClientConn is a DB TCP client connection
-type ClientConn struct {
-	conn         net.Conn
-	writeChannel chan tlTCP.Message
-	waitLock     sync.Mutex
-	waits        map[uint32](chan result)
-	tid          uint32
-	chanPool     sync.Pool
+//Conn is a DB TCP client connection
+type Conn struct {
+	conn         net.Conn                 //TCP connection
+	writeChannel chan tlTCP.Message       //TCP writer communicattion is made throught this channel
+	chanPool     sync.Pool                //Pool of channels to be used as mechanisms to wait until response, make a pool to avoid GC performance penalties
+	mutex        sync.Mutex               //Following atribbutes aren't thread-safe, we need to lock and unlock this mutex to protect them
+	waits        map[uint32](chan result) //Map of transactions IDs to channels
+	tid          uint32                   //Transaction ID
 }
 
-const writeTimeWindow = 1000
-
 //CreateConnection returns a new DB connection
-func CreateConnection(addr string) (*ClientConn, error) {
-
-	var c ClientConn
-	c.chanPool.New = func() interface{} {
-		return make(chan result)
-	}
-
-	c.waits = make(map[uint32](chan result))
+func CreateConnection(addr string) (*Conn, error) {
+	//log.Println("Dialing for new connection", taddr)
 	taddr, errp := net.ResolveTCPAddr("tcp", addr)
 	if errp != nil {
 		return nil, errp
 	}
-	//log.Println("Dialing for new connection", taddr)
 	tcpconn, err := net.DialTCP("tcp", nil, taddr)
 	if err != nil {
 		return nil, err
 	}
-	writeCh := make(chan tlTCP.Message, 128)
-	c.conn = tcpconn
-	c.writeChannel = writeCh
 
-	go tlTCP.Writer(tcpconn, writeCh)
+	var c Conn
+	c.conn = tcpconn
+	c.chanPool.New = func() interface{} {
+		return make(chan result)
+	}
+	c.waits = make(map[uint32](chan result))
+	c.writeChannel = make(chan tlTCP.Message, 128)
+
+	go tlTCP.Writer(tcpconn, c.writeChannel)
 	go listenToResponses(&c)
 
 	return &c, nil
 }
 
-func listenToResponses(c *ClientConn) {
+func listenToResponses(c *Conn) {
 	f := func(m tlTCP.Message) {
-		c.waitLock.Lock()
+		c.mutex.Lock()
 		ch := c.waits[m.ID]
-		c.waitLock.Unlock()
+		c.mutex.Unlock()
 		switch m.Type {
 		case tlTCP.OpGetResponse:
 			rval := make([]byte, len(m.Value))
 			copy(rval, m.Value)
 			ch <- result{rval, nil}
-		case tlTCP.OpGetResponseError:
-			ch <- result{nil, errors.New(string(m.Value))}
 		case tlTCP.OpGetConfResponse:
 			rval := make([]byte, len(m.Value))
 			copy(rval, m.Value)
@@ -78,12 +73,14 @@ func listenToResponses(c *ClientConn) {
 			rval := make([]byte, len(m.Value))
 			copy(rval, m.Value)
 			ch <- result{rval, nil}
-		case tlTCP.OpOK:
+		case tlTCP.OpTransferCompleted:
 			ch <- result{nil, nil}
-		default:
+		case tlTCP.OpErr:
 			err := make([]byte, len(m.Value))
 			copy(err, m.Value)
 			ch <- result{nil, errors.New("Response error: " + string(err))}
+		default:
+			ch <- result{nil, errors.New("Invalid response operation code: " + fmt.Sprint(m.Type))}
 		}
 	}
 	tlTCP.Reader(c.conn, f)
@@ -91,7 +88,7 @@ func listenToResponses(c *ClientConn) {
 }
 
 //Close this connection
-func (c *ClientConn) Close() {
+func (c *Conn) Close() {
 	if c != nil && c.conn != nil && c.conn.Close() == nil {
 		close(c.writeChannel)
 		c.writeChannel = nil
@@ -99,16 +96,29 @@ func (c *ClientConn) Close() {
 	}
 }
 
-//Get the value of  key
-func (c *ClientConn) Get(key []byte) ([]byte, error) {
-	var mess tlTCP.Message
+func (c *Conn) getTID() uint32 {
+	c.mutex.Lock()
+	mytid := c.tid
+	c.tid++
+	c.mutex.Unlock()
+	return mytid
+}
 
+func (c *Conn) getTIDChannel() (uint32, chan result) {
 	ch := c.chanPool.Get().(chan result)
-	c.waitLock.Lock()
+	c.mutex.Lock()
 	mytid := c.tid
 	c.waits[c.tid] = ch
 	c.tid++
-	c.waitLock.Unlock()
+	c.mutex.Unlock()
+	return mytid, ch
+}
+
+//Get the value of key
+func (c *Conn) Get(key []byte) ([]byte, error) {
+	var mess tlTCP.Message
+
+	mytid, ch := c.getTIDChannel()
 
 	mess.Type = tlTCP.OpGet
 	mess.Key = key
@@ -121,21 +131,18 @@ func (c *ClientConn) Get(key []byte) ([]byte, error) {
 		return nil, errors.New("response timeout")
 	case r := <-ch:
 		c.chanPool.Put(ch)
-		c.waitLock.Lock()
+		c.mutex.Lock()
 		delete(c.waits, mytid)
-		c.waitLock.Unlock()
+		c.mutex.Unlock()
 		return r.value, r.err
 	}
 }
 
 //Set a new key/value pair
-func (c *ClientConn) Set(key, value []byte) error {
+func (c *Conn) Set(key, value []byte) error {
 	var mess tlTCP.Message
 
-	c.waitLock.Lock()
-	mytid := c.tid
-	c.tid++
-	c.waitLock.Unlock()
+	mytid := c.getTID()
 
 	mess.Type = tlTCP.OpSet
 	mess.ID = mytid
@@ -148,15 +155,10 @@ func (c *ClientConn) Set(key, value []byte) error {
 }
 
 //Transfer a chunk
-func (c *ClientConn) Transfer(addr string, chunkID int) error {
+func (c *Conn) Transfer(addr string, chunkID int) error {
 	var mess tlTCP.Message
 
-	ch := c.chanPool.Get().(chan result)
-	c.waitLock.Lock()
-	mytid := c.tid
-	c.waits[c.tid] = ch
-	c.tid++
-	c.waitLock.Unlock()
+	mytid, ch := c.getTIDChannel()
 
 	mess.Type = tlTCP.OpTransfer
 	mess.ID = mytid
@@ -175,24 +177,19 @@ func (c *ClientConn) Transfer(addr string, chunkID int) error {
 		return errors.New("response timeout")
 	case r := <-ch:
 		c.chanPool.Put(ch)
-		c.waitLock.Lock()
+		c.mutex.Lock()
 		delete(c.waits, mytid)
-		c.waitLock.Unlock()
+		c.mutex.Unlock()
 		return r.err
 	}
 	return nil
 }
 
 //GetAccessInfo request DB access info
-func (c *ClientConn) GetAccessInfo() ([]byte, error) {
+func (c *Conn) GetAccessInfo() ([]byte, error) {
 	var mess tlTCP.Message
 
-	ch := c.chanPool.Get().(chan result)
-	c.waitLock.Lock()
-	mytid := c.tid
-	c.waits[c.tid] = ch
-	c.tid++
-	c.waitLock.Unlock()
+	mytid, ch := c.getTIDChannel()
 
 	mess.Type = tlTCP.OpGetConf
 	mess.ID = mytid
@@ -200,22 +197,17 @@ func (c *ClientConn) GetAccessInfo() ([]byte, error) {
 	c.writeChannel <- mess
 	r := <-ch
 	c.chanPool.Put(ch)
-	c.waitLock.Lock()
+	c.mutex.Lock()
 	delete(c.waits, mytid)
-	c.waitLock.Unlock()
+	c.mutex.Unlock()
 	return r.value, r.err
 }
 
 //AddServerToGroup request to add this server to the server group
-func (c *ClientConn) AddServerToGroup(addr string) error {
+func (c *Conn) AddServerToGroup(addr string) error {
 	var mess tlTCP.Message
 
-	ch := c.chanPool.Get().(chan result)
-	c.waitLock.Lock()
-	mytid := c.tid
-	c.waits[c.tid] = ch
-	c.tid++
-	c.waitLock.Unlock()
+	mytid, ch := c.getTIDChannel()
 
 	mess.Type = tlTCP.OpAddServerToGroup
 	mess.ID = mytid
@@ -224,22 +216,17 @@ func (c *ClientConn) AddServerToGroup(addr string) error {
 	c.writeChannel <- mess
 	r := <-ch
 	c.chanPool.Put(ch)
-	c.waitLock.Lock()
+	c.mutex.Lock()
 	delete(c.waits, mytid)
-	c.waitLock.Unlock()
+	c.mutex.Unlock()
 	return r.err
 }
 
 //GetChunkInfo request chunk info
-func (c *ClientConn) GetChunkInfo(chunkID int) (size uint64, err error) {
+func (c *Conn) GetChunkInfo(chunkID int) (size uint64, err error) {
 	var mess tlTCP.Message
 
-	ch := c.chanPool.Get().(chan result)
-	c.waitLock.Lock()
-	mytid := c.tid
-	c.waits[c.tid] = ch
-	c.tid++
-	c.waitLock.Unlock()
+	mytid, ch := c.getTIDChannel()
 
 	mess.Type = tlTCP.OpGetChunkInfo
 	mess.ID = mytid
@@ -250,9 +237,9 @@ func (c *ClientConn) GetChunkInfo(chunkID int) (size uint64, err error) {
 	c.writeChannel <- mess
 	r := <-ch
 	c.chanPool.Put(ch)
-	c.waitLock.Lock()
+	c.mutex.Lock()
 	delete(c.waits, mytid)
-	c.waitLock.Unlock()
+	c.mutex.Unlock()
 	if r.err != nil {
 		return 0, r.err
 	}

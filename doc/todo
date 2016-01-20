@@ -8,6 +8,7 @@ Core: 1 sem
 	-refactor
 	-ipport variable naming
     -add DEL
+	
     -add tests
     -add benchmarks
 	-messages TCP opt

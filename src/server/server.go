@@ -132,7 +132,7 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 			//fmt.Println("Get operation", key, rval, err)
 			response.ID = message.ID
 			if err != nil {
-				response.Type = tlTCP.OpGetResponseError
+				response.Type = tlTCP.OpErr
 				response.Value = []byte(err.Error())
 			} else {
 				response.Type = tlTCP.OpGetResponse
@@ -159,14 +159,14 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 				writeCh <- response
 			}
 			if s.sg.IsChunkPresent(chunkID) {
-				//New goroutine will put every key value pair into destination, it will manage the OpOK response
+				//New goroutine will put every key value pair into destination, it will manage the OpTransferOK response
 				addr := string(message.Value)
 				c, err := tlcom.CreateConnection(addr)
 				if err != nil {
 					log.Println(1111111111, err)
 					transferFail()
 				} else {
-					go func(c *tlcom.ClientConn) {
+					go func(c *tlcom.Conn) {
 						s.m.Iterate(chunkID, func(key, value []byte) {
 							c.Set(key, value)
 						})
@@ -174,7 +174,7 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 						c.Close()
 						var response tlTCP.Message
 						response.ID = message.ID
-						response.Type = tlTCP.OpOK
+						response.Type = tlTCP.OpTransferCompleted
 						writeCh <- response
 					}(c)
 				}

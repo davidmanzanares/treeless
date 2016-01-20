@@ -15,6 +15,7 @@ import (
 	"time"
 	"treeless/src/client"
 	"treeless/src/com"
+	_ "treeless/src/server"
 )
 
 func TestMain(m *testing.M) {
@@ -67,6 +68,7 @@ func LaunchServer(assoc string) (addr string, stop func()) {
 	return newAddr,
 		func() {
 			cmd.Process.Kill()
+			time.Sleep(time.Millisecond * 10)
 			os.RemoveAll(dbpath)
 			//fmt.Println(cmd.Path + cmd.Args[1] + cmd.Args[2] + cmd.Args[3] + cmd.Args[4] + " killed")
 		}

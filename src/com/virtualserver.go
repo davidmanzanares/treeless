@@ -4,10 +4,10 @@ import "time"
 
 //VirtualServer stores generical server info
 type VirtualServer struct {
-	Phy           string      //Physcal address
-	LastHeartbeat time.Time   //Last time a heartbeat was listened
-	HeldChunks    []int       //List of all chunks that this server holds
-	Conn          *ClientConn //TCP connection, it may not exists
+	Phy           string    //Physcal address
+	LastHeartbeat time.Time //Last time a heartbeat was listened
+	HeldChunks    []int     //List of all chunks that this server holds
+	Conn          *Conn     //TCP connection, it may not exists
 }
 
 //NeedConnection tries to create a connection to the server
