@@ -114,28 +114,36 @@ func (c *Conn) getTIDChannel() (uint32, chan result) {
 	return mytid, ch
 }
 
+func (c *Conn) waitForResponse(tid uint32, ch chan result, timeout time.Duration) ([]byte, error) {
+	select {
+	case <-time.After(timeout):
+		c.mutex.Lock()
+		delete(c.waits, tid)
+		c.mutex.Unlock()
+		c.chanPool.Put(ch)
+		return nil, errors.New("response timeout")
+	case r := <-ch:
+		c.mutex.Lock()
+		delete(c.waits, tid)
+		c.mutex.Unlock()
+		c.chanPool.Put(ch)
+		return r.value, r.err
+	}
+}
+
 //Get the value of key
 func (c *Conn) Get(key []byte) ([]byte, error) {
 	var mess tlTCP.Message
 
-	mytid, ch := c.getTIDChannel()
+	tid, ch := c.getTIDChannel()
 
 	mess.Type = tlTCP.OpGet
 	mess.Key = key
-	mess.ID = mytid
+	mess.ID = tid
 
 	c.writeChannel <- mess
 
-	select {
-	case <-time.After(time.Millisecond * 100):
-		return nil, errors.New("response timeout")
-	case r := <-ch:
-		c.chanPool.Put(ch)
-		c.mutex.Lock()
-		delete(c.waits, mytid)
-		c.mutex.Unlock()
-		return r.value, r.err
-	}
+	return c.waitForResponse(tid, ch, time.Millisecond*100)
 }
 
 //Set a new key/value pair
@@ -158,10 +166,10 @@ func (c *Conn) Set(key, value []byte) error {
 func (c *Conn) Transfer(addr string, chunkID int) error {
 	var mess tlTCP.Message
 
-	mytid, ch := c.getTIDChannel()
+	tid, ch := c.getTIDChannel()
 
 	mess.Type = tlTCP.OpTransfer
-	mess.ID = mytid
+	mess.ID = tid
 	var err error
 	mess.Key, err = json.Marshal(chunkID)
 	mess.Value = []byte(addr)
@@ -172,77 +180,57 @@ func (c *Conn) Transfer(addr string, chunkID int) error {
 	//fmt.Println("sending put", key, value, len(string(key)), len(key))
 	c.writeChannel <- mess
 
-	select {
-	case <-time.After(time.Millisecond * 1000000):
-		return errors.New("response timeout")
-	case r := <-ch:
-		c.chanPool.Put(ch)
-		c.mutex.Lock()
-		delete(c.waits, mytid)
-		c.mutex.Unlock()
-		return r.err
-	}
-	return nil
+	_, err = c.waitForResponse(tid, ch, time.Millisecond*1000000)
+	return err
+
 }
 
 //GetAccessInfo request DB access info
 func (c *Conn) GetAccessInfo() ([]byte, error) {
 	var mess tlTCP.Message
 
-	mytid, ch := c.getTIDChannel()
+	tid, ch := c.getTIDChannel()
 
 	mess.Type = tlTCP.OpGetConf
-	mess.ID = mytid
+	mess.ID = tid
 
 	c.writeChannel <- mess
-	r := <-ch
-	c.chanPool.Put(ch)
-	c.mutex.Lock()
-	delete(c.waits, mytid)
-	c.mutex.Unlock()
-	return r.value, r.err
+
+	return c.waitForResponse(tid, ch, time.Millisecond*100)
 }
 
 //AddServerToGroup request to add this server to the server group
 func (c *Conn) AddServerToGroup(addr string) error {
 	var mess tlTCP.Message
 
-	mytid, ch := c.getTIDChannel()
+	tid, ch := c.getTIDChannel()
 
 	mess.Type = tlTCP.OpAddServerToGroup
-	mess.ID = mytid
+	mess.ID = tid
 	mess.Key = []byte(addr)
 
 	c.writeChannel <- mess
-	r := <-ch
-	c.chanPool.Put(ch)
-	c.mutex.Lock()
-	delete(c.waits, mytid)
-	c.mutex.Unlock()
-	return r.err
+
+	_, err := c.waitForResponse(tid, ch, time.Millisecond*100)
+	return err
 }
 
 //GetChunkInfo request chunk info
 func (c *Conn) GetChunkInfo(chunkID int) (size uint64, err error) {
 	var mess tlTCP.Message
 
-	mytid, ch := c.getTIDChannel()
+	tid, ch := c.getTIDChannel()
 
 	mess.Type = tlTCP.OpGetChunkInfo
-	mess.ID = mytid
+	mess.ID = tid
 	b := make([]byte, 4)
 	binary.LittleEndian.PutUint32(b, uint32(chunkID))
 	mess.Key = b
 
 	c.writeChannel <- mess
-	r := <-ch
-	c.chanPool.Put(ch)
-	c.mutex.Lock()
-	delete(c.waits, mytid)
-	c.mutex.Unlock()
-	if r.err != nil {
-		return 0, r.err
+	rval, err := c.waitForResponse(tid, ch, time.Millisecond*100)
+	if err != nil {
+		return 0, err
 	}
-	size = binary.LittleEndian.Uint64(r.value)
-	return size, nil
+	return binary.LittleEndian.Uint64(rval), nil
 }
