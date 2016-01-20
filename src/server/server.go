@@ -97,8 +97,8 @@ func (s *Server) LogInfo() {
 }
 
 func udpCreateReplier(sg *tlcom.ServerGroup) tlUDP.ReplyCallback {
-	return func() []byte {
-		var r tlcom.Keepalive
+	return func() tlUDP.AmAlive {
+		var r tlUDP.AmAlive
 		for i := 0; i < sg.NumChunks; i++ {
 			if sg.IsChunkPresent(i) {
 				r.KnownChunks = append(r.KnownChunks, i)
@@ -107,11 +107,7 @@ func udpCreateReplier(sg *tlcom.ServerGroup) tlUDP.ReplyCallback {
 		for _, s := range sg.Servers {
 			r.KnownServers = append(r.KnownServers, s.Phy)
 		}
-		b, err := json.Marshal(r)
-		if err != nil {
-			panic(err)
-		}
-		return b
+		return r
 	}
 }
 

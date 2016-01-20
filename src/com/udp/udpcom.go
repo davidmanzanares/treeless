@@ -1,15 +1,21 @@
 package tlUDP
 
 import (
+	"encoding/json"
 	"log"
 	"net"
 	"time"
 )
 
+type AmAlive struct {
+	KnownChunks  []int    //Chunks known by the server
+	KnownServers []string //Servers known by the server
+}
+
 const maxMessageSize = 1024 * 16
 
-//ReplyCallback is a function type that should return the server status in []byte form
-type ReplyCallback func() []byte
+//ReplyCallback is a function type that should return an AmAlive message
+type ReplyCallback func() AmAlive
 
 //Reply listens and response to UDP requests
 func Reply(callback ReplyCallback, udpPort int) net.Conn {
@@ -24,7 +30,8 @@ func Reply(callback ReplyCallback, udpPort int) net.Conn {
 				conn.Close()
 				return
 			}
-			_, err = conn.WriteTo(callback(), addr)
+			aa := callback()
+			_, err = conn.WriteTo(aa.marshal(), addr)
 			if err != nil {
 				log.Println(err)
 			}
@@ -34,7 +41,7 @@ func Reply(callback ReplyCallback, udpPort int) net.Conn {
 }
 
 //Request sends a UDP request to ip with a timeout, it waits until the timeout for a response
-func Request(addr string, timeout time.Duration) (response []byte, err error) {
+func Request(addr string, timeout time.Duration) (response *AmAlive, err error) {
 	conn, err := net.ListenUDP("udp", nil)
 	defer conn.Close()
 	if err != nil {
@@ -52,7 +59,21 @@ func Request(addr string, timeout time.Duration) (response []byte, err error) {
 		if err != nil {
 			return nil, err
 		} else if readAddr.IP.Equal(destAddr.IP) {
-			return message[:n], nil
+			return amAliveUnMarshal(message[:n])
 		}
 	}
+}
+
+func (aa *AmAlive) marshal() []byte {
+	s, err := json.Marshal(aa)
+	if err != nil {
+		panic(err)
+	}
+	return s
+}
+
+func amAliveUnMarshal(s []byte) (*AmAlive, error) {
+	var aa AmAlive
+	err := json.Unmarshal(s, &aa)
+	return &aa, err
 }

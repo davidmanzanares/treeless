@@ -154,16 +154,10 @@ func ConnectAsClient(addr string) (*ServerGroup, error) {
 	//Lookup for servers
 	for _, s := range sg.Servers {
 		//Request known chunks list
-		b, err := tlUDP.Request(s.Phy, time.Millisecond*50)
+		aa, err := tlUDP.Request(s.Phy, time.Millisecond*50)
 		if err == nil {
-			var udpr Keepalive
-			err = json.Unmarshal(b, &udpr)
-			if err != nil {
-				log.Println("UDPResponse unmarshalling error", err)
-				continue
-			}
 			s.LastHeartbeat = time.Now()
-			s.HeldChunks = udpr.KnownChunks
+			s.HeldChunks = aa.KnownChunks
 			for i := range s.HeldChunks {
 				sg.chunks[i].Holders[s] = true
 			}
@@ -233,16 +227,10 @@ func heartbeatRequester(sg *ServerGroup) {
 			s := l.Front().Value.(*VirtualServer)
 
 			//Request known chunks list
-			b, err := tlUDP.Request(s.Phy, time.Millisecond*50)
+			aa, err := tlUDP.Request(s.Phy, time.Millisecond*50)
 			if err == nil {
-				//Unmarshal response
-				var udpr Keepalive
-				err = json.Unmarshal(b, &udpr)
-				if err != nil {
-					panic(err)
-				}
 				//Detect added servers
-				for _, addr := range udpr.KnownServers {
+				for _, addr := range aa.KnownServers {
 					_, exists := sg.Servers[addr]
 					if !exists {
 						sg.Servers[addr] = new(VirtualServer)
@@ -251,7 +239,7 @@ func heartbeatRequester(sg *ServerGroup) {
 					}
 				}
 				//Detect added chunks
-				for _, c := range udpr.KnownChunks {
+				for _, c := range aa.KnownChunks {
 					ok := false
 					for _, c2 := range s.HeldChunks {
 						if c == c2 {
@@ -266,7 +254,7 @@ func heartbeatRequester(sg *ServerGroup) {
 				//Detect forgotten chunks
 				for _, c := range s.HeldChunks {
 					ok := false
-					for _, c2 := range udpr.KnownChunks {
+					for _, c2 := range aa.KnownChunks {
 						if c == c2 {
 							ok = true
 							break
@@ -277,8 +265,8 @@ func heartbeatRequester(sg *ServerGroup) {
 					}
 				}
 
-				s.HeldChunks = udpr.KnownChunks
-				//log.Println("held", s.Phy, udpr)
+				s.HeldChunks = aa.KnownChunks
+				//log.Println("held", s.Phy, aa)
 				//Remove old chunks
 				for c := range s.HeldChunks {
 					delete(sg.chunks[c].Holders, s)
