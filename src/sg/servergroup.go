@@ -1,4 +1,4 @@
-package tlcom
+package tlsg
 
 import (
 	"container/list"
@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"treeless/src/com"
 	"treeless/src/com/udp"
 )
 
@@ -100,7 +101,7 @@ func CreateServerGroup(numChunks int, port string, redundancy int) *ServerGroup 
 	//Add this server
 	localhost := new(VirtualServer)
 	localhost.LastHeartbeat = time.Now()
-	localhost.Phy = GetLocalIP() + ":" + port
+	localhost.Phy = tlcom.GetLocalIP() + ":" + port
 	localhost.HeldChunks = make([]int, numChunks)
 	for i := 0; i < numChunks; i++ {
 		//Add all chunks to this server
@@ -127,7 +128,7 @@ func CreateServerGroup(numChunks int, port string, redundancy int) *ServerGroup 
 //ConnectAsClient connects to an existing server group as a client
 func ConnectAsClient(addr string) (*ServerGroup, error) {
 	//Connect to the provided address
-	c, err := CreateConnection(addr)
+	c, err := tlcom.CreateConnection(addr)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +185,7 @@ func Associate(destAddr string, localport string) (*ServerGroup, error) {
 	}
 	sg.Lock()
 	defer sg.Unlock()
-	localhost := GetLocalIP() + ":" + localport
+	localhost := tlcom.GetLocalIP() + ":" + localport
 	//Add to external servergroup instances
 	//For each other server: add localhost
 	for _, s := range sg.Servers {

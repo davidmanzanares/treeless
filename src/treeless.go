@@ -8,8 +8,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"time"
-	"treeless/src/com"
-	"treeless/src/server"
+	"treeless/src/sg"
 )
 
 func main() {
@@ -43,7 +42,7 @@ func main() {
 	}
 
 	if *monitor != "" {
-		s, err := tlcom.ConnectAsClient(*monitor)
+		s, err := tlsg.ConnectAsClient(*monitor)
 		if err != nil {
 			fmt.Println("Access couldn't be established")
 			fmt.Println(err)
@@ -51,10 +50,10 @@ func main() {
 		fmt.Println(s)
 	} else if *create {
 		//TODO 8 parametrizar
-		tlserver.Start("", *port, 8, *redundancy, *dbpath)
+		tlsg.Start("", *port, 8, *redundancy, *dbpath)
 		select {}
 	} else if *assoc != "" {
-		tlserver.Start(*assoc, *port, 8, *redundancy, *dbpath)
+		tlsg.Start(*assoc, *port, 8, *redundancy, *dbpath)
 		select {}
 	} else {
 		log.Fatal("No operations passed. See usage with --help.")

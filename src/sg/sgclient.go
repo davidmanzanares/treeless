@@ -1,21 +1,20 @@
-package tlclient
+package tlsg
 
 import (
 	"encoding/binary"
 	"errors"
 	"time"
 	"treeless/src/com"
+	"treeless/src/hash"
 )
 
-import "treeless/src/hash"
-
 type Client struct {
-	sg *tlcom.ServerGroup
+	sg *ServerGroup
 }
 
 func Connect(addr string) (*Client, error) {
 	c := new(Client)
-	sg, err := tlcom.ConnectAsClient(addr)
+	sg, err := ConnectAsClient(addr)
 	if err != nil {
 		return nil, err
 	}

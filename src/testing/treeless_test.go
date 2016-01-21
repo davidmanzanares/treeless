@@ -13,9 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
-	"treeless/src/client"
 	"treeless/src/com"
-	_ "treeless/src/server"
+	"treeless/src/sg"
 )
 
 func TestMain(m *testing.M) {
@@ -59,7 +58,7 @@ func LaunchServer(assoc string) (addr string, stop func()) {
 	newAddr := string(tlcom.GetLocalIP()) + ":" + fmt.Sprint(10000+id-1)
 	for i := 0; i < 50; i++ {
 		time.Sleep(time.Millisecond * 50)
-		client, err := tlclient.Connect(newAddr)
+		client, err := tlsg.Connect(newAddr)
 		if err == nil {
 			client.Close()
 			break
@@ -80,7 +79,7 @@ func TestSimple(t *testing.T) {
 	addr, stop := LaunchServer("")
 	defer stop()
 	//Client set-up
-	client, err := tlclient.Connect(addr)
+	client, err := tlsg.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +105,7 @@ func TestBasicRebalance(t *testing.T) {
 	//Server set-up
 	addr1, stop1 := LaunchServer("")
 	//Client set-up
-	client, err := tlclient.Connect(addr1)
+	client, err := tlsg.Connect(addr1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +135,7 @@ func TestCmplx1_1(t *testing.T) {
 	addr, stop := LaunchServer("")
 	defer stop()
 	//Client set-up
-	client, err := tlclient.Connect(addr)
+	client, err := tlsg.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +155,7 @@ func TestCmplxN_N(t *testing.T) {
 }
 
 //This test will make lots of PUT/SET/DELETE operations using a PRNG, then it will use GET operations to check the DB status
-func metaTest(c *tlclient.Client, numOperations, maxKeySize, maxValueSize, threads, maxKeys int) {
+func metaTest(c *tlsg.Client, numOperations, maxKeySize, maxValueSize, threads, maxKeys int) {
 	//Operate on built-in map, DB will be checked against this map
 	goMap := make(map[string][]byte)
 	var goDeletes []([]byte)
@@ -256,7 +255,7 @@ func TestSync1_1(t *testing.T) {
 	addr, stop := LaunchServer("")
 	defer stop()
 	//Client set-up
-	client, err := tlclient.Connect(addr)
+	client, err := tlsg.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +263,7 @@ func TestSync1_1(t *testing.T) {
 
 	metaSyncTest(client, 10*10000, 8, 8, 10, 1024)
 }
-func metaSyncTest(c *tlclient.Client, numOperations, maxKeySize, maxValueSize, threads, maxKeys int) {
+func metaSyncTest(c *tlsg.Client, numOperations, maxKeySize, maxValueSize, threads, maxKeys int) {
 	runtime.GOMAXPROCS(threads)
 	goMap := make(map[string]time.Time)
 	var m sync.Mutex
@@ -324,7 +323,7 @@ func TestBigMessages(t *testing.T) {
 	addr, stop := LaunchServer("")
 	defer stop()
 	//Client set-up
-	client, err := tlclient.Connect(addr)
+	client, err := tlsg.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}

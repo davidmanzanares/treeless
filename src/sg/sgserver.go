@@ -1,14 +1,10 @@
-package tlserver
+package tlsg
 
 import (
 	"encoding/binary"
 	"encoding/json"
-	"hash/fnv"
 	"log"
-	"net"
-	"strconv"
 	"sync/atomic"
-	"time"
 	"treeless/src/com"
 	"treeless/src/com/tcp"
 	"treeless/src/com/udp"
@@ -19,11 +15,10 @@ import (
 type Server struct {
 	//Core
 	m *tlcore.Map
-	//Net
-	udpCon      net.Conn
-	tcpListener *net.TCPListener
+	//Com
+	s *tlcom.Server
 	//Distribution
-	sg *tlcom.ServerGroup
+	sg *ServerGroup
 	//Status
 	stopped int32
 }
@@ -39,10 +34,9 @@ func Start(addr string, localport string, numChunks, redundancy int, dbpath stri
 			panic(r)
 		}
 	}()
-
+	var s Server
 	//Launch core
 	var err error
-	var s Server
 	s.m = tlcore.NewMap(dbpath, numChunks)
 	if err != nil {
 		panic(err)
@@ -50,31 +44,21 @@ func Start(addr string, localport string, numChunks, redundancy int, dbpath stri
 	//Servergroup initialization
 	if addr == "" {
 		//New DB group
-		s.sg = tlcom.CreateServerGroup(len(s.m.Chunks), localport, redundancy)
+		s.sg = CreateServerGroup(len(s.m.Chunks), localport, redundancy)
 	} else {
 		//Associate to an existing DB group
-		s.sg, err = tlcom.Associate(addr, localport)
+		s.sg, err = Associate(addr, localport)
 		if err != nil {
 			panic(err)
 		}
 	}
 	//Init server
-	listenConnections(&s, localport)
-	iport, err := strconv.Atoi(localport)
-	if err != nil {
-		panic(err)
-	}
-	s.udpCon = tlUDP.Reply(udpCreateReplier(s.sg), iport)
+	s.s = tlcom.Start(addr, localport, tcpCreateReplier(&s), udpCreateReplier(s.sg))
 	//Rebalancer
-	tlcom.Rebalance(s.sg)
+	//TODO order is good??? rebalance-server
+	Rebalance(s.sg)
 	log.Println("Server boot-up completed")
 	return &s
-}
-
-func chunkHash(x int, y time.Time) uint64 {
-	hasher := fnv.New64a()
-	hasher.Write([]byte(time.Now().String()))
-	return hasher.Sum64()
 }
 
 //IsStopped returns true if the server is not running
@@ -85,8 +69,7 @@ func (s *Server) IsStopped() bool {
 //Stop the server, close all TCP/UDP connections
 func (s *Server) Stop() {
 	atomic.StoreInt32(&s.stopped, 1)
-	s.udpCon.Close()
-	s.tcpListener.Close()
+	s.s.Stop()
 	s.m.Close()
 	s.sg.Stop()
 }
@@ -96,7 +79,7 @@ func (s *Server) LogInfo() {
 	log.Println(s.sg)
 }
 
-func udpCreateReplier(sg *tlcom.ServerGroup) tlUDP.ReplyCallback {
+func udpCreateReplier(sg *ServerGroup) tlcom.UDPCallback {
 	return func() tlUDP.AmAlive {
 		var r tlUDP.AmAlive
 		for i := 0; i < sg.NumChunks; i++ {
@@ -111,15 +94,8 @@ func udpCreateReplier(sg *tlcom.ServerGroup) tlUDP.ReplyCallback {
 	}
 }
 
-func listenRequests(conn *net.TCPConn, id int, s *Server) {
-	//log.Println("New connection accepted. Connection ID:", id)
-	//tcpWriter will buffer TCP writes to send more message in less TCP packets
-	//this technique allows bigger throughtputs, but latency in increased a little
-	writeCh := make(chan tlTCP.Message, 1024)
-	go tlTCP.Writer(conn, writeCh)
-	//fmt.Println("Server", conn.LocalAddr(), "listening")
-
-	processMessage := func(message tlTCP.Message) {
+func tcpCreateReplier(s *Server) tlcom.TCPCallback {
+	return func(message tlTCP.Message, responseChannel chan tlTCP.Message) {
 		//fmt.Println("Server", conn.LocalAddr(), "message recieved", string(message.Key), string(message.Value))
 		switch message.Type {
 		case tlcore.OpGet:
@@ -134,7 +110,7 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 				response.Type = tlTCP.OpGetResponse
 				response.Value = rval
 			}
-			writeCh <- response
+			responseChannel <- response
 		case tlcore.OpSet:
 			s.m.Set(message.Key, message.Value)
 			//TODO err response
@@ -152,7 +128,7 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 				var response tlTCP.Message
 				response.ID = message.ID
 				response.Type = tlTCP.OpErr
-				writeCh <- response
+				responseChannel <- response
 			}
 			if s.sg.IsChunkPresent(chunkID) {
 				//New goroutine will put every key value pair into destination, it will manage the OpTransferOK response
@@ -171,7 +147,7 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 						var response tlTCP.Message
 						response.ID = message.ID
 						response.Type = tlTCP.OpTransferCompleted
-						writeCh <- response
+						responseChannel <- response
 					}(c)
 				}
 			} else {
@@ -186,7 +162,7 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 				panic(err)
 			}
 			response.Value = b
-			writeCh <- response
+			responseChannel <- response
 		case tlTCP.OpAddServerToGroup:
 			var response tlTCP.Message
 			response.ID = message.ID
@@ -194,10 +170,10 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 			if err != nil {
 				response.Type = tlTCP.OpErr
 				response.Value = []byte(err.Error())
-				writeCh <- response
+				responseChannel <- response
 			} else {
 				response.Type = tlTCP.OpAddServerToGroupACK
-				writeCh <- response
+				responseChannel <- response
 			}
 		case tlTCP.OpGetChunkInfo:
 			var response tlTCP.Message
@@ -206,49 +182,13 @@ func listenRequests(conn *net.TCPConn, id int, s *Server) {
 			response.Type = tlTCP.OpGetChunkInfoResponse
 			response.Value = make([]byte, 8)
 			binary.LittleEndian.PutUint64(response.Value, c.St.Length+1)
-			writeCh <- response
+			responseChannel <- response
 		default:
 			var response tlTCP.Message
 			response.ID = message.ID
 			response.Type = tlTCP.OpErr
 			response.Value = []byte("Operation not supported")
-			writeCh <- response
+			responseChannel <- response
 		}
 	}
-
-	tlTCP.Reader(conn, processMessage)
-
-	close(writeCh)
-
-	conn.Close()
-	//log.Println("Connection closed. Connection ID:", id)
-}
-
-func listenConnections(s *Server, port string) {
-	taddr, err := net.ResolveTCPAddr("tcp", tlcom.GetLocalIP()+":"+port)
-	if err != nil {
-		panic(err)
-	}
-	ln, err := net.ListenTCP("tcp", taddr)
-	if err != nil {
-		panic(err)
-	}
-	s.tcpListener = ln
-	go func(s *Server) {
-		var tcpConnections []*net.TCPConn
-		for i := 0; ; i++ {
-			conn, err := s.tcpListener.AcceptTCP()
-			if err != nil {
-				for i := 0; i < len(tcpConnections); i++ {
-					tcpConnections[i].Close()
-				}
-				if s.IsStopped() {
-					return
-				}
-				panic(err)
-			}
-			tcpConnections = append(tcpConnections, conn)
-			go listenRequests(conn, i, s)
-		}
-	}(s)
 }
