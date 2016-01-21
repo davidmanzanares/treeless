@@ -180,26 +180,30 @@ func TestCmplxN_N(t *testing.T) {
 	//metaTest(10*1000, 10, 40, 10)
 }
 
+func randKVOpGenerator(maxKeySize, maxValueSize, seed, mult, offset int) func() (op int, k, v []byte) {
+	r := rand.New(rand.NewSource(int64(seed)))
+	base := make([]byte, 4)
+	base2 := make([]byte, 4)
+	return func() (op int, k, v []byte) {
+		opKeySize := r.Intn(maxKeySize) + 1
+		opValueSize := r.Intn(maxValueSize) + 1
+		binary.LittleEndian.PutUint32(base, uint32(r.Int31())*uint32(mult)+uint32(offset))
+		binary.LittleEndian.PutUint32(base2, uint32(r.Int31())*uint32(mult)+uint32(offset))
+		key := bytes.Repeat([]byte(base), opKeySize)[0:opKeySize]
+		value := bytes.Repeat([]byte(base2), opValueSize)[0:opValueSize]
+		return 1 + r.Intn(2), key, value
+	}
+}
+
 //This test will make lots of PUT/SET/DELETE operations using a PRNG, then it will use GET operations to check the DB status
 func metaTest(c *tlsg.DBClient, numOperations, maxKeySize, maxValueSize, threads, maxKeys int) {
 	//Operate on built-in map, DB will be checked against this map
 	goMap := make(map[string][]byte)
 	var goDeletes []([]byte)
 	for core := 0; core < threads; core++ {
-		r := rand.New(rand.NewSource(int64(core)))
-		base := make([]byte, 4)
-		base2 := make([]byte, 4)
+		rNext := randKVOpGenerator(maxKeySize, maxValueSize, core, 64, core)
 		for i := 0; i < numOperations; i++ {
-			opType := r.Intn(2)
-			opKeySize := r.Intn(maxKeySize-1) + 4
-			opValueSize := r.Intn(maxValueSize-1) + 1
-			binary.LittleEndian.PutUint32(base, (uint32(i*64)+uint32(core))%uint32(maxKeys))
-			binary.LittleEndian.PutUint32(base2, uint32(i*64+core)%uint32(maxKeys))
-			key := bytes.Repeat([]byte(base), opKeySize)[0:opKeySize]
-			value := bytes.Repeat([]byte(base2), opValueSize)[0:opValueSize]
-			if len(value) > 128 {
-				panic(opValueSize)
-			}
+			opType, key, value := rNext()
 			switch opType {
 			case 0:
 				//Put
@@ -217,18 +221,9 @@ func metaTest(c *tlsg.DBClient, numOperations, maxKeySize, maxValueSize, threads
 	w.Add(threads)
 	for core := 0; core < threads; core++ {
 		go func(core int) {
-			r := rand.New(rand.NewSource(int64(core)))
-			base := make([]byte, 4)
-			base2 := make([]byte, 4)
+			rNext := randKVOpGenerator(maxKeySize, maxValueSize, core, 64, core)
 			for i := 0; i < numOperations; i++ {
-				opType := r.Intn(2)
-				opKeySize := r.Intn(maxKeySize-1) + 4
-				opValueSize := r.Intn(maxValueSize-1) + 1
-				binary.LittleEndian.PutUint32(base, (uint32(i*64)+uint32(core))%uint32(maxKeys))
-				binary.LittleEndian.PutUint32(base2, uint32(i*64+core)%uint32(maxKeys))
-				key := bytes.Repeat([]byte(base), opKeySize)[0:opKeySize]
-				value := bytes.Repeat([]byte(base2), opValueSize)[0:opValueSize]
-				//fmt.Println("db   ", opType, key, value)
+				opType, key, value := rNext()
 				switch opType {
 				case 0:
 					c.Set(key, value)
@@ -284,7 +279,7 @@ func TestSync1_1(t *testing.T) {
 	}
 	defer client.Close()
 
-	metaSyncTest(client, 10*10000, 8, 8, 10, 1024)
+	metaSyncTest(client, 10*10000, 2, 8, 10, 1024)
 }
 func metaSyncTest(c *tlsg.DBClient, numOperations, maxKeySize, maxValueSize, threads, maxKeys int) {
 	runtime.GOMAXPROCS(threads)
@@ -295,14 +290,10 @@ func metaSyncTest(c *tlsg.DBClient, numOperations, maxKeySize, maxValueSize, thr
 	initTime := time.Now()
 	for core := 0; core < threads; core++ {
 		go func(core int) {
+			rNext := randKVOpGenerator(maxKeySize, maxValueSize, core, 64, core)
 			value := make([]byte, 8)
-			r := rand.New(rand.NewSource(int64(core)))
-			base := make([]byte, 4)
 			for i := 0; i < numOperations; i++ {
-				opKeySize := r.Intn(maxKeySize-1) + 4
-				binary.LittleEndian.PutUint32(base, (uint32(i*64)+uint32(core))%uint32(maxKeys))
-				key := bytes.Repeat([]byte(base), opKeySize)[0:opKeySize]
-
+				_, key, _ := rNext()
 				t := time.Now()
 				binary.LittleEndian.PutUint64(value, uint64(t.UnixNano()))
 
