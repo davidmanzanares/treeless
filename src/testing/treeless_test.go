@@ -155,7 +155,7 @@ func TestCmplxN_N(t *testing.T) {
 }
 
 //This test will make lots of PUT/SET/DELETE operations using a PRNG, then it will use GET operations to check the DB status
-func metaTest(c *tlsg.Client, numOperations, maxKeySize, maxValueSize, threads, maxKeys int) {
+func metaTest(c *tlsg.DBClient, numOperations, maxKeySize, maxValueSize, threads, maxKeys int) {
 	//Operate on built-in map, DB will be checked against this map
 	goMap := make(map[string][]byte)
 	var goDeletes []([]byte)
@@ -263,7 +263,7 @@ func TestSync1_1(t *testing.T) {
 
 	metaSyncTest(client, 10*10000, 8, 8, 10, 1024)
 }
-func metaSyncTest(c *tlsg.Client, numOperations, maxKeySize, maxValueSize, threads, maxKeys int) {
+func metaSyncTest(c *tlsg.DBClient, numOperations, maxKeySize, maxValueSize, threads, maxKeys int) {
 	runtime.GOMAXPROCS(threads)
 	goMap := make(map[string]time.Time)
 	var m sync.Mutex

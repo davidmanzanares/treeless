@@ -1,9 +1,9 @@
 package tlcom
 
 import (
+	"fmt"
 	"hash/fnv"
 	"net"
-	"strconv"
 	"sync/atomic"
 	"time"
 	"treeless/src/com/tcp"
@@ -23,15 +23,11 @@ type TCPCallback func(message tlTCP.Message, responseChannel chan tlTCP.Message)
 type UDPCallback func() tlUDP.AmAlive
 
 //Start a Treeless server
-func Start(addr string, localport string, tcpc TCPCallback, udpc UDPCallback) *Server {
+func Start(addr string, localport int, tcpc TCPCallback, udpc UDPCallback) *Server {
 	var s Server
 	//Init server
 	listenConnections(&s, localport, tcpc)
-	iport, err := strconv.Atoi(localport)
-	if err != nil {
-		panic(err)
-	}
-	s.udpCon = tlUDP.Reply(tlUDP.ReplyCallback(udpc), iport)
+	s.udpCon = tlUDP.Reply(tlUDP.ReplyCallback(udpc), localport)
 	return &s
 }
 
@@ -73,8 +69,8 @@ func listenRequests(conn *net.TCPConn, id int, s *Server, tcpc TCPCallback) {
 	//log.Println("Connection closed. Connection ID:", id)
 }
 
-func listenConnections(s *Server, port string, tcpc TCPCallback) {
-	taddr, err := net.ResolveTCPAddr("tcp", GetLocalIP()+":"+port)
+func listenConnections(s *Server, port int, tcpc TCPCallback) {
+	taddr, err := net.ResolveTCPAddr("tcp", GetLocalIP()+":"+fmt.Sprint(port))
 	if err != nil {
 		panic(err)
 	}

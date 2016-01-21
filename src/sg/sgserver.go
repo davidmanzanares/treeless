@@ -3,6 +3,7 @@ package tlsg
 import (
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"log"
 	"sync/atomic"
 	"treeless/src/com"
@@ -12,7 +13,7 @@ import (
 )
 
 //Server listen to TCP & UDP, accepting connections and responding to clients
-type Server struct {
+type DBServer struct {
 	//Core
 	m *tlcore.Map
 	//Com
@@ -24,9 +25,9 @@ type Server struct {
 }
 
 //Start a Treeless server
-func Start(addr string, localport string, numChunks, redundancy int, dbpath string) *Server {
+func Start(addr string, localport int, numChunks, redundancy int, dbpath string) *DBServer {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	log.SetPrefix(tlcom.GetLocalIP() + ":" + localport + " ")
+	log.SetPrefix(tlcom.GetLocalIP() + ":" + fmt.Sprint(localport) + " ")
 	//Recover: log and quit
 	defer func() {
 		if r := recover(); r != nil {
@@ -34,7 +35,7 @@ func Start(addr string, localport string, numChunks, redundancy int, dbpath stri
 			panic(r)
 		}
 	}()
-	var s Server
+	var s DBServer
 	//Launch core
 	var err error
 	s.m = tlcore.NewMap(dbpath, numChunks)
@@ -62,19 +63,19 @@ func Start(addr string, localport string, numChunks, redundancy int, dbpath stri
 }
 
 //IsStopped returns true if the server is not running
-func (s *Server) IsStopped() bool {
+func (s *DBServer) IsStopped() bool {
 	return atomic.LoadInt32(&s.stopped) != 0
 }
 
 //Stop the server, close all TCP/UDP connections
-func (s *Server) Stop() {
+func (s *DBServer) Stop() {
 	atomic.StoreInt32(&s.stopped, 1)
 	s.s.Stop()
 	s.m.Close()
 	s.sg.Stop()
 }
 
-func (s *Server) LogInfo() {
+func (s *DBServer) LogInfo() {
 	log.Println("Info log")
 	log.Println(s.sg)
 }
@@ -94,7 +95,7 @@ func udpCreateReplier(sg *ServerGroup) tlcom.UDPCallback {
 	}
 }
 
-func tcpCreateReplier(s *Server) tlcom.TCPCallback {
+func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
 	return func(message tlTCP.Message, responseChannel chan tlTCP.Message) {
 		//fmt.Println("Server", conn.LocalAddr(), "message recieved", string(message.Key), string(message.Value))
 		switch message.Type {
@@ -113,11 +114,6 @@ func tcpCreateReplier(s *Server) tlcom.TCPCallback {
 			responseChannel <- response
 		case tlcore.OpSet:
 			s.m.Set(message.Key, message.Value)
-			//TODO err response
-			//fmt.Println("Put operation", message.Key, message.Value, err)
-			//if err != nil {
-			//	panic(err)
-			//}
 		case tlTCP.OpTransfer:
 			var chunkID int
 			err := json.Unmarshal(message.Key, &chunkID)
@@ -135,14 +131,14 @@ func tcpCreateReplier(s *Server) tlcom.TCPCallback {
 				addr := string(message.Value)
 				c, err := tlcom.CreateConnection(addr)
 				if err != nil {
-					log.Println(1111111111, err)
+					log.Println("Transfer failed, error:", err)
 					transferFail()
 				} else {
 					go func(c *tlcom.Conn) {
 						s.m.Iterate(chunkID, func(key, value []byte) {
 							c.Set(key, value)
 						})
-						c.GetAccessInfo()
+						c.GetAccessInfo() //This will lock until all pending set operations are done
 						c.Close()
 						var response tlTCP.Message
 						response.ID = message.ID

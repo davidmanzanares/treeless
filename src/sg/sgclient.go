@@ -8,12 +8,12 @@ import (
 	"treeless/src/hash"
 )
 
-type Client struct {
+type DBClient struct {
 	sg *ServerGroup
 }
 
-func Connect(addr string) (*Client, error) {
-	c := new(Client)
+func Connect(addr string) (*DBClient, error) {
+	c := new(DBClient)
 	sg, err := ConnectAsClient(addr)
 	if err != nil {
 		return nil, err
@@ -22,7 +22,7 @@ func Connect(addr string) (*Client, error) {
 	return c, nil
 }
 
-func (c *Client) Set(key, value []byte) error {
+func (c *DBClient) Set(key, value []byte) error {
 	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks)
 	holders := c.sg.GetChunkHolders(chunkID)
 	conns := make([]*tlcom.Conn, 0, 4)
@@ -50,7 +50,7 @@ func (c *Client) Set(key, value []byte) error {
 	return firstError
 }
 
-func (c *Client) Get(key []byte) ([]byte, time.Time, error) {
+func (c *DBClient) Get(key []byte) ([]byte, time.Time, error) {
 	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks)
 	holders := c.sg.GetChunkHolders(chunkID)
 	var errs error = nil
@@ -88,7 +88,7 @@ func (c *Client) Get(key []byte) ([]byte, time.Time, error) {
 	return nil, time.Unix(0, 0), errs
 }
 
-func (c *Client) Close() {
+func (c *DBClient) Close() {
 	if c.sg != nil {
 		c.sg.Stop()
 	}

@@ -90,7 +90,7 @@ func (sg *ServerGroup) Unmarshal(b []byte) error {
 }
 
 //CreateServerGroup creates a new DB server group, without connecting to an existing group
-func CreateServerGroup(numChunks int, port string, redundancy int) *ServerGroup {
+func CreateServerGroup(numChunks int, port int, redundancy int) *ServerGroup {
 	sg := new(ServerGroup)
 	sg.Redundancy = redundancy
 	sg.Servers = make(map[string]*VirtualServer)
@@ -101,7 +101,7 @@ func CreateServerGroup(numChunks int, port string, redundancy int) *ServerGroup 
 	//Add this server
 	localhost := new(VirtualServer)
 	localhost.LastHeartbeat = time.Now()
-	localhost.Phy = tlcom.GetLocalIP() + ":" + port
+	localhost.Phy = tlcom.GetLocalIP() + ":" + fmt.Sprint(port)
 	localhost.HeldChunks = make([]int, numChunks)
 	for i := 0; i < numChunks; i++ {
 		//Add all chunks to this server
@@ -177,7 +177,7 @@ func ConnectAsClient(addr string) (*ServerGroup, error) {
 }
 
 //Associate connects to an existing server group and adds this server to it
-func Associate(destAddr string, localport string) (*ServerGroup, error) {
+func Associate(destAddr string, localport int) (*ServerGroup, error) {
 	//Create a client connection first
 	sg, err := ConnectAsClient(destAddr)
 	if err != nil {
@@ -185,7 +185,7 @@ func Associate(destAddr string, localport string) (*ServerGroup, error) {
 	}
 	sg.Lock()
 	defer sg.Unlock()
-	localhost := tlcom.GetLocalIP() + ":" + localport
+	localhost := tlcom.GetLocalIP() + ":" + fmt.Sprint(localport)
 	//Add to external servergroup instances
 	//For each other server: add localhost
 	for _, s := range sg.Servers {

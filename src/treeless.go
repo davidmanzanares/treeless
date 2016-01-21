@@ -18,7 +18,7 @@ func main() {
 	assoc := flag.String("assoc", "", "Associate to an existing DB server group")
 	monitor := flag.String("monitor", "", "Monitor an existing DB")
 	//Options
-	port := flag.String("port", "9876", "Use this port as the localhost server port")
+	port := flag.Int("port", 9876, "Use this port as the localhost server port")
 	redundancy := flag.Int("redundancy", 2, "Redundancy of the new DB server group")
 	dbpath := flag.String("dbpath", "tmp_DB", "Filesystem path to store DB info")
 	cpuprofile := flag.Bool("cpuprofile", false, "write cpu profile to file")
