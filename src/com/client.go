@@ -162,6 +162,21 @@ func (c *Conn) Set(key, value []byte) error {
 	return nil
 }
 
+//Del deletes a key/value pair
+func (c *Conn) Del(key []byte) error {
+	var mess tlTCP.Message
+
+	mytid := c.getTID()
+
+	mess.Type = tlTCP.OpDel
+	mess.ID = mytid
+	mess.Key = key
+
+	//fmt.Println("sending del", key, value, len(string(key)), len(key), c.conn.LocalAddr(), c.conn.RemoteAddr())
+	c.writeChannel <- mess
+	return nil
+}
+
 //Transfer a chunk
 func (c *Conn) Transfer(addr string, chunkID int) error {
 	var mess tlTCP.Message

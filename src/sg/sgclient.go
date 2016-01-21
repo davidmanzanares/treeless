@@ -50,6 +50,31 @@ func (c *DBClient) Set(key, value []byte) error {
 	return firstError
 }
 
+func (c *DBClient) Del(key []byte) error {
+	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks)
+	holders := c.sg.GetChunkHolders(chunkID)
+	conns := make([]*tlcom.Conn, 0, 4)
+	var firstError error
+	c.sg.Mutex.Lock()
+	for _, h := range holders {
+		err := h.NeedConnection()
+		if err == nil {
+			conns = append(conns, h.Conn)
+		}
+		if err != nil && firstError == nil {
+			firstError = err
+		}
+	}
+	c.sg.Mutex.Unlock()
+	for _, c := range conns {
+		err := c.Del(key)
+		if err != nil && firstError == nil {
+			firstError = err
+		}
+	}
+	return firstError
+}
+
 func (c *DBClient) Get(key []byte) ([]byte, time.Time, error) {
 	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks)
 	holders := c.sg.GetChunkHolders(chunkID)
@@ -69,10 +94,12 @@ func (c *DBClient) Get(key []byte) ([]byte, time.Time, error) {
 		}
 		v, err := h.Conn.Get(key)
 		if err == nil {
-			t := time.Unix(0, int64(binary.LittleEndian.Uint64(v[:8])))
-			if lastTime.Before(t) {
-				lastTime = t
-				value = v
+			if len(v) > 0 {
+				t := time.Unix(0, int64(binary.LittleEndian.Uint64(v[:8])))
+				if lastTime.Before(t) {
+					lastTime = t
+					value = v
+				}
 			}
 		} else {
 			if errs == nil {

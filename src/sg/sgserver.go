@@ -105,8 +105,7 @@ func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
 			//fmt.Println("Get operation", key, rval, err)
 			response.ID = message.ID
 			if err != nil {
-				response.Type = tlTCP.OpErr
-				response.Value = []byte(err.Error())
+				response.Type = tlTCP.OpGetResponse
 			} else {
 				response.Type = tlTCP.OpGetResponse
 				response.Value = rval
@@ -114,6 +113,8 @@ func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
 			responseChannel <- response
 		case tlcore.OpSet:
 			s.m.Set(message.Key, message.Value)
+		case tlcore.OpDel:
+			s.m.Delete(message.Key)
 		case tlTCP.OpTransfer:
 			var chunkID int
 			err := json.Unmarshal(message.Key, &chunkID)

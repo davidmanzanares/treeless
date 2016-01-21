@@ -2,10 +2,8 @@ package tlcom
 
 import (
 	"fmt"
-	"hash/fnv"
 	"net"
 	"sync/atomic"
-	"time"
 	"treeless/src/com/tcp"
 	"treeless/src/com/udp"
 )
@@ -29,12 +27,6 @@ func Start(addr string, localport int, tcpc TCPCallback, udpc UDPCallback) *Serv
 	listenConnections(&s, localport, tcpc)
 	s.udpCon = tlUDP.Reply(tlUDP.ReplyCallback(udpc), localport)
 	return &s
-}
-
-func chunkHash(x int, y time.Time) uint64 {
-	hasher := fnv.New64a()
-	hasher.Write([]byte(time.Now().String()))
-	return hasher.Sum64()
 }
 
 //IsStopped returns true if the server is not running

@@ -85,19 +85,34 @@ func TestSimple(t *testing.T) {
 	}
 	defer client.Close()
 
-	//Write operation
+	//Set operation
 	err = client.Set([]byte("hola"), []byte("mundo"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	//Read operation
+	//Get operation
 	value, _, err2 := client.Get([]byte("hola"))
 	if err2 != nil {
 		t.Fatal(err2)
 	}
 	if string(value) != "mundo" {
 		t.Fatal("Get failed, returned string: ", string(value))
+	}
+
+	//Del operation
+	err = client.Del([]byte("hola"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	//Get operation
+	value, _, err2 = client.Get([]byte("hola"))
+	if err2 != nil {
+		t.Fatal(err2)
+	}
+	if value != nil {
+		t.Fatal("Get returned string: ", string(value))
 	}
 }
 
@@ -110,7 +125,7 @@ func TestBasicRebalance(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer client.Close()
-	//Write operation
+	//Set operation
 	err = client.Set([]byte("hola"), []byte("mundo"))
 	if err != nil {
 		t.Fatal(err)
@@ -122,9 +137,20 @@ func TestBasicRebalance(t *testing.T) {
 	time.Sleep(time.Second * 5)
 	//First server shut down
 	stop1()
-	//Read operation
+	//Get operation
 	value, err2, _ := client.Get([]byte("hola"))
 	if string(value) != "mundo" {
+		t.Fatal("Get failed, returned string: ", string(value), "Error:", err2)
+	}
+
+	//Del operation
+	err = client.Del([]byte("hola"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	//Get operation
+	value, err2, _ = client.Get([]byte("hola"))
+	if value != nil {
 		t.Fatal("Get failed, returned string: ", string(value), "Error:", err2)
 	}
 }
@@ -164,7 +190,7 @@ func metaTest(c *tlsg.DBClient, numOperations, maxKeySize, maxValueSize, threads
 		base := make([]byte, 4)
 		base2 := make([]byte, 4)
 		for i := 0; i < numOperations; i++ {
-			opType := 1 //r.Intn(2)
+			opType := r.Intn(2)
 			opKeySize := r.Intn(maxKeySize-1) + 4
 			opValueSize := r.Intn(maxValueSize-1) + 1
 			binary.LittleEndian.PutUint32(base, (uint32(i*64)+uint32(core))%uint32(maxKeys))
@@ -175,15 +201,12 @@ func metaTest(c *tlsg.DBClient, numOperations, maxKeySize, maxValueSize, threads
 				panic(opValueSize)
 			}
 			switch opType {
-			case 1:
+			case 0:
 				//Put
 				goMap[string(key)] = value
-			case 2:
+			case 1:
 				//Delete
-				if _, ok := goMap[string(key)]; ok {
-					//delete(goMap, string(key))
-					//goDeletes = append(goDeletes, key)
-				}
+				delete(goMap, string(key))
 			}
 		}
 	}
@@ -198,7 +221,7 @@ func metaTest(c *tlsg.DBClient, numOperations, maxKeySize, maxValueSize, threads
 			base := make([]byte, 4)
 			base2 := make([]byte, 4)
 			for i := 0; i < numOperations; i++ {
-				opType := 1 //+ r.Intn(3)
+				opType := r.Intn(2)
 				opKeySize := r.Intn(maxKeySize-1) + 4
 				opValueSize := r.Intn(maxValueSize-1) + 1
 				binary.LittleEndian.PutUint32(base, (uint32(i*64)+uint32(core))%uint32(maxKeys))
@@ -207,10 +230,10 @@ func metaTest(c *tlsg.DBClient, numOperations, maxKeySize, maxValueSize, threads
 				value := bytes.Repeat([]byte(base2), opValueSize)[0:opValueSize]
 				//fmt.Println("db   ", opType, key, value)
 				switch opType {
-				case 1:
+				case 0:
 					c.Set(key, value)
-				case 2:
-					//Delete(c, key)
+				case 1:
+					c.Del(key)
 				}
 			}
 			w.Done()
