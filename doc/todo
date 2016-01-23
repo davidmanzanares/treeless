@@ -30,6 +30,9 @@ Others: 3 sem
 	-transactions: lock table
 	-security
 	-constantes use const or parametrizar
+	-start stop
+	-docs: dependencies and constraints
+	-json performance? => use another
 
 ...:
     -procedures: TTL procedure

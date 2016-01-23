@@ -14,20 +14,26 @@ import (
 
 //ServerGroup provides an access to a DB server group
 type ServerGroup struct {
-	sync.Mutex                                   //All ServerGroup read/writes are mutex-protected
-	NumChunks          int                       //Number of DB chunks
-	Redundancy         int                       //DB target redundancy
-	Servers            map[string]*VirtualServer //Set of all DB servers
-	useChannel         bool
+	sync.Mutex //All ServerGroup read/writes are mutex-protected
+	//Database configuration
+	NumChunks  int //Number of DB chunks
+	Redundancy int //DB target redundancy
+	//External status
+	Servers map[string]*VirtualServer //Set of all DB servers
+	chunks  []VirtualChunk            //Array of all DB chunks
+	//Local properties
+	stopped       bool
+	localhost     *VirtualServer //Only for servers
+	chunkStatus   []ChunkStatus  //Array of all DB chunks status
+	heartbeatList *list.List     //List of pending heartbeats to request
+	//Rebalance data
+	useChannel         bool               //Send chunk updates to chunkUpdateChannel channel?
 	chunkUpdateChannel chan *VirtualChunk //Each time a chunk status is updated the chunk is sent to the channel
-	heartbeatList      *list.List         //List of pending chunk reviews
-	chunks             []VirtualChunk     //Array of all DB chunks
-	chunkStatus        []ChunkStatus      //Array of all DB chunks status
-	localhost          *VirtualServer
-	stopped            bool
 }
 
 const channelUpdateBufferSize = 1
+
+var heartbeatTickDuration = time.Second * 1
 
 type ChunkStatus int64
 
@@ -37,41 +43,45 @@ const (
 	ChunkNotSynched
 )
 
+func (sg *ServerGroup) initChunks() {
+	sg.chunks = make([]VirtualChunk, sg.NumChunks)
+	sg.chunkStatus = make([]ChunkStatus, sg.NumChunks)
+
+	//Add all chunks to the servergroup
+	for i := 0; i < sg.NumChunks; i++ {
+		sg.chunks[i].ID = i
+		sg.chunks[i].Holders = make(map[*VirtualServer]bool)
+	}
+}
+
+func (sg *ServerGroup) initLocalhost(port int) {
+	localhost := tlcom.GetLocalIP() + ":" + fmt.Sprint(port)
+	sg.AddServerToGroup(localhost)
+	sg.localhost = sg.Servers[localhost]
+}
+
 //CreateServerGroup creates a new DB server group, without connecting to an existing group
 func CreateServerGroup(numChunks int, port int, redundancy int) *ServerGroup {
 	sg := new(ServerGroup)
+	//DB configuration
 	sg.NumChunks = numChunks
 	sg.Redundancy = redundancy
+	//Initialization
 	sg.Servers = make(map[string]*VirtualServer)
-	sg.chunkUpdateChannel = make(chan *VirtualChunk, channelUpdateBufferSize)
-	sg.useChannel = true
-	sg.chunkStatus = make([]ChunkStatus, numChunks)
+	sg.initChunks()
 
-	//Add this server
-	localhost := new(VirtualServer)
-	localhost.LastHeartbeat = time.Now()
-	localhost.Phy = tlcom.GetLocalIP() + ":" + fmt.Sprint(port)
-	localhost.HeldChunks = make([]int, numChunks)
-	for i := 0; i < numChunks; i++ {
-		//Add all chunks to this server
-		localhost.HeldChunks[i] = i
-	}
-	sg.localhost = localhost
-	sg.Servers[localhost.Phy] = localhost
+	//Start daemons
+	sg.StartRebalance()
+	sg.startHeartbeatRequester()
 
-	//Add all chunks to the servergroup
-	sg.chunks = make([]VirtualChunk, numChunks)
+	sg.initLocalhost(port)
+	//Localhost holds all chunks
+	sg.localhost.HeldChunks = make([]int, numChunks)
 	for i := 0; i < numChunks; i++ {
-		sg.chunks[i].ID = i
-		sg.chunks[i].Holders = make(map[*VirtualServer]bool)
-		sg.chunks[i].Holders[localhost] = true
-	}
-	//Set chunk status
-	for i := 0; i < numChunks; i++ {
+		sg.localhost.HeldChunks[i] = i
+		sg.chunks[i].Holders[sg.localhost] = true
 		sg.chunkStatus[i] = ChunkSynched
 	}
-	heartbeatRequester(sg)
-	Rebalance(sg)
 	return sg
 }
 
@@ -87,20 +97,15 @@ func baseConnect(addr string) (*ServerGroup, error) {
 		return nil, err2
 	}
 	c.Close()
-
 	//Create a new server group by unmarshaling the provided information
 	sg := new(ServerGroup)
+
 	err = sg.Unmarshal(b)
 	if err != nil {
 		return nil, err
 	}
-	sg.chunks = make([]VirtualChunk, sg.NumChunks)
-	for i := range sg.chunks {
-		sg.chunks[i].ID = i
-		sg.chunks[i].Holders = make(map[*VirtualServer]bool)
-	}
-	sg.chunkStatus = make([]ChunkStatus, sg.NumChunks)
-	//Initial access configuration has been loaded
+	//Chunk initialization
+	sg.initChunks()
 	//Lookup for servers
 	for _, s := range sg.Servers {
 		//Request known chunks list
@@ -125,7 +130,7 @@ func ConnectAsClient(addr string) (*ServerGroup, error) {
 		return nil, err
 	}
 	//Launch UDP heartbeat requester
-	heartbeatRequester(sg)
+	sg.startHeartbeatRequester()
 	return sg, nil
 }
 
@@ -135,9 +140,12 @@ func Associate(destAddr string, localport int) (*ServerGroup, error) {
 	if err != nil {
 		return nil, err
 	}
-	sg.Lock()
-	defer sg.Unlock()
-	localhost := tlcom.GetLocalIP() + ":" + fmt.Sprint(localport)
+	//Start daemons
+	sg.StartRebalance()
+	sg.startHeartbeatRequester()
+
+	//Add localhost
+	sg.initLocalhost(localport)
 	//Add to external servergroup instances
 	//For each other server: add localhost
 	for _, s := range sg.Servers {
@@ -146,34 +154,19 @@ func Associate(destAddr string, localport int) (*ServerGroup, error) {
 			log.Println("TCP transmission error when trying to add server", err)
 			continue
 		}
-		err = s.Conn.AddServerToGroup(localhost)
+		err = s.Conn.AddServerToGroup(sg.localhost.Phy)
 		if err != nil {
 			panic(err)
 		}
 	}
-	sg.useChannel = true
-	sg.chunkUpdateChannel = make(chan *VirtualChunk, channelUpdateBufferSize)
-	Rebalance(sg)
-	//Launch UDP heartbeat requester
-	sg.Unlock()
-	heartbeatRequester(sg)
-	sg.Lock()
-	//Add to local servergroup instance
-	sg.Unlock()
-	sg.AddServerToGroup(localhost)
-	sg.Lock()
-	sg.localhost = sg.Servers[localhost]
 	//All existing chunks must be checked
 	for i := range sg.chunks {
-		sg.Unlock()
 		sg.chunkUpdateChannel <- &sg.chunks[i]
-		sg.Lock()
 	}
 	return sg, nil
 }
 
-func heartbeatRequester(sg *ServerGroup) {
-	d := time.Second * 1
+func (sg *ServerGroup) startHeartbeatRequester() {
 	l := list.New()
 	sg.heartbeatList = l
 	for _, s := range sg.Servers {
@@ -183,7 +176,7 @@ func heartbeatRequester(sg *ServerGroup) {
 	go func() {
 		for {
 			sg.Unlock()
-			time.Sleep(d)
+			time.Sleep(heartbeatTickDuration)
 			sg.Lock()
 
 			if sg.stopped {
@@ -271,7 +264,7 @@ func (sg *ServerGroup) AddServerToGroup(addr string) error {
 func oldServersRemover() {
 	for {
 		time.Sleep(time.Minute)
-		//check for dead servers
+		//TODO: check for dead servers
 		//remove them
 	}
 }

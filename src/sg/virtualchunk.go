@@ -7,7 +7,7 @@ import "fmt"
 type VirtualChunk struct {
 	ID      int
 	Holders map[*VirtualServer]bool //Set of server holders
-	//1024r data
+	//Rebalancer data
 	timeToReview time.Time
 	index        int
 }

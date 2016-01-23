@@ -47,11 +47,14 @@ func (pq *PriorityQueue) update(c *VirtualChunk, t time.Time) {
 	heap.Fix(pq, c.index)
 }
 
-func Rebalance(sg *ServerGroup) chan *VirtualChunk {
+func (sg *ServerGroup) StartRebalance() {
+	sg.chunkUpdateChannel = make(chan *VirtualChunk, channelUpdateBufferSize)
+	sg.useChannel = true
+
 	ch := sg.chunkUpdateChannel
 	duplicate := duplicator(sg)
 
-	//Constantly check for possible duplications to 1024 the servers,
+	//Constantly check for possible duplications to rebalance the servers,
 	//servers should have the more or less the same work
 	go func() {
 		time.Sleep(time.Second * 100)
@@ -63,7 +66,7 @@ func Rebalance(sg *ServerGroup) chan *VirtualChunk {
 			if known < avg*0.95 {
 				c := &sg.chunks[rand.Int31n(int32(sg.NumChunks))]
 				if !c.Holders[sg.localhost] {
-					log.Println("Duplicate to 1024")
+					log.Println("Duplicate to rebalance")
 					duplicate(c)
 				}
 			}
@@ -78,15 +81,14 @@ func Rebalance(sg *ServerGroup) chan *VirtualChunk {
 		}
 	}()
 
-	//1024 chunks with low redundancy
-	//1024 algorithm:
+	//Rebalance chunks with low redundancy
+	//Rebalance algorithm:
 	//	For each chunk with low redundancy:
 	//		wait a random lapse of time
 	//		check chunk status
 	//		if still with low redundancy / noone claimed it:
 	//			Claim it
 	//			transfer it
-
 	go func() {
 		sg.Lock()
 		pq := make(PriorityQueue, 0)
@@ -131,7 +133,6 @@ func Rebalance(sg *ServerGroup) chan *VirtualChunk {
 			}
 		}
 	}()
-	return ch
 }
 
 func getFreeDiskSpace() uint64 {
