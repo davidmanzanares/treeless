@@ -55,9 +55,6 @@ func Start(addr string, localport int, numChunks, redundancy int, dbpath string)
 	}
 	//Init server
 	s.s = tlcom.Start(addr, localport, tcpCreateReplier(&s), udpCreateReplier(s.sg))
-	//Rebalancer
-	//TODO order is good??? rebalance-server
-	Rebalance(s.sg)
 	log.Println("Server boot-up completed")
 	return &s
 }

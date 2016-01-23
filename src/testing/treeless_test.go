@@ -138,7 +138,7 @@ func TestBasicRebalance(t *testing.T) {
 	//First server shut down
 	stop1()
 	//Get operation
-	value, err2, _ := client.Get([]byte("hola"))
+	value, _, err2 := client.Get([]byte("hola"))
 	if string(value) != "mundo" {
 		t.Fatal("Get failed, returned string: ", string(value), "Error:", err2)
 	}
@@ -149,7 +149,7 @@ func TestBasicRebalance(t *testing.T) {
 		t.Fatal(err)
 	}
 	//Get operation
-	value, err2, _ = client.Get([]byte("hola"))
+	value, _, err2 = client.Get([]byte("hola"))
 	if value != nil {
 		t.Fatal("Get failed, returned string: ", string(value), "Error:", err2)
 	}

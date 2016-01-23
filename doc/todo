@@ -1,4 +1,5 @@
 Core: 1 sem
+
 	-old SSD
 	-cmplx tests
 	-size limit to map
@@ -8,6 +9,7 @@ Com: 1sem
 	
 	-add SyncSet
 	-add SyncDel
+	-add lock & unlock
 	-local ip set by parameter, defaultIP := getLocalIP()
 Dist: 2 sem
 	-refactor
@@ -16,14 +18,15 @@ Dist: 2 sem
 	-rebalanceo: eliminacion de trozos por exceso de redundancia
 	-stop
 Test: 1 sem
-=>	-refactor test
-
 	-real tests
     -add benchmarks
 	-2 modes of operation: N processes, N goroutines
 	-Profile with gouroutine mode of operation
+	
+	-space per chunk tests (hash quality tests)
 Others: 3 sem
 	-info command
+	
 	-transactions: lock table
 	-security
 	-constantes use const or parametrizar

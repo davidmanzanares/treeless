@@ -51,7 +51,7 @@ func Rebalance(sg *ServerGroup) chan *VirtualChunk {
 	ch := sg.chunkUpdateChannel
 	duplicate := duplicator(sg)
 
-	//Constantly check for possible duplications to rebalance the servers,
+	//Constantly check for possible duplications to 1024 the servers,
 	//servers should have the more or less the same work
 	go func() {
 		time.Sleep(time.Second * 100)
@@ -63,7 +63,7 @@ func Rebalance(sg *ServerGroup) chan *VirtualChunk {
 			if known < avg*0.95 {
 				c := &sg.chunks[rand.Int31n(int32(sg.NumChunks))]
 				if !c.Holders[sg.localhost] {
-					log.Println("Duplicate to rebalance")
+					log.Println("Duplicate to 1024")
 					duplicate(c)
 				}
 			}
@@ -78,8 +78,8 @@ func Rebalance(sg *ServerGroup) chan *VirtualChunk {
 		}
 	}()
 
-	//Rebalance chunks with low redundancy
-	//Rebalance algorithm:
+	//1024 chunks with low redundancy
+	//1024 algorithm:
 	//	For each chunk with low redundancy:
 	//		wait a random lapse of time
 	//		check chunk status
@@ -161,7 +161,7 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 			log.Println("No servers available, duplication aborted, data loss?")
 			return
 		}
-		//Check free space (OS)
+		//TODO: Check free space (OS)
 		//log.Println(getFreeDiskSpace() / 1024 / 1024 / 1024)
 		s.NeedConnection()
 		size, err := s.Conn.GetChunkInfo(c.ID)
