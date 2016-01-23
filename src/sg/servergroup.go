@@ -34,6 +34,7 @@ type ServerGroup struct {
 const channelUpdateBufferSize = 1024
 
 var heartbeatTickDuration = time.Second * 1
+var heartbeatTimeout = time.Millisecond * 50
 
 type ChunkStatus int64
 
@@ -190,23 +191,16 @@ func (sg *ServerGroup) startHeartbeatRequester() {
 	}
 	go func() {
 		sg.Lock()
-		for {
+		for !sg.stopped {
 			sg.Unlock()
 			time.Sleep(heartbeatTickDuration)
 			sg.Lock()
-
-			if sg.stopped {
-				return
-			}
-
 			if l.Len() == 0 {
 				continue
 			}
-
 			s := l.Front().Value.(*VirtualServer)
-
 			//Request known chunks list
-			aa, err := tlUDP.Request(s.Phy, time.Millisecond*50)
+			aa, err := tlUDP.Request(s.Phy, heartbeatTimeout)
 			if err == nil {
 				//Detect added servers
 				for _, addr := range aa.KnownServers {
@@ -227,7 +221,9 @@ func (sg *ServerGroup) startHeartbeatRequester() {
 						}
 					}
 					if !ok && sg.useChannel {
+						sg.Unlock()
 						sg.chunkUpdateChannel <- &sg.chunks[c]
+						sg.Lock()
 					}
 				}
 				//Detect forgotten chunks
@@ -240,8 +236,9 @@ func (sg *ServerGroup) startHeartbeatRequester() {
 						}
 					}
 					if !ok && sg.useChannel {
-						//TODO LOCK UNLOCK
+						sg.Unlock()
 						sg.chunkUpdateChannel <- &sg.chunks[c]
+						sg.Lock()
 					}
 				}
 
@@ -338,21 +335,14 @@ func (sg *ServerGroup) String() string {
 	return str
 }
 
-//Marshal number of chunks and servers physical address
+//Marshal DB configuration and server addresses
 func (sg *ServerGroup) Marshal() ([]byte, error) {
 	sg.Lock()
 	defer sg.Unlock()
 	return json.Marshal(sg)
 }
 
-//Unmarshal number of chunks and servers physical address
+//Unmarshal DB configuration and server addresses
 func (sg *ServerGroup) Unmarshal(b []byte) error {
-	err := json.Unmarshal(b, sg)
-	if err != nil {
-		return err
-	}
-	for i := range sg.chunks {
-		sg.chunks[i].Holders = make(map[*VirtualServer]bool)
-	}
-	return nil
+	return json.Unmarshal(b, sg)
 }
