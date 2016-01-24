@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 
 	"launchpad.net/gommap"
@@ -93,7 +94,10 @@ func (st *Store) close() {
 //Expand the store instance giving more available space for items
 func (st *Store) expand() (err error) {
 	if st.Size == st.SizeLimit {
-		return errors.New("Store size limit reached")
+		//TODO limit errors per second
+		err := errors.New("Store size limit reached")
+		log.Println(err)
+		return err
 	}
 	st.Size = st.Size * 2
 	if st.Size > st.SizeLimit {

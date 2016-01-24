@@ -195,6 +195,7 @@ func randKVOpGenerator(maxKeySize, maxValueSize, seed, mult, offset int) func() 
 	base := make([]byte, 4)
 	base2 := make([]byte, 4)
 	return func() (op int, k, v []byte) {
+		//TODO BUG quitar el menos uno
 		opKeySize := r.Intn(maxKeySize-1) + 1
 		opValueSize := r.Intn(maxValueSize-1) + 1
 		binary.LittleEndian.PutUint32(base, uint32(r.Int31())*uint32(mult)+uint32(offset))

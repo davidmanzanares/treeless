@@ -20,6 +20,7 @@ Dist: 2 sem
 Test: 1 sem
 	-real tests
     -add benchmarks
+	-benchmark latency
 	-2 modes of operation: N processes, N goroutines
 	-Profile with gouroutine mode of operation
 	

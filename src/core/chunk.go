@@ -81,9 +81,9 @@ func (c *Chunk) set(h64 uint64, key, value []byte) error {
 
 	//Check for available space
 	if c.Hm.numStoredKeys >= c.Hm.numKeysToExpand {
-		error := c.Hm.expand()
-		if error != nil {
-			return error
+		err := c.Hm.expand()
+		if err != nil {
+			return err
 		}
 	}
 

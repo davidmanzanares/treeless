@@ -49,7 +49,9 @@ func (m *HashMap) setSize(log2Size uint32) {
 
 func (m *HashMap) expand() error {
 	if m.size*2 > m.SizeLimit {
-		return errors.New("HashMap size limit reached")
+		err := errors.New("HashMap size limit reached")
+		//TODO limit errors per second
+		return err
 	}
 	newHM := newHashMap(m.Sizelog2+1, m.SizeLimit)
 	for i := uint32(0); i < m.size; i++ {

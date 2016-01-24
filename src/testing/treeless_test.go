@@ -134,9 +134,10 @@ func TestBasicRebalance(t *testing.T) {
 	_, stop2 := LaunchServer(addr1)
 	defer stop2()
 	//Wait for rebalance
-	time.Sleep(time.Second * 5)
+	time.Sleep(time.Second * 4)
 	//First server shut down
 	stop1()
+	time.Sleep(time.Second)
 	//Get operation
 	value, _, err2 := client.Get([]byte("hola"))
 	if string(value) != "mundo" {
@@ -167,7 +168,7 @@ func TestCmplx1_1(t *testing.T) {
 	}
 	defer client.Close()
 
-	metaTest(client, 10*1000, 8, 8, 10, 1024)
+	metaTest(client, 10*1000, 4, 8, 10, 1024)
 }
 
 //Test lots of operations made by multiple clients against a single DB server
@@ -191,7 +192,7 @@ func randKVOpGenerator(maxKeySize, maxValueSize, seed, mult, offset int) func() 
 		binary.LittleEndian.PutUint32(base2, uint32(r.Int31())*uint32(mult)+uint32(offset))
 		key := bytes.Repeat([]byte(base), opKeySize)[0:opKeySize]
 		value := bytes.Repeat([]byte(base2), opValueSize)[0:opValueSize]
-		return 1 + r.Intn(2), key, value
+		return r.Intn(2), key, value
 	}
 }
 
@@ -211,6 +212,7 @@ func metaTest(c *tlsg.DBClient, numOperations, maxKeySize, maxValueSize, threads
 			case 1:
 				//Delete
 				delete(goMap, string(key))
+				goDeletes = append(goDeletes, key)
 			}
 		}
 	}
@@ -256,16 +258,24 @@ func metaTest(c *tlsg.DBClient, numOperations, maxKeySize, maxValueSize, threads
 	}
 
 	//Check deleteds aren't in DB
-	if testing.Verbose() {
-		fmt.Println("Tested deletes:", len(goDeletes))
-	}
+	dels := 0
+	mistakes := 0
 	for i := 0; i < len(goDeletes); i++ {
 		key := goDeletes[i]
-		_, _, err := c.Get([]byte(key))
-		if err == nil {
-			panic(2)
+		_, ok := goMap[string(key)]
+		if ok {
+			continue
+		}
+		dels++
+		v, _, _ := c.Get([]byte(key))
+		if v != nil {
+			mistakes++
 		}
 	}
+	if testing.Verbose() {
+		fmt.Println("Tested deletes:", dels)
+	}
+	fmt.Println("Delete mistakes:", float64(mistakes)/float64(dels)*100.0, "%")
 }
 
 func TestSync1_1(t *testing.T) {
@@ -279,26 +289,38 @@ func TestSync1_1(t *testing.T) {
 	}
 	defer client.Close()
 
-	metaSyncTest(client, 10*10000, 2, 8, 10, 1024)
+	metaSyncTest(client, 10000, 1, 200, 63)
 }
-func metaSyncTest(c *tlsg.DBClient, numOperations, maxKeySize, maxValueSize, threads, maxKeys int) {
+func metaSyncTest(c *tlsg.DBClient, numOperations, maxKeySize, maxValueSize, threads int) {
 	runtime.GOMAXPROCS(threads)
-	goMap := make(map[string]time.Time)
+	goMap := make(map[string]int)
+	goMap2 := make(map[string]int)
+	id := 0
 	var m sync.Mutex
 	var w sync.WaitGroup
 	w.Add(threads)
 	initTime := time.Now()
+	races := 0
 	for core := 0; core < threads; core++ {
 		go func(core int) {
 			rNext := randKVOpGenerator(maxKeySize, maxValueSize, core, 64, core)
 			value := make([]byte, 8)
 			for i := 0; i < numOperations; i++ {
 				_, key, _ := rNext()
-				t := time.Now()
-				binary.LittleEndian.PutUint64(value, uint64(t.UnixNano()))
+				// := time.Now()
 
 				m.Lock()
-				goMap[string(key)] = t
+				pc, ok := goMap[string(key)]
+				if ok {
+					races++
+					if pc != core {
+						fmt.Println("C D")
+					}
+				}
+				goMap[string(key)] = core
+				goMap2[string(key)] = i
+				binary.LittleEndian.PutUint64(value, uint64(i))
+				id++
 				m.Unlock()
 				c.Set(key, value)
 			}
@@ -309,25 +331,33 @@ func metaSyncTest(c *tlsg.DBClient, numOperations, maxKeySize, maxValueSize, thr
 	if testing.Verbose() {
 		fmt.Println("Write phase completed in:", time.Now().Sub(initTime))
 	}
-	time.Sleep(time.Second)
+	time.Sleep(time.Second * 3)
 	var maxDiff time.Duration
-	for k, go_t := range goMap {
-		_, t, err := c.Get([]byte(k))
+	differs := 0
+	for k, _ := range goMap {
+		v, _, err := c.Get([]byte(k))
 		if err != nil {
 			panic(err)
 		}
 		//t := time.Unix(0, int64(binary.LittleEndian.Uint64(v[:8])))
 		//fmt.Println(t, go_t)
-		diff := t.Sub(go_t)
+		/*diff := t.Sub(go_t)
 		if diff > maxDiff {
 			maxDiff = diff
 		}
 		if diff < 0 {
-			fmt.Println("negative de-sync: ", diff)
-			panic(1)
+			//fmt.Println("Warning: negative de-sync: ", diff)
+		}*/
+		rid := -1
+		if v != nil {
+			rid = int(binary.LittleEndian.Uint64(v))
+		}
+		if goMap2[k] != int(rid) {
+			differs++
+			fmt.Println("Warning: id differ", goMap2[k], int(rid))
 		}
 	}
-	fmt.Println("Max de-sync: ", maxDiff)
+	fmt.Println("Races:", races, "Max de-sync: ", maxDiff, "De-synched:", float64(differs)/float64(len(goMap))*100.0, "%")
 }
 
 //TODO: DEL
@@ -357,6 +387,16 @@ func TestBigMessages(t *testing.T) {
 	if string(value) != string(bytes.Repeat([]byte("X"), 8*1024)) {
 		t.Fatal("Get failed, returned string: ", string(value))
 	}
+}
+
+//TestLatency tests latency between a SET operation and a GET operaton that sees the the SET written value
+func TestLatency(t *testing.T) {
+
+}
+
+//TestClock tests records timestamps synchronization
+func TestClock(t *testing.T) {
+
 }
 
 //Benchmark GET operations by issuing lots of GET operations from different goroutines.

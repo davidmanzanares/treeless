@@ -121,7 +121,7 @@ func (c *Conn) waitForResponse(tid uint32, ch chan result, timeout time.Duration
 		delete(c.waits, tid)
 		c.mutex.Unlock()
 		c.chanPool.Put(ch)
-		return nil, errors.New("response timeout")
+		return nil, errors.New("Response timeout, server address:" + c.conn.RemoteAddr().String())
 	case r := <-ch:
 		c.mutex.Lock()
 		delete(c.waits, tid)
@@ -143,7 +143,7 @@ func (c *Conn) Get(key []byte) ([]byte, error) {
 
 	c.writeChannel <- mess
 
-	return c.waitForResponse(tid, ch, time.Millisecond*100)
+	return c.waitForResponse(tid, ch, time.Millisecond*1000)
 }
 
 //Set a new key/value pair

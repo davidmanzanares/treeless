@@ -79,7 +79,7 @@ func (c *DBClient) Get(key []byte) ([]byte, time.Time, error) {
 	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks)
 	holders := c.sg.GetChunkHolders(chunkID)
 	var errs error = nil
-	var value []byte
+	var value []byte = nil
 	//Last write wins policy
 	lastTime := time.Unix(0, 0)
 	for _, h := range holders {

@@ -10,6 +10,13 @@ import (
 	"time"
 )
 
+var rebalanceWakeupPeriod = time.Second * 100
+
+//The following priority queue is used to store chunk review candidates
+//Each candidate is formed by a chunk ID and a review timestamp
+//The queue is ordered by these timestamps
+//Each candidate should be poped when the timestamp points to a a moment in the past
+
 // A PriorityQueue implements heap.Interface and holds Items.
 type PriorityQueue []*VirtualChunk
 
@@ -57,7 +64,7 @@ func (sg *ServerGroup) StartRebalance() {
 	//Constantly check for possible duplications to rebalance the servers,
 	//servers should have the more or less the same work
 	go func() {
-		time.Sleep(time.Second * 100)
+		time.Sleep(rebalanceWakeupPeriod)
 		sg.Lock()
 		for {
 			known := float64(len(sg.localhost.HeldChunks))
@@ -94,7 +101,7 @@ func (sg *ServerGroup) StartRebalance() {
 		pq := make(PriorityQueue, 0)
 		heap.Init(&pq)
 		inQueue := make(map[*VirtualChunk]bool)
-		tick := time.Tick(time.Second * 10000000)
+		tick := time.Tick(time.Hour)
 		for {
 			if pq.Len() > 0 {
 				//log.Println("time", pq[0].timeToReview)
@@ -175,17 +182,19 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 			log.Println("Chunk duplication aborted, low free space. Chunk size:", size, "Free space:", freeSpace)
 			return
 		}
+		atomic.StoreInt64((*int64)(&sg.chunkStatus[c.ID]), int64(ChunkNotSynched))
+		c.Holders[sg.localhost] = true
+		sg.localhost.HeldChunks = append(sg.localhost.HeldChunks, c.ID)
+		sg.Unlock()
 		ch <- c
+		sg.Lock()
 	}
 
 	go func() {
 		for {
 			c := <-ch
-			//A chunk duplication has been confirmed, transfer it now
-			atomic.StoreInt64((*int64)(&sg.chunkStatus[c.ID]), 1)
+			sg.Lock()
 			//log.Println("Chunk duplication confirmed, transfering...", c.ID)
-			//While transfer in course, set and get return "chunk not synched"
-
 			//Ready to transfer: request chunk transfer, get SYNC params
 			for s := range c.Holders {
 				err := s.NeedConnection()
@@ -193,15 +202,19 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 					log.Println(err)
 					continue
 				}
+				sg.Unlock()
 				err = s.Conn.Transfer(sg.localhost.Phy, c.ID)
+				sg.Lock()
 				if err != nil {
 					log.Println(err)
 					continue
 				}
 				//Set chunk as ready
+				atomic.StoreInt64((*int64)(&sg.chunkStatus[c.ID]), int64(ChunkSynched))
 				log.Println("Chunk duplication completed", c.ID)
 				break
 			}
+			sg.Unlock()
 		}
 	}()
 
