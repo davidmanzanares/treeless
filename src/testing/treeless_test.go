@@ -116,6 +116,34 @@ func TestSimple(t *testing.T) {
 	}
 }
 
+//TestBigMessages, send 8KB GET, SET messages
+func TestBigMessages(t *testing.T) {
+	//Server set-up
+	addr, stop := LaunchServer("")
+	defer stop()
+	//Client set-up
+	client, err := tlsg.Connect(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	//SET
+	err = client.Set([]byte("hola"), bytes.Repeat([]byte("X"), 8*1024))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	//GET
+	value, _, err2 := client.Get([]byte("hola"))
+	if err2 != nil {
+		t.Fatal(err2)
+	}
+	if string(value) != string(bytes.Repeat([]byte("X"), 8*1024)) {
+		t.Fatal("Get failed, returned string: ", string(value))
+	}
+}
+
 func TestBasicRebalance(t *testing.T) {
 	//Server set-up
 	addr1, stop1 := LaunchServer("")
@@ -134,7 +162,7 @@ func TestBasicRebalance(t *testing.T) {
 	_, stop2 := LaunchServer(addr1)
 	defer stop2()
 	//Wait for rebalance
-	time.Sleep(time.Second * 4)
+	time.Sleep(time.Second * 3)
 	//First server shut down
 	stop1()
 	time.Sleep(time.Second)
@@ -168,7 +196,7 @@ func TestCmplx1_1(t *testing.T) {
 	}
 	defer client.Close()
 
-	metaTest(client, 10*1000, 4, 8, 10, 1024)
+	metaTest(t, client, 10*1000, 4, 8, 10, 1024)
 }
 
 //Test lots of operations made by multiple clients against a single DB server
@@ -192,12 +220,17 @@ func randKVOpGenerator(maxKeySize, maxValueSize, seed, mult, offset int) func() 
 		binary.LittleEndian.PutUint32(base2, uint32(r.Int31())*uint32(mult)+uint32(offset))
 		key := bytes.Repeat([]byte(base), opKeySize)[0:opKeySize]
 		value := bytes.Repeat([]byte(base2), opValueSize)[0:opValueSize]
-		return r.Intn(2), key, value
+		op = 0
+		if r.Float32() > 0.7 {
+			op = 1
+		}
+		return op, key, value
 	}
 }
 
 //This test will make lots of PUT/SET/DELETE operations using a PRNG, then it will use GET operations to check the DB status
-func metaTest(c *tlsg.DBClient, numOperations, maxKeySize, maxValueSize, threads, maxKeys int) {
+func metaTest(t *testing.T, c *tlsg.DBClient, numOperations, maxKeySize, maxValueSize, threads, maxKeys int) {
+	runtime.GOMAXPROCS(threads)
 	//Operate on built-in map, DB will be checked against this map
 	goMap := make(map[string][]byte)
 	var goDeletes []([]byte)
@@ -259,69 +292,120 @@ func metaTest(c *tlsg.DBClient, numOperations, maxKeySize, maxValueSize, threads
 
 	//Check deleteds aren't in DB
 	dels := 0
-	mistakes := 0
 	for i := 0; i < len(goDeletes); i++ {
 		key := goDeletes[i]
 		_, ok := goMap[string(key)]
 		if ok {
 			continue
 		}
-		dels++
 		v, _, _ := c.Get([]byte(key))
+		dels++
 		if v != nil {
-			mistakes++
+			t.Fatal("Deleted key present on DB")
 		}
 	}
 	if testing.Verbose() {
-		fmt.Println("Tested deletes:", dels)
+		fmt.Println("Present keys tested:", len(goMap))
+		fmt.Println("Deleted keys tested:", dels)
 	}
-	fmt.Println("Delete mistakes:", float64(mistakes)/float64(dels)*100.0, "%")
 }
 
-func TestSync1_1(t *testing.T) {
+//TestLatency tests latency between a SET operation and a GET operaton that sees the the SET written value
+func TestLatency(t *testing.T) {
 	//Server set-up
 	addr, stop := LaunchServer("")
 	defer stop()
 	//Client set-up
-	client, err := tlsg.Connect(addr)
+	c, err := tlsg.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer client.Close()
+	defer c.Close()
+	c2, err2 := tlsg.Connect(addr)
+	if err2 != nil {
+		t.Fatal(err2)
+	}
+	defer c2.Close()
 
-	metaSyncTest(client, 10000, 1, 200, 63)
+	type lat struct {
+		key string
+		t   time.Time
+	}
+
+	maxKeySize := 4
+	maxValueSize := 4
+	numOperations := 40000
+	initOps := 40000
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	var w sync.WaitGroup
+	ch := make(chan lat)
+	w.Add(2)
+	k := float64(10)
+	go func() {
+		rNext := randKVOpGenerator(maxKeySize, maxValueSize, 0, 64, 0)
+		for i := -initOps; i < numOperations; i++ {
+			_, key, value := rNext()
+			t := time.Now()
+			c.Set(key, value)
+			time.Sleep(time.Duration(k) * time.Microsecond)
+			if i >= 0 {
+				ch <- lat{string(key), t}
+			}
+		}
+		close(ch)
+		w.Done()
+	}()
+	oks := 0
+	go func() {
+		for l := range ch {
+			v, _, _ := c2.Get([]byte(l.key))
+			if v == nil {
+				k = k * 1.05
+				oks = 0
+			} else {
+				oks++
+			}
+		}
+		w.Done()
+	}()
+	w.Wait()
+	fmt.Println("Latency", time.Duration(k)*time.Microsecond, "Error:", 1.0/float64(oks)*100.0, "%")
 }
-func metaSyncTest(c *tlsg.DBClient, numOperations, maxKeySize, maxValueSize, threads int) {
-	runtime.GOMAXPROCS(threads)
-	goMap := make(map[string]int)
-	goMap2 := make(map[string]int)
-	id := 0
+
+//TestClock tests records timestamps synchronization
+func TestClock(t *testing.T) {
+	//Server set-up
+	addr, stop := LaunchServer("")
+	defer stop()
+	//Client set-up
+	c, err := tlsg.Connect(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	threads := 63
+	maxKeySize := 4
+	maxValueSize := 4
+	numOperations := 1000
+	initOps := 40000
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	timestampMap := make(map[string]time.Time)
 	var m sync.Mutex
 	var w sync.WaitGroup
 	w.Add(threads)
 	initTime := time.Now()
-	races := 0
 	for core := 0; core < threads; core++ {
 		go func(core int) {
 			rNext := randKVOpGenerator(maxKeySize, maxValueSize, core, 64, core)
-			value := make([]byte, 8)
-			for i := 0; i < numOperations; i++ {
-				_, key, _ := rNext()
-				// := time.Now()
-
-				m.Lock()
-				pc, ok := goMap[string(key)]
-				if ok {
-					races++
-					if pc != core {
-						fmt.Println("C D")
-					}
+			for i := -initOps; i < numOperations; i++ {
+				_, key, value := rNext()
+				t := time.Now()
+				if i >= 0 {
+					m.Lock()
+					timestampMap[string(key)] = t
+					m.Unlock()
 				}
-				goMap[string(key)] = core
-				goMap2[string(key)] = i
-				binary.LittleEndian.PutUint64(value, uint64(i))
-				id++
-				m.Unlock()
 				c.Set(key, value)
 			}
 			w.Done()
@@ -331,72 +415,25 @@ func metaSyncTest(c *tlsg.DBClient, numOperations, maxKeySize, maxValueSize, thr
 	if testing.Verbose() {
 		fmt.Println("Write phase completed in:", time.Now().Sub(initTime))
 	}
-	time.Sleep(time.Second * 3)
+	time.Sleep(time.Second)
 	var maxDiff time.Duration
-	differs := 0
-	for k, _ := range goMap {
-		v, _, err := c.Get([]byte(k))
+	var avgDiff time.Duration
+	for k, goTime := range timestampMap {
+		_, tlTime, err := c.Get([]byte(k))
 		if err != nil {
 			panic(err)
 		}
-		//t := time.Unix(0, int64(binary.LittleEndian.Uint64(v[:8])))
-		//fmt.Println(t, go_t)
-		/*diff := t.Sub(go_t)
+		diff := tlTime.Sub(goTime)
+		avgDiff += diff
 		if diff > maxDiff {
 			maxDiff = diff
 		}
 		if diff < 0 {
-			//fmt.Println("Warning: negative de-sync: ", diff)
-		}*/
-		rid := -1
-		if v != nil {
-			rid = int(binary.LittleEndian.Uint64(v))
-		}
-		if goMap2[k] != int(rid) {
-			differs++
-			fmt.Println("Warning: id differ", goMap2[k], int(rid))
+			fmt.Println("Warning: negative time difference: ", diff)
 		}
 	}
-	fmt.Println("Races:", races, "Max de-sync: ", maxDiff, "De-synched:", float64(differs)/float64(len(goMap))*100.0, "%")
-}
-
-//TODO: DEL
-//TestBigMessages, send 8KB GET, SET, DEL messages
-func TestBigMessages(t *testing.T) {
-	//Server set-up
-	addr, stop := LaunchServer("")
-	defer stop()
-	//Client set-up
-	client, err := tlsg.Connect(addr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.Close()
-
-	//SET
-	err = client.Set([]byte("hola"), bytes.Repeat([]byte("X"), 8*1024))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	//GET
-	value, _, err2 := client.Get([]byte("hola"))
-	if err2 != nil {
-		t.Fatal(err2)
-	}
-	if string(value) != string(bytes.Repeat([]byte("X"), 8*1024)) {
-		t.Fatal("Get failed, returned string: ", string(value))
-	}
-}
-
-//TestLatency tests latency between a SET operation and a GET operaton that sees the the SET written value
-func TestLatency(t *testing.T) {
-
-}
-
-//TestClock tests records timestamps synchronization
-func TestClock(t *testing.T) {
-
+	avgDiff = avgDiff / time.Duration(len(timestampMap))
+	fmt.Println("Max time difference: ", maxDiff, "\nAverage time difference:", avgDiff)
 }
 
 //Benchmark GET operations by issuing lots of GET operations from different goroutines.

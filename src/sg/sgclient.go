@@ -3,6 +3,7 @@ package tlsg
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"time"
 	"treeless/src/com"
 	"treeless/src/hash"
@@ -86,7 +87,7 @@ func (c *DBClient) Get(key []byte) ([]byte, time.Time, error) {
 		cerr := h.NeedConnection()
 		if cerr != nil {
 			if errs == nil {
-				errs = cerr
+				errs = errors.New("Holders:" + fmt.Sprint(holders) + "\n" + cerr.Error())
 			} else {
 				errs = errors.New(errs.Error() + cerr.Error())
 			}
@@ -103,7 +104,7 @@ func (c *DBClient) Get(key []byte) ([]byte, time.Time, error) {
 			}
 		} else {
 			if errs == nil {
-				errs = err
+				errs = errors.New("Holders:" + fmt.Sprint(holders) + "\n" + err.Error())
 			} else {
 				errs = errors.New("Multiple errors: " + errs.Error() + ", " + err.Error())
 			}

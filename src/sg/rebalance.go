@@ -5,7 +5,6 @@ import (
 	"log"
 	"math/rand"
 	"os"
-	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -182,7 +181,7 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 			log.Println("Chunk duplication aborted, low free space. Chunk size:", size, "Free space:", freeSpace)
 			return
 		}
-		atomic.StoreInt64((*int64)(&sg.chunkStatus[c.ID]), int64(ChunkNotSynched))
+		sg.chunkStatus[c.ID] &^= ChunkSynched
 		c.Holders[sg.localhost] = true
 		sg.localhost.HeldChunks = append(sg.localhost.HeldChunks, c.ID)
 		sg.Unlock()
@@ -196,7 +195,11 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 			sg.Lock()
 			//log.Println("Chunk duplication confirmed, transfering...", c.ID)
 			//Ready to transfer: request chunk transfer, get SYNC params
+			finished := false
 			for s := range c.Holders {
+				if s == sg.localhost {
+					continue
+				}
 				err := s.NeedConnection()
 				if err != nil {
 					log.Println(err)
@@ -206,13 +209,17 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 				err = s.Conn.Transfer(sg.localhost.Phy, c.ID)
 				sg.Lock()
 				if err != nil {
-					log.Println(err)
+					log.Println(c.ID, err)
 					continue
 				}
 				//Set chunk as ready
-				atomic.StoreInt64((*int64)(&sg.chunkStatus[c.ID]), int64(ChunkSynched))
+				sg.chunkStatus[c.ID] |= ChunkSynched
 				log.Println("Chunk duplication completed", c.ID)
+				finished = true
 				break
+			}
+			if !finished {
+				log.Println("Chunk duplication aborted", c.ID)
 			}
 			sg.Unlock()
 		}

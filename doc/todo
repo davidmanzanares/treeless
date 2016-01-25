@@ -34,6 +34,7 @@ Others: 3 sem
 	-start stop
 	-docs: dependencies and constraints
 	-json performance? => use another
+	-stats
 
 ...:
     -procedures: TTL procedure

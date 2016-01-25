@@ -10,6 +10,7 @@ import (
 	"treeless/src/com/tcp"
 	"treeless/src/com/udp"
 	"treeless/src/core"
+	"treeless/src/hash"
 )
 
 //Server listen to TCP & UDP, accepting connections and responding to clients
@@ -99,7 +100,12 @@ func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
 		case tlcore.OpGet:
 			var response tlTCP.Message
 			rval, err := s.m.Get(message.Key)
-			//fmt.Println("Get operation", key, rval, err)
+			cid := tlhash.GetChunkID(message.Key, s.sg.NumChunks)
+			if s.sg.ChunkStatus(cid) != ChunkSynched {
+				fmt.Println("ASD")
+			}
+			fmt.Println(s.sg.ChunkStatus(cid), cid)
+			fmt.Println("Get operation", message.Key, rval, err)
 			response.ID = message.ID
 			if err != nil {
 				response.Type = tlTCP.OpGetResponse
@@ -133,8 +139,11 @@ func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
 					transferFail()
 				} else {
 					go func(c *tlcom.Conn) {
+						s.m.Chunks[chunkID].RLock()
+						defer s.m.Chunks[chunkID].RUnlock()
 						s.m.Iterate(chunkID, func(key, value []byte) {
 							c.Set(key, value)
+							fmt.Println("Transfer operation", key, value)
 						})
 						c.GetAccessInfo() //This will lock until all pending set operations are done
 						c.Close()

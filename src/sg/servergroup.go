@@ -39,9 +39,9 @@ var heartbeatTimeout = time.Millisecond * 50
 type ChunkStatus int64
 
 const (
-	ChunkNotPresent ChunkStatus = iota
+	ChunkPresent ChunkStatus = 1 << iota
 	ChunkSynched
-	ChunkNotSynched
+	ChunkWriteable
 )
 
 func (sg *ServerGroup) initChunks() {
@@ -289,6 +289,10 @@ func oldServersRemover() {
 
 func (sg *ServerGroup) IsChunkPresent(id int) bool {
 	return atomic.LoadInt64((*int64)(&sg.chunkStatus[id])) != 0
+}
+
+func (sg *ServerGroup) ChunkStatus(id int) ChunkStatus {
+	return ChunkStatus(atomic.LoadInt64((*int64)(&sg.chunkStatus[id])))
 }
 
 func (sg *ServerGroup) GetChunkHolders(chunkID int) []*VirtualServer {
