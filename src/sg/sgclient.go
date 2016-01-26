@@ -29,6 +29,9 @@ func (c *DBClient) Set(key, value []byte) error {
 	conns := make([]*tlcom.Conn, 0, 4)
 	var firstError error
 	c.sg.Mutex.Lock()
+	/*if rand.Float32() < 0.005 {
+		fmt.Println(len(holders))
+	}*/
 	for _, h := range holders {
 		err := h.NeedConnection()
 		if err == nil {
@@ -103,6 +106,8 @@ func (c *DBClient) Get(key []byte) ([]byte, time.Time, error) {
 				}
 			}
 		} else {
+			//h.Conn.Close()
+			//h.Conn = nil
 			if errs == nil {
 				errs = errors.New("Holders:" + fmt.Sprint(holders) + "\n" + err.Error())
 			} else {

@@ -10,7 +10,6 @@ import (
 	"treeless/src/com/tcp"
 	"treeless/src/com/udp"
 	"treeless/src/core"
-	"treeless/src/hash"
 )
 
 //Server listen to TCP & UDP, accepting connections and responding to clients
@@ -81,6 +80,8 @@ func (s *DBServer) LogInfo() {
 func udpCreateReplier(sg *ServerGroup) tlcom.UDPCallback {
 	return func() tlUDP.AmAlive {
 		var r tlUDP.AmAlive
+		sg.Lock()
+		defer sg.Unlock()
 		for i := 0; i < sg.NumChunks; i++ {
 			if sg.IsChunkPresent(i) {
 				r.KnownChunks = append(r.KnownChunks, i)
@@ -100,12 +101,12 @@ func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
 		case tlcore.OpGet:
 			var response tlTCP.Message
 			rval, err := s.m.Get(message.Key)
-			cid := tlhash.GetChunkID(message.Key, s.sg.NumChunks)
-			if s.sg.ChunkStatus(cid) != ChunkSynched {
+			//cid := tlhash.GetChunkID(message.Key, s.sg.NumChunks)
+			/*if s.sg.ChunkStatus(cid) != ChunkSynched {
 				fmt.Println("ASD")
-			}
-			fmt.Println(s.sg.ChunkStatus(cid), cid)
-			fmt.Println("Get operation", message.Key, rval, err)
+			}*/
+			//fmt.Println(s.sg.ChunkStatus(cid), cid)
+			//fmt.Println("Get operation", message.Key, rval, err)
 			response.ID = message.ID
 			if err != nil {
 				response.Type = tlTCP.OpGetResponse
@@ -139,11 +140,14 @@ func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
 					transferFail()
 				} else {
 					go func(c *tlcom.Conn) {
-						s.m.Chunks[chunkID].RLock()
-						defer s.m.Chunks[chunkID].RUnlock()
+						//i := 0
 						s.m.Iterate(chunkID, func(key, value []byte) {
 							c.Set(key, value)
-							fmt.Println("Transfer operation", key, value)
+							/*i++
+							if i%1024 == 0 {
+								log.Println("Transfered ", i, "keys")
+							}*/
+							//fmt.Println("Transfer operation", key, value)
 						})
 						c.GetAccessInfo() //This will lock until all pending set operations are done
 						c.Close()
@@ -184,7 +188,9 @@ func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
 			c := s.m.Chunks[binary.LittleEndian.Uint32(message.Key)]
 			response.Type = tlTCP.OpGetChunkInfoResponse
 			response.Value = make([]byte, 8)
+			c.Lock()
 			binary.LittleEndian.PutUint64(response.Value, c.St.Length+1)
+			c.Unlock()
 			responseChannel <- response
 		default:
 			var response tlTCP.Message

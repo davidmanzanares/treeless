@@ -33,7 +33,7 @@ type ServerGroup struct {
 
 const channelUpdateBufferSize = 1024
 
-var heartbeatTickDuration = time.Second * 1
+var heartbeatTickDuration = time.Millisecond * 500
 var heartbeatTimeout = time.Millisecond * 50
 
 type ChunkStatus int64

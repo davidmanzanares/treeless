@@ -205,6 +205,7 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 					log.Println(err)
 					continue
 				}
+				log.Println("Chunk duplication began", c.ID)
 				sg.Unlock()
 				err = s.Conn.Transfer(sg.localhost.Phy, c.ID)
 				sg.Lock()

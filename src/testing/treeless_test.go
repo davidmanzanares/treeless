@@ -21,7 +21,7 @@ func TestMain(m *testing.M) {
 	cmd := exec.Command("killall", "treeless")
 	cmd.Run()
 	os.Chdir("..")
-	cmd = exec.Command("go", "build", "-o", "treeless")
+	cmd = exec.Command("go", "build", "-o", "treeless") //"-race"
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	err := cmd.Run()
@@ -173,10 +173,7 @@ func TestBasicRebalance(t *testing.T) {
 	}
 
 	//Del operation
-	err = client.Del([]byte("hola"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	client.Del([]byte("hola"))
 	//Get operation
 	value, _, err2 = client.Get([]byte("hola"))
 	if value != nil {
@@ -287,6 +284,120 @@ func metaTest(t *testing.T, c *tlsg.DBClient, numOperations, maxKeySize, maxValu
 		if !bytes.Equal(rval, value) {
 			fmt.Println(rval, "ASDASDSAD", value, len(rval), len(value))
 			panic(1)
+		}
+	}
+
+	//Check deleteds aren't in DB
+	dels := 0
+	for i := 0; i < len(goDeletes); i++ {
+		key := goDeletes[i]
+		_, ok := goMap[string(key)]
+		if ok {
+			continue
+		}
+		v, _, _ := c.Get([]byte(key))
+		dels++
+		if v != nil {
+			t.Fatal("Deleted key present on DB")
+		}
+	}
+	if testing.Verbose() {
+		fmt.Println("Present keys tested:", len(goMap))
+		fmt.Println("Deleted keys tested:", dels)
+	}
+}
+
+func TestHotRebalance(t *testing.T) {
+	var stop2 func()
+	//Server set-up
+	addr, stop := LaunchServer("")
+	defer stop()
+	//Client set-up
+	c, err := tlsg.Connect(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	threads := 4
+	maxKeySize := 4
+	maxValueSize := 4
+	numOperations := 800000
+	runtime.GOMAXPROCS(threads)
+	//Operate on built-in map, DB will be checked against this map
+	goMap := make(map[string][]byte)
+	var goDeletes []([]byte)
+	for core := 0; core < threads; core++ {
+		rNext := randKVOpGenerator(maxKeySize, maxValueSize, core, 64, core)
+		for i := 0; i < numOperations; i++ {
+			opType, key, value := rNext()
+			switch opType {
+			case 0:
+				//Put
+				goMap[string(key)] = value
+			case 1:
+				//Delete
+				delete(goMap, string(key))
+				goDeletes = append(goDeletes, key)
+			}
+		}
+	}
+
+	//Operate on TreelessDB
+	t1 := time.Now()
+	var w sync.WaitGroup
+	w.Add(threads)
+	defer func() {
+		stop2()
+	}()
+	for core := 0; core < threads; core++ {
+		go func(core int) {
+			rNext := randKVOpGenerator(maxKeySize, maxValueSize, core, 64, core)
+			for i := 0; i < numOperations; i++ {
+				if core == 0 && i == 0 {
+					//Second server set-up
+					_, stop2 = LaunchServer(addr)
+					//Wait for rebalance
+					time.Sleep(time.Second)
+					//First server shut down
+					stop()
+					break
+				}
+				opType, key, value := rNext()
+				switch opType {
+				case 0:
+					c.Set(key, value)
+				case 1:
+					c.Del(key)
+				}
+			}
+			w.Done()
+		}(core)
+	}
+	w.Wait()
+	if testing.Verbose() {
+		fmt.Println("Write phase completed in:", time.Now().Sub(t1))
+	}
+	time.Sleep(time.Second)
+	//Check map is in DB
+	i := 0
+	for key, value := range goMap {
+		if i%1024 == 0 {
+			fmt.Println(float64(i) / float64(len(goMap)*100.))
+		}
+		i++
+		if len(value) > 128 {
+			fmt.Println(123)
+		}
+		rval, _, _ := c.Get([]byte(key))
+		/*if err != nil {
+			fmt.Println("GET returned with errors:", err, "Correct value:", value, "DB value:", value)
+			panic(err)
+		}*/
+		if !bytes.Equal(rval, value) {
+			//fmt.Println("GET value differs. Correct value:", value, "Returned value:", rval)
+		} else {
+			//fmt.Println("OK")
 		}
 	}
 

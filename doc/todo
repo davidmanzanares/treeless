@@ -1,26 +1,25 @@
 Core: 1 sem
-
+	-last write wins
+	
 	-old SSD
-	-cmplx tests
-	-size limit to map
+	-size limit to map wide instead of chunk wide
+	-IO error?
 	
 	-MurmurHash
-Com: 1sem
 	
-	-add SyncSet
+Com: 1sem	
 	-add SyncDel
 	-add lock & unlock
+
 	-local ip set by parameter, defaultIP := getLocalIP()
 Dist: 2 sem
-	-refactor
-	
+	-REDIR	
 	-SYNCHED mechanism
 	-rebalanceo: eliminacion de trozos por exceso de redundancia
-	-stop
+
 Test: 1 sem
 	-real tests
     -add benchmarks
-	-benchmark latency
 	-2 modes of operation: N processes, N goroutines
 	-Profile with gouroutine mode of operation
 	
@@ -35,8 +34,8 @@ Others: 3 sem
 	-docs: dependencies and constraints
 	-json performance? => use another
 	-stats
+	-progress utils
 
 ...:
     -procedures: TTL procedure
     -java, python
-	-IO error?

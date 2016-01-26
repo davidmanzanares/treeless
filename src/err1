@@ -1,0 +1,158 @@
+
+goroutine 26 [running]:
+runtime.throw(0x5f1038, 0x5)
+        /usr/lib/go/src/runtime/panic.go:527 +0x90 fp=0xc82116f4e0 sp=0xc82116f4c8
+runtime.sigpanic()
+        /usr/lib/go/src/runtime/sigpanic_unix.go:27 +0x2ab fp=0xc82116f530 sp=0xc82116f4e0
+runtime.memmove(0xc82116f64d, 0x7f594cc85c3f, 0x4)
+        /usr/lib/go/src/runtime/memmove_amd64.s:130 +0x379 fp=0xc82116f538 sp=0xc82116f530
+treeless/src/com/tcp.(*Message).write(0xc82116fe98, 0xc82116f640, 0x800, 0x800, 0x401, 0x0)
+        /home/dv/Programacion/go/src/treeless/src/com/tcp/tcpcom.go:53 +0x2c9 fp=0xc82116f5f0 sp=0xc82116f538
+treeless/src/com/tcp.Writer(0xc8204a40d0, 0xc8210c63c0)
+        /home/dv/Programacion/go/src/treeless/src/com/tcp/tcpcom.go:99 +0x33f fp=0xc82116ffa0 sp=0xc82116f5f0
+runtime.goexit()
+        /usr/lib/go/src/runtime/asm_amd64.s:1721 +0x1 fp=0xc82116ffa8 sp=0xc82116ffa0
+created by treeless/src/com.CreateConnection
+        /home/dv/Programacion/go/src/treeless/src/com/client.go:50 +0x232
+
+goroutine 1 [select (no cases)]:
+main.main()
+        /home/dv/Programacion/go/src/treeless/src/treeless.go:54 +0x6e7
+
+goroutine 17 [syscall, locked to thread]:
+runtime.goexit()
+        /usr/lib/go/src/runtime/asm_amd64.s:1721 +0x1
+
+goroutine 8 [chan receive]:
+treeless/src/sg.duplicator.func2(0xc82000a300, 0xc8208b2080)
+        /home/dv/Programacion/go/src/treeless/src/sg/rebalance.go:194 +0x6b
+created by treeless/src/sg.duplicator
+        /home/dv/Programacion/go/src/treeless/src/sg/rebalance.go:227 +0xb9
+
+goroutine 9 [sleep]:
+time.Sleep(0x174876e800)
+        /usr/lib/go/src/runtime/time.go:59 +0xf9
+treeless/src/sg.(*ServerGroup).StartRebalance.func1(0xc8208b2080, 0xc82008a040)
+        /home/dv/Programacion/go/src/treeless/src/sg/rebalance.go:66 +0x4b
+created by treeless/src/sg.(*ServerGroup).StartRebalance
+        /home/dv/Programacion/go/src/treeless/src/sg/rebalance.go:88 +0xa3
+
+goroutine 10 [select]:
+treeless/src/sg.(*ServerGroup).StartRebalance.func2(0xc8208b2080, 0xc82000a2a0, 0xc82008a040)
+        /home/dv/Programacion/go/src/treeless/src/sg/rebalance.go:117 +0x8b9
+created by treeless/src/sg.(*ServerGroup).StartRebalance
+        /home/dv/Programacion/go/src/treeless/src/sg/rebalance.go:141 +0xd9
+
+goroutine 11 [sleep]:
+time.Sleep(0x1dcd6500)
+        /usr/lib/go/src/runtime/time.go:59 +0xf9
+treeless/src/sg.(*ServerGroup).startHeartbeatRequester.func1(0xc8208b2080, 0xc8200901e0)
+        /home/dv/Programacion/go/src/treeless/src/sg/servergroup.go:196 +0x8e
+created by treeless/src/sg.(*ServerGroup).startHeartbeatRequester
+        /home/dv/Programacion/go/src/treeless/src/sg/servergroup.go:262 +0x166
+
+goroutine 12 [IO wait]:
+net.runtime_pollWait(0x7f59503f29e0, 0x72, 0xc82000e210)
+        /usr/lib/go/src/runtime/netpoll.go:157 +0x60
+net.(*pollDesc).Wait(0xc82001e140, 0x72, 0x0, 0x0)
+        /usr/lib/go/src/net/fd_poll_runtime.go:73 +0x3a
+net.(*pollDesc).WaitRead(0xc82001e140, 0x0, 0x0)
+        /usr/lib/go/src/net/fd_poll_runtime.go:78 +0x36
+net.(*netFD).accept(0xc82001e0e0, 0x0, 0x7f594d5c3548, 0xc82008a920)
+        /usr/lib/go/src/net/fd_unix.go:408 +0x27c
+net.(*TCPListener).AcceptTCP(0xc82008e010, 0x645ee8, 0x0, 0x0)
+        /usr/lib/go/src/net/tcpsock_posix.go:254 +0x4d
+treeless/src/com.listenConnections.func1(0xc8204a8190, 0xc82008a3c0)
+        /home/dv/Programacion/go/src/treeless/src/com/server.go:77 +0x49
+created by treeless/src/com.listenConnections
+        /home/dv/Programacion/go/src/treeless/src/com/server.go:90 +0x291
+
+goroutine 13 [IO wait]:
+net.runtime_pollWait(0x7f59503f2920, 0x72, 0xc82000e210)
+        /usr/lib/go/src/runtime/netpoll.go:157 +0x60
+net.(*pollDesc).Wait(0xc82001e1b0, 0x72, 0x0, 0x0)
+        /usr/lib/go/src/net/fd_poll_runtime.go:73 +0x3a
+net.(*pollDesc).WaitRead(0xc82001e1b0, 0x0, 0x0)
+        /usr/lib/go/src/net/fd_poll_runtime.go:78 +0x36
+net.(*netFD).readFrom(0xc82001e150, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x7f59503ed050, 0xc82000e210)
+        /usr/lib/go/src/net/fd_unix.go:259 +0x2a5
+net.(*UDPConn).ReadFromUDP(0xc82008e018, 0x0, 0x0, 0x0, 0x7f59503f2ae8, 0xc8204a6690, 0x0, 0x0)
+        /usr/lib/go/src/net/udpsock_posix.go:61 +0x117
+treeless/src/com/udp.Reply.func1(0xc82008e018, 0xc8204a81a0)
+        /home/dv/Programacion/go/src/treeless/src/com/udp/udpcom.go:28 +0x53
+created by treeless/src/com/udp.Reply
+        /home/dv/Programacion/go/src/treeless/src/com/udp/udpcom.go:39 +0xed
+
+goroutine 22 [select]:
+treeless/src/com/tcp.Writer(0xc8204a40b8, 0xc8210c6180)
+        /home/dv/Programacion/go/src/treeless/src/com/tcp/tcpcom.go:85 +0x553
+created by treeless/src/com.listenRequests
+        /home/dv/Programacion/go/src/treeless/src/com/server.go:49 +0x61
+
+goroutine 21 [runnable]:
+treeless/src/core.(*Chunk).set(0xc8204a60f0, 0x75f9b85be6cba4d, 0xc82112e80d, 0x4, 0x7f3, 0xc82112e811, 0xc, 0x7ef, 0x7f59503ed028, 0xc8211e7140)
+        /home/dv/Programacion/go/src/treeless/src/core/chunk.go:78
+treeless/src/core.(*Map).Set(0xc82001a8a0, 0xc82112e80d, 0x4, 0x7f3, 0xc82112e811, 0xc, 0x7ef, 0x0, 0x0)
+        /home/dv/Programacion/go/src/treeless/src/core/map.go:91 +0xf0
+treeless/src/sg.tcpCreateReplier.func1(0x142b900000701, 0xc82112e80d, 0x4, 0x7f3, 0xc82112e811, 0xc, 0x7ef, 0xc8210c6180)
+        /home/dv/Programacion/go/src/treeless/src/sg/sgserver.go:117 +0x21c
+treeless/src/com.listenRequests.func1(0x142b92112e801, 0xc82112e80d, 0x4, 0x7f3, 0xc82112e811, 0xc, 0x7ef)
+        /home/dv/Programacion/go/src/treeless/src/com/server.go:53 +0x74
+treeless/src/com/tcp.Reader(0x7f594d583000, 0xc8204a40b8, 0xc821139f60, 0x0, 0x0)
+        /home/dv/Programacion/go/src/treeless/src/com/tcp/tcpcom.go:179 +0xa52
+treeless/src/com.listenRequests(0xc8204a40b8, 0x2, 0xc82008a3c0, 0xc8204a8190)
+        /home/dv/Programacion/go/src/treeless/src/com/server.go:56 +0xda
+created by treeless/src/com.listenConnections.func1
+        /home/dv/Programacion/go/src/treeless/src/com/server.go:88 +0x19c
+
+goroutine 16 [IO wait]:
+net.runtime_pollWait(0x7f59503f27a0, 0x72, 0xc82000e210)
+        /usr/lib/go/src/runtime/netpoll.go:157 +0x60
+net.(*pollDesc).Wait(0xc82001e290, 0x72, 0x0, 0x0)
+        /usr/lib/go/src/net/fd_poll_runtime.go:73 +0x3a
+net.(*pollDesc).WaitRead(0xc82001e290, 0x0, 0x0)
+        /usr/lib/go/src/net/fd_poll_runtime.go:78 +0x36
+net.(*netFD).Read(0xc82001e230, 0xc821157000, 0x800, 0x800, 0x0, 0x7f59503ed050, 0xc82000e210)
+        /usr/lib/go/src/net/fd_unix.go:232 +0x23a
+net.(*conn).Read(0xc82008e038, 0xc821157000, 0x800, 0x800, 0x0, 0x0, 0x0)
+        /usr/lib/go/src/net/net.go:172 +0xe4
+treeless/src/com/tcp.Reader(0x7f594d583000, 0xc82008e038, 0xc821135f60, 0x0, 0x0)
+        /home/dv/Programacion/go/src/treeless/src/com/tcp/tcpcom.go:144 +0x1b4
+treeless/src/com.listenRequests(0xc82008e038, 0x4, 0xc82008a3c0, 0xc8204a8190)
+        /home/dv/Programacion/go/src/treeless/src/com/server.go:56 +0xda
+created by treeless/src/com.listenConnections.func1
+        /home/dv/Programacion/go/src/treeless/src/com/server.go:88 +0x19c
+
+goroutine 50 [select]:
+treeless/src/com/tcp.Writer(0xc82008e038, 0xc82000a840)
+        /home/dv/Programacion/go/src/treeless/src/com/tcp/tcpcom.go:85 +0x553
+created by treeless/src/com.listenRequests
+        /home/dv/Programacion/go/src/treeless/src/com/server.go:49 +0x61
+
+goroutine 27 [IO wait]:
+net.runtime_pollWait(0x7f59503f26e0, 0x72, 0xc82000e210)
+        /usr/lib/go/src/runtime/netpoll.go:157 +0x60
+net.(*pollDesc).Wait(0xc8210fa300, 0x72, 0x0, 0x0)
+        /usr/lib/go/src/net/fd_poll_runtime.go:73 +0x3a
+net.(*pollDesc).WaitRead(0xc8210fa300, 0x0, 0x0)
+        /usr/lib/go/src/net/fd_poll_runtime.go:78 +0x36
+net.(*netFD).Read(0xc8210fa2a0, 0xc8211e4000, 0x800, 0x800, 0x0, 0x7f59503ed050, 0xc82000e210)
+        /usr/lib/go/src/net/fd_unix.go:232 +0x23a
+net.(*conn).Read(0xc8204a40d0, 0xc8211e4000, 0x800, 0x800, 0x0, 0x0, 0x0)
+        /usr/lib/go/src/net/net.go:172 +0xe4
+treeless/src/com/tcp.Reader(0x7f594d583000, 0xc8204a40d0, 0xc82002d7a0, 0x0, 0x0)
+        /home/dv/Programacion/go/src/treeless/src/com/tcp/tcpcom.go:144 +0x1b4
+treeless/src/com.listenToResponses(0xc8210fe0f0)
+        /home/dv/Programacion/go/src/treeless/src/com/client.go:86 +0x51
+created by treeless/src/com.CreateConnection
+        /home/dv/Programacion/go/src/treeless/src/com/client.go:51 +0x254
+
+goroutine 28 [select]:
+treeless/src/com.(*Conn).waitForResponse(0xc8210fe0f0, 0xc800001716, 0xc8211a0240, 0x5f5e100, 0x0, 0x0, 0x0, 0x0, 0x0)
+        /home/dv/Programacion/go/src/treeless/src/com/client.go:118 +0x54b
+treeless/src/com.(*Conn).GetAccessInfo(0xc8210fe0f0, 0x0, 0x0, 0x0, 0x0, 0x0)
+        /home/dv/Programacion/go/src/treeless/src/com/client.go:214 +0x15f
+treeless/src/sg.tcpCreateReplier.func1.2(0xc8200106c0, 0xc8211c3170, 0xa0000000a, 0xc82115700d, 0x1, 0x7f3, 0xc82115700e, 0x12, 0x7f2, 0xc82000a840, ...)
+        /home/dv/Programacion/go/src/treeless/src/sg/sgserver.go:150 +0x77
+created by treeless/src/sg.tcpCreateReplier.func1
+        /home/dv/Programacion/go/src/treeless/src/sg/sgserver.go:156 +0xf79

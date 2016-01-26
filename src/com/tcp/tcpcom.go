@@ -2,11 +2,12 @@ package tlTCP
 
 import (
 	"encoding/binary"
+	"log"
 	"net"
 	"time"
 )
 
-const bufferSize = 2048
+const bufferSize = 1800
 const bufferSizeTrigger = 1350
 const minimumMessageSize = 13
 const windowTimeDuration = time.Microsecond * 1
@@ -50,9 +51,11 @@ func (m *Message) write(dest []byte) (msgSize int, tooLong bool) {
 	binary.LittleEndian.PutUint32(dest[4:8], m.ID)
 	binary.LittleEndian.PutUint32(dest[8:12], uint32(len(m.Key)))
 	dest[12] = byte(m.Type)
-	copy(dest[13:], m.Key)
-	copy(dest[13+len(m.Key):], m.Value)
 
+	log.Println(len(m.Key), m.Type, len(m.Value), len(dest))
+	copy(dest[13:], m.Key)
+
+	copy(dest[13+len(m.Key):], m.Value)
 	return size, false
 }
 
@@ -96,12 +99,12 @@ func Writer(conn *net.TCPConn, msgChannel chan Message) {
 				return
 			}
 			//Append message to buffer
-			msgSize, tooLong := m.write(buffer[index:])
+			msgSize, tooLong := m.write(buffer[index:bufferSize])
 			if tooLong {
 				//Big message
 				//Send previous buffer
 				if index > 0 {
-					conn.Write(buffer[0:index])
+					conn.Write(buffer[:index])
 					index = 0
 				}
 				timer.Stop()

@@ -108,6 +108,7 @@ func (c *Chunk) set(h64 uint64, key, value []byte) error {
 			storedKey := c.St.key(uint64(stIndex))
 			if bytes.Equal(storedKey, key) {
 				//Full match, the key was in the map
+				//TODO Last write wins
 				c.St.del(stIndex)
 				storeIndex, err := c.St.put(key, value)
 				if err != nil {
