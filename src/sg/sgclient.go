@@ -106,8 +106,8 @@ func (c *DBClient) Get(key []byte) ([]byte, time.Time, error) {
 				}
 			}
 		} else {
-			//h.Conn.Close()
-			//h.Conn = nil
+			h.Conn.Close()
+			h.Conn = nil
 			if errs == nil {
 				errs = errors.New("Holders:" + fmt.Sprint(holders) + "\n" + err.Error())
 			} else {

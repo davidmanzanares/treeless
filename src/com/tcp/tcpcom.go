@@ -2,7 +2,6 @@ package tlTCP
 
 import (
 	"encoding/binary"
-	"log"
 	"net"
 	"time"
 )
@@ -51,10 +50,7 @@ func (m *Message) write(dest []byte) (msgSize int, tooLong bool) {
 	binary.LittleEndian.PutUint32(dest[4:8], m.ID)
 	binary.LittleEndian.PutUint32(dest[8:12], uint32(len(m.Key)))
 	dest[12] = byte(m.Type)
-
-	log.Println(len(m.Key), m.Type, len(m.Value), len(dest))
 	copy(dest[13:], m.Key)
-
 	copy(dest[13+len(m.Key):], m.Value)
 	return size, false
 }

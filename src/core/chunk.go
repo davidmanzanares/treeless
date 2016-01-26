@@ -68,7 +68,10 @@ func (c *Chunk) get(h64 uint64, key []byte) ([]byte, error) {
 			storedKey := c.St.key(uint64(stIndex))
 			if bytes.Equal(storedKey, key) {
 				//Full match, the key was in the map
-				return c.St.val(uint64(stIndex)), nil
+				v := c.St.val(uint64(stIndex))
+				vc := make([]byte, len(v))
+				copy(vc, v)
+				return vc, nil
 			}
 		}
 		index = (index + 1) & c.Hm.sizeMask
@@ -158,7 +161,11 @@ func (c *Chunk) iterate(foreach func(key, value []byte)) error {
 		if c.St.isPresent(index) {
 			key := c.St.key(index)
 			val := c.St.val(index)
-			foreach(key, val)
+			kc := make([]byte, len(key))
+			vc := make([]byte, len(val))
+			copy(kc, key)
+			copy(vc, val)
+			foreach(kc, vc)
 		}
 		index += 8 + uint64(c.St.totalLen(index))
 	}

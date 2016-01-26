@@ -116,6 +116,10 @@ func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
 			}
 			responseChannel <- response
 		case tlcore.OpSet:
+			if len(message.Value) < 8 {
+				log.Println("Error: message value len < 8")
+				return
+			}
 			s.m.Set(message.Key, message.Value)
 		case tlcore.OpDel:
 			s.m.Delete(message.Key)

@@ -308,6 +308,7 @@ func metaTest(t *testing.T, c *tlsg.DBClient, numOperations, maxKeySize, maxValu
 }
 
 func TestHotRebalance(t *testing.T) {
+	//return
 	var stop2 func()
 	//Server set-up
 	addr, stop := LaunchServer("")
@@ -322,7 +323,7 @@ func TestHotRebalance(t *testing.T) {
 	threads := 4
 	maxKeySize := 4
 	maxValueSize := 4
-	numOperations := 800000
+	numOperations := 100000
 	runtime.GOMAXPROCS(threads)
 	//Operate on built-in map, DB will be checked against this map
 	goMap := make(map[string][]byte)
@@ -383,7 +384,7 @@ func TestHotRebalance(t *testing.T) {
 	i := 0
 	for key, value := range goMap {
 		if i%1024 == 0 {
-			fmt.Println(float64(i) / float64(len(goMap)*100.))
+			fmt.Println(float64(i)/float64(len(goMap))*100.0, "%")
 		}
 		i++
 		if len(value) > 128 {
