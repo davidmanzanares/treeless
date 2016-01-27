@@ -19,6 +19,7 @@ const (
 	OpGet Operation = iota
 	OpSet
 	OpDel
+	OpSetOK
 	OpGetResponse
 	OpGetConf
 	OpGetConfResponse

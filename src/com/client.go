@@ -25,6 +25,7 @@ type Conn struct {
 	mutex        sync.Mutex               //Following atribbutes aren't thread-safe, we need to lock and unlock this mutex to protect them
 	waits        map[uint32](chan result) //Map of transactions IDs to channels
 	tid          uint32                   //Transaction ID
+	isClosed     bool
 }
 
 //CreateConnection returns a new DB connection
@@ -63,6 +64,8 @@ func listenToResponses(c *Conn) {
 			rval := make([]byte, len(m.Value))
 			copy(rval, m.Value)
 			ch <- result{rval, nil}
+		case tlTCP.OpSetOK:
+			ch <- result{nil, nil}
 		case tlTCP.OpGetConfResponse:
 			rval := make([]byte, len(m.Value))
 			copy(rval, m.Value)
@@ -89,13 +92,24 @@ func listenToResponses(c *Conn) {
 
 //Close this connection
 func (c *Conn) Close() {
-	if c != nil && c.conn != nil && c.conn.Close() == nil {
-		close(c.writeChannel)
-		c.writeChannel = nil
-		c.conn = nil
+	if c != nil {
+		c.mutex.Lock()
+		if c.conn != nil {
+			c.conn.Close()
+		}
+		c.isClosed = true
+		c.mutex.Unlock()
 	}
 }
 
+func (c *Conn) IsClosed() bool {
+	c.mutex.Lock()
+	closed := c.isClosed
+	c.mutex.Unlock()
+	return closed
+}
+
+//TODO REMOVE
 func (c *Conn) getTID() uint32 {
 	c.mutex.Lock()
 	mytid := c.tid
@@ -150,16 +164,18 @@ func (c *Conn) Get(key []byte) ([]byte, error) {
 func (c *Conn) Set(key, value []byte) error {
 	var mess tlTCP.Message
 
-	mytid := c.getTID()
+	tid, ch := c.getTIDChannel()
 
 	mess.Type = tlTCP.OpSet
-	mess.ID = mytid
+	mess.ID = tid
 	mess.Key = key
 	mess.Value = value
 
 	//fmt.Println("sending put", key, value, len(string(key)), len(key), c.conn.LocalAddr(), c.conn.RemoteAddr())
 	c.writeChannel <- mess
-	return nil
+
+	_, err := c.waitForResponse(tid, ch, time.Millisecond*1000)
+	return err
 }
 
 //Del deletes a key/value pair

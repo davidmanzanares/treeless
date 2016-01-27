@@ -33,15 +33,14 @@ type ServerGroup struct {
 
 const channelUpdateBufferSize = 1024
 
-var heartbeatTickDuration = time.Millisecond * 500
-var heartbeatTimeout = time.Millisecond * 50
+var heartbeatTickDuration = time.Millisecond * 50
+var heartbeatTimeout = time.Millisecond * 100
 
 type ChunkStatus int64
 
 const (
 	ChunkPresent ChunkStatus = 1 << iota
 	ChunkSynched
-	ChunkWriteable
 )
 
 func (sg *ServerGroup) initChunks() {
@@ -86,7 +85,7 @@ func CreateServerGroup(numChunks int, port int, redundancy int) *ServerGroup {
 	for i := 0; i < numChunks; i++ {
 		sg.localhost.HeldChunks[i] = i
 		sg.chunks[i].Holders[sg.localhost] = true
-		sg.chunkStatus[i] = ChunkSynched
+		sg.chunkStatus[i] = ChunkPresent | ChunkSynched
 	}
 	return sg
 }
@@ -256,7 +255,9 @@ func (sg *ServerGroup) startHeartbeatRequester() {
 			} else {
 				log.Println("UDP request timeout. Server", s.Phy, "UDP error:", err)
 			}
-			//log.Println(sg)
+			//if sg.localhost == nil {
+			//	fmt.Println(sg)
+			//}
 			l.MoveToBack(l.Front())
 		}
 	}()
@@ -288,7 +289,7 @@ func oldServersRemover() {
 }
 
 func (sg *ServerGroup) IsChunkPresent(id int) bool {
-	return atomic.LoadInt64((*int64)(&sg.chunkStatus[id])) != 0
+	return (ChunkStatus(atomic.LoadInt64((*int64)(&sg.chunkStatus[id]))) & ChunkPresent) == 1
 }
 
 func (sg *ServerGroup) ChunkStatus(id int) ChunkStatus {
@@ -314,7 +315,6 @@ func (sg *ServerGroup) Stop() {
 	for _, s := range sg.Servers {
 		if s.Conn != nil {
 			s.Conn.Close()
-			s.Conn = nil
 		}
 	}
 	sg.Mutex.Unlock()

@@ -13,10 +13,10 @@ Com: 1sem
 
 	-local ip set by parameter, defaultIP := getLocalIP()
 Dist: 2 sem
-	-REDIR	
+	-Client Topology-Check	
 	-SYNCHED mechanism
 	-rebalanceo: eliminacion de trozos por exceso de redundancia
-
+	-eliminacion de servidores "muertos"
 Test: 1 sem
 	-real tests
     -add benchmarks

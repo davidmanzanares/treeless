@@ -15,7 +15,7 @@ type VirtualServer struct {
 
 //NeedConnection tries to create a connection to the server if needed
 func (s *VirtualServer) NeedConnection() (err error) {
-	if s.Conn == nil {
+	if s.Conn == nil || s.Conn.IsClosed() {
 		s.Conn, err = tlcom.CreateConnection(s.Phy)
 		return err
 	}

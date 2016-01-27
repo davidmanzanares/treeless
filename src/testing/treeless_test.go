@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 	"treeless/src/com"
+	"treeless/src/hash"
 	"treeless/src/sg"
 )
 
@@ -86,7 +87,7 @@ func TestSimple(t *testing.T) {
 	defer client.Close()
 
 	//Set operation
-	err = client.Set([]byte("hola"), []byte("mundo"))
+	_, err = client.Set([]byte("hola"), []byte("mundo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +130,7 @@ func TestBigMessages(t *testing.T) {
 	defer client.Close()
 
 	//SET
-	err = client.Set([]byte("hola"), bytes.Repeat([]byte("X"), 8*1024))
+	_, err = client.Set([]byte("hola"), bytes.Repeat([]byte("X"), 8*1024))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +155,7 @@ func TestBasicRebalance(t *testing.T) {
 	}
 	defer client.Close()
 	//Set operation
-	err = client.Set([]byte("hola"), []byte("mundo"))
+	_, err = client.Set([]byte("hola"), []byte("mundo"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +219,7 @@ func randKVOpGenerator(maxKeySize, maxValueSize, seed, mult, offset int) func() 
 		key := bytes.Repeat([]byte(base), opKeySize)[0:opKeySize]
 		value := bytes.Repeat([]byte(base2), opValueSize)[0:opValueSize]
 		op = 0
-		if r.Float32() > 0.7 {
+		if r.Float32() > 0.5 {
 			op = 1
 		}
 		return op, key, value
@@ -323,7 +324,7 @@ func TestHotRebalance(t *testing.T) {
 	threads := 4
 	maxKeySize := 4
 	maxValueSize := 4
-	numOperations := 100000
+	numOperations := 20000
 	runtime.GOMAXPROCS(threads)
 	//Operate on built-in map, DB will be checked against this map
 	goMap := make(map[string][]byte)
@@ -349,25 +350,39 @@ func TestHotRebalance(t *testing.T) {
 	var w sync.WaitGroup
 	w.Add(threads)
 	defer func() {
-		stop2()
+		if stop2 != nil {
+			stop2()
+		}
 	}()
 	for core := 0; core < threads; core++ {
 		go func(core int) {
 			rNext := randKVOpGenerator(maxKeySize, maxValueSize, core, 64, core)
 			for i := 0; i < numOperations; i++ {
+				fmt.Println(core, i)
 				if core == 0 && i == 0 {
+					fmt.Println("Server 2 power up")
 					//Second server set-up
 					_, stop2 = LaunchServer(addr)
 					//Wait for rebalance
-					time.Sleep(time.Second)
+					time.Sleep(time.Second * 10)
 					//First server shut down
+					fmt.Println("Server 1 shut down")
 					stop()
-					break
+				} else if i == 0 {
 				}
 				opType, key, value := rNext()
 				switch opType {
 				case 0:
-					c.Set(key, value)
+					/*if _, ok := goMap[string(key)]; !ok {
+						panic(ok)
+					}*/
+					written, _ := c.Set(key, value)
+					for !written {
+						written, _ = c.Set(key, value)
+						fmt.Println("SLEEP", core, i)
+						time.Sleep(time.Second)
+
+					}
 				case 1:
 					c.Del(key)
 				}
@@ -390,13 +405,13 @@ func TestHotRebalance(t *testing.T) {
 		if len(value) > 128 {
 			fmt.Println(123)
 		}
-		rval, _, _ := c.Get([]byte(key))
+		rval, _, err := c.Get([]byte(key))
 		/*if err != nil {
 			fmt.Println("GET returned with errors:", err, "Correct value:", value, "DB value:", value)
 			panic(err)
 		}*/
 		if !bytes.Equal(rval, value) {
-			//fmt.Println("GET value differs. Correct value:", value, "Returned value:", rval)
+			fmt.Println("GET value differs. Correct value:", value, "Returned value:", rval, "Errors:", err, "ChunkID:", tlhash.FNV1a64([]byte(key))%8)
 		} else {
 			//fmt.Println("OK")
 		}

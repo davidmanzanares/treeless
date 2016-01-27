@@ -116,11 +116,20 @@ func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
 			}
 			responseChannel <- response
 		case tlcore.OpSet:
+			var response tlTCP.Message
 			if len(message.Value) < 8 {
 				log.Println("Error: message value len < 8")
 				return
 			}
-			s.m.Set(message.Key, message.Value)
+			err := s.m.Set(message.Key, message.Value)
+			response.ID = message.ID
+			if err == nil {
+				response.Type = tlTCP.OpSetOK
+			} else {
+				response.Type = tlTCP.OpErr
+				response.Value = []byte(err.Error())
+			}
+			responseChannel <- response
 		case tlcore.OpDel:
 			s.m.Delete(message.Key)
 		case tlTCP.OpTransfer:
@@ -144,16 +153,21 @@ func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
 					transferFail()
 				} else {
 					go func(c *tlcom.Conn) {
-						//i := 0
+						i := 0
 						s.m.Iterate(chunkID, func(key, value []byte) {
-							c.Set(key, value)
-							/*i++
-							if i%1024 == 0 {
+							err := c.Set(key, value)
+							if err != nil {
+								//TODO transfer aborted
+								log.Println("Transfer error:", err)
+								panic(err)
+							}
+							i++
+							/*if i%1024 == 0 {
 								log.Println("Transfered ", i, "keys")
 							}*/
 							//fmt.Println("Transfer operation", key, value)
 						})
-						c.GetAccessInfo() //This will lock until all pending set operations are done
+						fmt.Println("Transfer operation completed, pairs:", i)
 						c.Close()
 						var response tlTCP.Message
 						response.ID = message.ID

@@ -2,8 +2,10 @@ package tlcore
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"sync"
+	"time"
 	"treeless/src/hash"
 )
 
@@ -111,7 +113,16 @@ func (c *Chunk) set(h64 uint64, key, value []byte) error {
 			storedKey := c.St.key(uint64(stIndex))
 			if bytes.Equal(storedKey, key) {
 				//Full match, the key was in the map
-				//TODO Last write wins
+				//Last write wins
+				v := c.St.val(uint64(stIndex))
+				oldT := time.Unix(0, int64(binary.LittleEndian.Uint64(v[:8])))
+
+				t := time.Unix(0, int64(binary.LittleEndian.Uint64(value[:8])))
+
+				if t.Before(oldT) {
+					return nil
+				}
+
 				c.St.del(stIndex)
 				storeIndex, err := c.St.put(key, value)
 				if err != nil {

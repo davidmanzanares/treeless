@@ -181,7 +181,7 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 			log.Println("Chunk duplication aborted, low free space. Chunk size:", size, "Free space:", freeSpace)
 			return
 		}
-		sg.chunkStatus[c.ID] &^= ChunkSynched
+		sg.chunkStatus[c.ID] = ChunkPresent
 		c.Holders[sg.localhost] = true
 		sg.localhost.HeldChunks = append(sg.localhost.HeldChunks, c.ID)
 		sg.Unlock()
@@ -207,6 +207,7 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 				}
 				log.Println("Chunk duplication began", c.ID)
 				sg.Unlock()
+				time.Sleep(time.Millisecond * 400)
 				err = s.Conn.Transfer(sg.localhost.Phy, c.ID)
 				sg.Lock()
 				if err != nil {

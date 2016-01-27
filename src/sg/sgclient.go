@@ -23,7 +23,7 @@ func Connect(addr string) (*DBClient, error) {
 	return c, nil
 }
 
-func (c *DBClient) Set(key, value []byte) error {
+func (c *DBClient) Set(key, value []byte) (bool, error) {
 	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks)
 	holders := c.sg.GetChunkHolders(chunkID)
 	conns := make([]*tlcom.Conn, 0, 4)
@@ -45,13 +45,20 @@ func (c *DBClient) Set(key, value []byte) error {
 	valueWithTime := make([]byte, 8+len(value))
 	binary.LittleEndian.PutUint64(valueWithTime, uint64(time.Now().UnixNano()))
 	copy(valueWithTime[8:], value)
-	for _, c := range conns {
-		err := c.Set(key, valueWithTime)
+	written := false
+	//TODO sum errors
+	for _, con := range conns {
+		err := con.Set(key, valueWithTime)
+		if err == nil {
+			written = true
+		} else {
+			con.Close()
+		}
 		if err != nil && firstError == nil {
 			firstError = err
 		}
 	}
-	return firstError
+	return written, firstError
 }
 
 func (c *DBClient) Del(key []byte) error {
@@ -107,7 +114,6 @@ func (c *DBClient) Get(key []byte) ([]byte, time.Time, error) {
 			}
 		} else {
 			h.Conn.Close()
-			h.Conn = nil
 			if errs == nil {
 				errs = errors.New("Holders:" + fmt.Sprint(holders) + "\n" + err.Error())
 			} else {
