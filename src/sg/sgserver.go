@@ -131,7 +131,16 @@ func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
 			}
 			responseChannel <- response
 		case tlcore.OpDel:
-			s.m.Delete(message.Key)
+			var response tlTCP.Message
+			err := s.m.Delete(message.Key)
+			response.ID = message.ID
+			if err == nil {
+				response.Type = tlTCP.OpDelOK
+			} else {
+				response.Type = tlTCP.OpErr
+				response.Value = []byte(err.Error())
+			}
+			responseChannel <- response
 		case tlTCP.OpTransfer:
 			var chunkID int
 			err := json.Unmarshal(message.Key, &chunkID)

@@ -2,14 +2,15 @@ package tlTCP
 
 import (
 	"encoding/binary"
+	"log"
 	"net"
 	"time"
 )
 
-const bufferSize = 1800
-const bufferSizeTrigger = 1350
+const bufferSize = 2048
+const bufferSizeTrigger = 1400
 const minimumMessageSize = 13
-const windowTimeDuration = time.Microsecond * 1
+const windowTimeDuration = time.Microsecond * 10
 
 //Operation represents a DB operation or result, the Message type
 type Operation uint8
@@ -20,6 +21,7 @@ const (
 	OpSet
 	OpDel
 	OpSetOK
+	OpDelOK
 	OpGetResponse
 	OpGetConf
 	OpGetConfResponse
@@ -76,27 +78,36 @@ func read(src []byte) (m Message) {
 //
 //This function blocks, typical usage will be "go Writer(...)""
 func Writer(conn *net.TCPConn, msgChannel chan Message) {
-	timer := time.NewTimer(time.Hour)
-	timer.Stop()
+	total := 0
+	totalM := 0
+	//timer := time.NewTimer(time.Hour)
+	//timer.Stop()
+	ticker := time.NewTicker(windowTimeDuration)
 
 	buffer := make([]byte, bufferSize)
 	index := 0
 	for {
 		select {
-		case <-timer.C:
+		case <-ticker.C:
 			if index > 0 {
 				conn.Write(buffer[0:index])
+				total += index
+				totalM++
 				index = 0
 			}
-			timer.Stop()
+			//timer.Stop()
 		case m, ok := <-msgChannel:
 			if !ok {
 				//Channel closed, stop loop
-				timer.Stop()
+				//timer.Stop()
+				log.Println("Efficiency:", float64(total)/float64(totalM), total, totalM)
+				ticker.Stop()
 				return
 			}
+
 			//Append message to buffer
-			msgSize, tooLong := m.write(buffer[index:bufferSize])
+			msgSize, tooLong := m.write(buffer[index:])
+			//fmt.Println(msgSize)
 			if tooLong {
 				//Big message
 				//Send previous buffer
@@ -104,7 +115,7 @@ func Writer(conn *net.TCPConn, msgChannel chan Message) {
 					conn.Write(buffer[:index])
 					index = 0
 				}
-				timer.Stop()
+				//timer.Stop()
 				//Send this message
 				bigMsg := make([]byte, msgSize)
 				m.write(bigMsg)
@@ -113,11 +124,13 @@ func Writer(conn *net.TCPConn, msgChannel chan Message) {
 			}
 			index += msgSize
 			if index > bufferSizeTrigger {
-				conn.Write(buffer[0:index])
+				total += index
+				totalM++
+				conn.Write(buffer[:index])
 				index = 0
-				timer.Stop()
+				//timer.Stop()
 			} else {
-				timer.Reset(windowTimeDuration)
+				//timer.Reset(windowTimeDuration)
 			}
 		}
 	}

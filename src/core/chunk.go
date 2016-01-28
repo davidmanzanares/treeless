@@ -15,8 +15,9 @@ This module implements DB chunks.
 
 //Chunk is a DB chunk
 type Chunk struct {
-	Hm *HashMap //TODO hm
-	St *Store
+	Hm      *HashMap //TODO hm
+	St      *Store
+	stopped bool
 	sync.RWMutex
 }
 
@@ -44,7 +45,10 @@ func (c *Chunk) restore(path string) {
 }
 
 func (c *Chunk) close() {
+	c.Lock()
+	c.stopped = true
 	c.St.close()
+	c.Unlock()
 }
 
 /*
@@ -54,6 +58,9 @@ func (c *Chunk) close() {
 func (c *Chunk) get(h64 uint64, key []byte) ([]byte, error) {
 	c.RLock()
 	defer c.RUnlock()
+	if c.stopped {
+		return nil, errors.New("Chunk closed")
+	}
 
 	h := hashReMap(uint32(h64))
 
@@ -83,6 +90,9 @@ func (c *Chunk) get(h64 uint64, key []byte) ([]byte, error) {
 func (c *Chunk) set(h64 uint64, key, value []byte) error {
 	c.Lock()
 	defer c.Unlock()
+	if c.stopped {
+		return errors.New("Chunk closed")
+	}
 
 	//Check for available space
 	if c.Hm.numStoredKeys >= c.Hm.numKeysToExpand {
@@ -138,8 +148,12 @@ func (c *Chunk) set(h64 uint64, key, value []byte) error {
 }
 
 func (c *Chunk) del(h64 uint64, key []byte) error {
+	//TODO last writer wins
 	c.Lock()
 	defer c.Unlock()
+	if c.stopped {
+		return errors.New("Chunk closed")
+	}
 
 	h := hashReMap(uint32(h64))
 
@@ -168,6 +182,9 @@ func (c *Chunk) del(h64 uint64, key []byte) error {
 func (c *Chunk) iterate(foreach func(key, value []byte)) error {
 	c.RLock()
 	defer c.RUnlock()
+	if c.stopped {
+		return errors.New("Chunk closed")
+	}
 	for index := uint64(0); index < c.St.Length; {
 		if c.St.isPresent(index) {
 			key := c.St.key(index)

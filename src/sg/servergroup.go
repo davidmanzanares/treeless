@@ -260,6 +260,7 @@ func (sg *ServerGroup) startHeartbeatRequester() {
 			//}
 			l.MoveToBack(l.Front())
 		}
+		sg.Unlock()
 	}()
 }
 
@@ -310,14 +311,14 @@ func (sg *ServerGroup) GetChunkHolders(chunkID int) []*VirtualServer {
 }
 
 func (sg *ServerGroup) Stop() {
-	sg.Mutex.Lock()
+	sg.Lock()
+	defer sg.Unlock()
 	sg.stopped = true
 	for _, s := range sg.Servers {
 		if s.Conn != nil {
 			s.Conn.Close()
 		}
 	}
-	sg.Mutex.Unlock()
 }
 
 //String returns a human-readable representation of the server group

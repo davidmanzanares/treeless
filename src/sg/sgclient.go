@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 	"treeless/src/com"
 	"treeless/src/hash"
@@ -11,7 +12,10 @@ import (
 
 type DBClient struct {
 	sg *ServerGroup
+	id uint64
 }
+
+var id = uint64(0)
 
 func Connect(addr string) (*DBClient, error) {
 	c := new(DBClient)
@@ -20,6 +24,8 @@ func Connect(addr string) (*DBClient, error) {
 		return nil, err
 	}
 	c.sg = sg
+	c.id = atomic.AddUint64(&id, 1)
+
 	return c, nil
 }
 
@@ -88,13 +94,17 @@ func (c *DBClient) Del(key []byte) error {
 
 func (c *DBClient) Get(key []byte) ([]byte, time.Time, error) {
 	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks)
+	//TODO per chunk lock, direct map
 	holders := c.sg.GetChunkHolders(chunkID)
 	var errs error = nil
 	var value []byte = nil
 	//Last write wins policy
 	lastTime := time.Unix(0, 0)
+
 	for _, h := range holders {
+
 		cerr := h.NeedConnection()
+
 		if cerr != nil {
 			if errs == nil {
 				errs = errors.New("Holders:" + fmt.Sprint(holders) + "\n" + cerr.Error())

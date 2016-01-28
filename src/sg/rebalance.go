@@ -65,7 +65,7 @@ func (sg *ServerGroup) StartRebalance() {
 	go func() {
 		time.Sleep(rebalanceWakeupPeriod)
 		sg.Lock()
-		for {
+		for !sg.stopped {
 			known := float64(len(sg.localhost.HeldChunks))
 			total := float64(sg.NumChunks) * float64(sg.Redundancy)
 			avg := total / float64(len(sg.Servers))
@@ -85,6 +85,7 @@ func (sg *ServerGroup) StartRebalance() {
 			time.Sleep(time.Duration(float64(time.Second) * timetowait))
 			sg.Lock()
 		}
+		sg.Unlock()
 	}()
 
 	//Rebalance chunks with low redundancy
@@ -101,7 +102,7 @@ func (sg *ServerGroup) StartRebalance() {
 		heap.Init(&pq)
 		inQueue := make(map[*VirtualChunk]bool)
 		tick := time.Tick(time.Hour)
-		for {
+		for !sg.stopped {
 			if pq.Len() > 0 {
 				//log.Println("time", pq[0].timeToReview)
 				now := time.Now()
@@ -138,6 +139,7 @@ func (sg *ServerGroup) StartRebalance() {
 				}
 			}
 		}
+		sg.Unlock()
 	}()
 }
 
@@ -190,7 +192,7 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 	}
 
 	go func() {
-		for {
+		for !sg.stopped {
 			c := <-ch
 			sg.Lock()
 			//log.Println("Chunk duplication confirmed, transfering...", c.ID)

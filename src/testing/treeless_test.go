@@ -3,6 +3,7 @@ package tltest
 import (
 	"bytes"
 	"encoding/binary"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -11,15 +12,17 @@ import (
 	"os/exec"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	"treeless/src/com"
 	"treeless/src/hash"
 	"treeless/src/sg"
+	"treeless/src/utils"
 )
 
 func TestMain(m *testing.M) {
-	cmd := exec.Command("killall", "treeless")
+	cmd := exec.Command("killall", "-s", "INT", "treeless")
 	cmd.Run()
 	os.Chdir("..")
 	cmd = exec.Command("go", "build", "-o", "treeless") //"-race"
@@ -29,6 +32,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic("Errors building the program, testing aborted.")
 	}
+	flag.Parse()
 	if !testing.Verbose() {
 		log.SetOutput(ioutil.Discard)
 	}
@@ -37,24 +41,38 @@ func TestMain(m *testing.M) {
 
 var id = 0
 
+const useProcess = true
+const numChunks = 8
+
 func LaunchServer(assoc string) (addr string, stop func()) {
-	var cmd *exec.Cmd
 	dbpath := "testDB" + fmt.Sprint(id)
+	var cmd *exec.Cmd
+	var s *tlsg.DBServer
 	if assoc == "" {
 		id = 0
 		dbpath = "testDB" + fmt.Sprint(id)
-		cmd = exec.Command("./treeless", "-create", "-port", fmt.Sprint(10000+id), "-dbpath", dbpath)
+		if useProcess {
+			cmd = exec.Command("./treeless", "-create", "-port", fmt.Sprint(10000+id), "-dbpath", dbpath) //, "-cpuprofile"
+		} else {
+			s = tlsg.Start("", 10000+id, numChunks, 2, dbpath)
+		}
 	} else {
-		cmd = exec.Command("./treeless", "-assoc", assoc, "-port", fmt.Sprint(10000+id), "-dbpath", dbpath)
+		if useProcess {
+			cmd = exec.Command("./treeless", "-assoc", assoc, "-port", fmt.Sprint(10000+id), "-dbpath", dbpath)
+		} else {
+			s = tlsg.Start(assoc, 10000+id, numChunks, 2, dbpath)
+		}
 	}
-	if testing.Verbose() {
+	if useProcess && testing.Verbose() {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 	}
 	id++
-	err := cmd.Start()
-	if err != nil {
-		panic(err)
+	if useProcess {
+		err := cmd.Start()
+		if err != nil {
+			panic(err)
+		}
 	}
 	newAddr := string(tlcom.GetLocalIP()) + ":" + fmt.Sprint(10000+id-1)
 	for i := 0; i < 50; i++ {
@@ -67,7 +85,11 @@ func LaunchServer(assoc string) (addr string, stop func()) {
 	}
 	return newAddr,
 		func() {
-			cmd.Process.Kill()
+			if useProcess {
+				cmd.Process.Signal(os.Interrupt)
+			} else {
+				s.Stop()
+			}
 			time.Sleep(time.Millisecond * 10)
 			os.RemoveAll(dbpath)
 			//fmt.Println(cmd.Path + cmd.Args[1] + cmd.Args[2] + cmd.Args[3] + cmd.Args[4] + " killed")
@@ -163,8 +185,9 @@ func TestBasicRebalance(t *testing.T) {
 	_, stop2 := LaunchServer(addr1)
 	defer stop2()
 	//Wait for rebalance
-	time.Sleep(time.Second * 3)
+	time.Sleep(time.Second * 5)
 	//First server shut down
+	fmt.Println("Server 1 shut down")
 	stop1()
 	time.Sleep(time.Second)
 	//Get operation
@@ -309,7 +332,6 @@ func metaTest(t *testing.T, c *tlsg.DBClient, numOperations, maxKeySize, maxValu
 }
 
 func TestHotRebalance(t *testing.T) {
-	//return
 	var stop2 func()
 	//Server set-up
 	addr, stop := LaunchServer("")
@@ -325,7 +347,7 @@ func TestHotRebalance(t *testing.T) {
 	maxKeySize := 4
 	maxValueSize := 4
 	numOperations := 20000
-	runtime.GOMAXPROCS(threads)
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	//Operate on built-in map, DB will be checked against this map
 	goMap := make(map[string][]byte)
 	var goDeletes []([]byte)
@@ -354,11 +376,13 @@ func TestHotRebalance(t *testing.T) {
 			stop2()
 		}
 	}()
+	p := tlutils.NewProgress("Writting", numOperations*2-1)
+	progress := uint64(0)
 	for core := 0; core < threads; core++ {
 		go func(core int) {
 			rNext := randKVOpGenerator(maxKeySize, maxValueSize, core, 64, core)
 			for i := 0; i < numOperations; i++ {
-				fmt.Println(core, i)
+				//fmt.Println(core, i)
 				if core == 0 && i == 0 {
 					fmt.Println("Server 2 power up")
 					//Second server set-up
@@ -368,7 +392,12 @@ func TestHotRebalance(t *testing.T) {
 					//First server shut down
 					fmt.Println("Server 1 shut down")
 					stop()
-				} else if i == 0 {
+				} else if core == 1 {
+					atomic.AddUint64(&progress, 1)
+					p.Set(int(atomic.LoadUint64(&progress)))
+				} else if core == 0 {
+					atomic.AddUint64(&progress, 1)
+					p.Set(int(atomic.LoadUint64(&progress)))
 				}
 				opType, key, value := rNext()
 				switch opType {
@@ -394,13 +423,11 @@ func TestHotRebalance(t *testing.T) {
 	if testing.Verbose() {
 		fmt.Println("Write phase completed in:", time.Now().Sub(t1))
 	}
-	time.Sleep(time.Second)
+	p = tlutils.NewProgress("Reading", len(goMap)+len(goDeletes))
 	//Check map is in DB
 	i := 0
 	for key, value := range goMap {
-		if i%1024 == 0 {
-			fmt.Println(float64(i)/float64(len(goMap))*100.0, "%")
-		}
+		p.Set(i)
 		i++
 		if len(value) > 128 {
 			fmt.Println(123)
@@ -412,6 +439,7 @@ func TestHotRebalance(t *testing.T) {
 		}*/
 		if !bytes.Equal(rval, value) {
 			fmt.Println("GET value differs. Correct value:", value, "Returned value:", rval, "Errors:", err, "ChunkID:", tlhash.FNV1a64([]byte(key))%8)
+			t.Fail()
 		} else {
 			//fmt.Println("OK")
 		}
@@ -420,6 +448,7 @@ func TestHotRebalance(t *testing.T) {
 	//Check deleteds aren't in DB
 	dels := 0
 	for i := 0; i < len(goDeletes); i++ {
+		p.Set(i + len(goMap))
 		key := goDeletes[i]
 		_, ok := goMap[string(key)]
 		if ok {
@@ -509,6 +538,7 @@ func TestClock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer time.Sleep(time.Second)
 	defer c.Close()
 
 	threads := 63
@@ -566,6 +596,36 @@ func TestClock(t *testing.T) {
 //Benchmark GET operations by issuing lots of GET operations from different goroutines.
 //The DB is clean, all operations will return a "Key not present" error
 func BenchmarkGetUnpopulated(b *testing.B) {
+	fmt.Println(b.N)
+	//Server set-up
+	addr, stop := LaunchServer("")
+	defer stop()
+	//Clients set-up
+	var clients [8]*tlsg.DBClient
+	for i := 0; i < 8; i++ {
+		c, err := tlsg.Connect(addr)
+		if err != nil {
+			b.Fatal(err)
+		}
+		defer c.Close()
+		clients[i] = c
+	}
+	maxKeySize := 4
+	maxValueSize := 4
+	gid := uint64(0)
+	b.ResetTimer()
+	b.SetParallelism(256)
+	b.RunParallel(
+		func(pb *testing.PB) {
+			core := int(atomic.AddUint64(&gid, 1))
+			c := clients[core%5]
+			rNext := randKVOpGenerator(maxKeySize, maxValueSize, core, 64, core)
+			for pb.Next() {
+				_, key, _ := rNext()
+				c.Get(key)
+			}
+
+		})
 }
 
 //Benchmark GET operations by issuing lots of GET operations from different goroutines.

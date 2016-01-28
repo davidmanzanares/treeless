@@ -13,6 +13,7 @@ Com: 1sem
 
 	-local ip set by parameter, defaultIP := getLocalIP()
 Dist: 2 sem
+	-chunk-server mutexs
 	-Client Topology-Check	
 	-SYNCHED mechanism
 	-rebalanceo: eliminacion de trozos por exceso de redundancia
@@ -25,6 +26,9 @@ Test: 1 sem
 	
 	-space per chunk tests (hash quality tests)
 Others: 3 sem
+	-SIGQUIT
+	-remove defers
+	-LOGGING?? tests
 	-info command
 	
 	-transactions: lock table
