@@ -45,20 +45,11 @@ func listenRequests(conn *net.TCPConn, id int, tcpc TCPCallback) {
 	//log.Println("New connection accepted. Connection ID:", id)
 	//tcpWriter will buffer TCP writes to send more message in less TCP packets
 	//this technique allows bigger throughtputs, but latency in increased a little
-	writeCh := make(chan tlTCP.Message, 1024)
-	readChannel := make(chan tlTCP.Message, 1024)
+	readChannel, writeChannel := tlTCP.NewBufferedConn(conn)
 
-	go tlTCP.Writer(conn, writeCh)
 	//fmt.Println("Server", conn.LocalAddr(), "listening")
 
-	go func() {
-		tlTCP.Reader(conn, readChannel)
-		conn.Close()
-		close(readChannel)
-		//log.Println("Connection closed. Connection ID:", id)
-	}()
-
-	go tcpc(writeCh, readChannel)
+	go tcpc(writeChannel, readChannel)
 }
 
 func listenConnections(s *Server, port int, tcpc TCPCallback) {

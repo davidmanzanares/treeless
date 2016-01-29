@@ -23,10 +23,9 @@ const tickerReserveSize = 32
 //Conn is a DB TCP client connection
 type Conn struct {
 	Addr            string
-	conn            net.Conn           //TCP connection
-	writeChannel    chan tlTCP.Message //TCP writer communicattion is made throught this channel
-	chanPool        sync.Pool          //Pool of channels to be used as mechanisms to wait until response, make a pool to avoid GC performance penalties
-	mutex           sync.Mutex         //REmove, use atomic isClosed
+	conn            net.Conn   //TCP connection
+	chanPool        sync.Pool  //Pool of channels to be used as mechanisms to wait until response, make a pool to avoid GC performance penalties
+	mutex           sync.Mutex //REmove, use atomic isClosed
 	isClosed        bool
 	tickerReserve   [tickerReserveSize]*time.Ticker
 	reservedTickers int
@@ -57,11 +56,9 @@ func CreateConnection(addr string) (*Conn, error) {
 	c.chanPool.New = func() interface{} {
 		return make(chan result)
 	}
-	c.writeChannel = make(chan tlTCP.Message, 8)
 
 	c.responseChannel = make(chan ResponserMsg, 1024)
 
-	go tlTCP.Writer(tcpconn, c.writeChannel)
 	go Responser(&c)
 
 	return &c, nil
@@ -77,7 +74,7 @@ type waiter struct {
 }
 
 func Responser(c *Conn) {
-	readChannel := make(chan tlTCP.Message, 1024)
+	readChannel, writeChannel := tlTCP.NewBufferedConn(c.conn)
 	waits := make(map[uint32]waiter)
 	tid := uint32(0)
 	l := list.New()
@@ -109,7 +106,9 @@ func Responser(c *Conn) {
 						w := waits[f.tid]
 						w.r <- result{nil, errors.New("Connection closed")}
 					}
-					close(c.writeChannel) //TODO make writechannel private
+					c.Close()
+					close(writeChannel)
+					//log.Println("Connection closed", c.conn.RemoteAddr().String())
 					return
 				}
 				msg.mess.ID = tid
@@ -129,7 +128,7 @@ func Responser(c *Conn) {
 
 				waits[tid] = waiter{r: msg.rch, el: inserted}
 				tid++
-				c.writeChannel <- msg.mess
+				writeChannel <- msg.mess
 			case m := <-readChannel:
 				w, ok := waits[m.ID]
 				if !ok {
@@ -162,8 +161,6 @@ func Responser(c *Conn) {
 			}
 		}
 	}()
-	tlTCP.Reader(c.conn, readChannel)
-	//log.Println("Connection closed", c.conn.RemoteAddr().String())
 }
 
 //Close this connection

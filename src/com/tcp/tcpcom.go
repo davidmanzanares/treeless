@@ -69,6 +69,15 @@ func read(src []byte) (m Message) {
 	return m
 }
 
+//Close it by closing conn and writeChannel
+func NewBufferedConn(conn net.Conn) (readChannel <-chan Message, writeChannel chan<- Message) {
+	readCh := make(chan Message, 1024)
+	writeCh := make(chan Message, 8)
+	go bufferedWriter(conn, writeCh)
+	go bufferedReader(conn, readCh)
+	return readCh, writeCh
+}
+
 //Writer will write to conn messages recieved by the channel
 //
 //This function implements buffering, and uses a time window:
@@ -78,7 +87,7 @@ func read(src []byte) (m Message) {
 //Close the channel to stop the infinite listening loop.
 //
 //This function blocks, typical usage will be "go Writer(...)""
-func Writer(conn *net.TCPConn, msgChannel <-chan Message) {
+func bufferedWriter(conn net.Conn, msgChannel <-chan Message) {
 	total := 0
 	totalM := 0
 	//timer := time.NewTimer(time.Hour)
@@ -140,13 +149,11 @@ func Writer(conn *net.TCPConn, msgChannel <-chan Message) {
 	}
 }
 
-type ReaderCallback func(m Message)
-
 //Reader calls callback each time a message is recieved by the conn TCP connection
 //The message passed to the callback wont live after the callback returns, it should copy the message
 //Close the socket to end the infinite listening loop
 //This function blocks, typical usage: "go Reader(...)"
-func Reader(conn net.Conn, readChannel chan<- Message) error {
+func bufferedReader(conn net.Conn, readChannel chan<- Message) error {
 	//Ping-pong between buffers
 	var slices [2][]byte
 	slices[0] = make([]byte, bufferSize)
