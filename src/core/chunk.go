@@ -57,8 +57,8 @@ func (c *Chunk) close() {
 
 func (c *Chunk) get(h64 uint64, key []byte) ([]byte, error) {
 	c.RLock()
-	defer c.RUnlock()
 	if c.stopped {
+		c.RUnlock()
 		return nil, errors.New("Chunk closed")
 	}
 
@@ -69,6 +69,7 @@ func (c *Chunk) get(h64 uint64, key []byte) ([]byte, error) {
 	for {
 		storedHash := c.Hm.getHash(index)
 		if storedHash == emptyBucket {
+			c.RUnlock()
 			return nil, errors.New("Key not present")
 		}
 		if h == storedHash {
@@ -80,6 +81,7 @@ func (c *Chunk) get(h64 uint64, key []byte) ([]byte, error) {
 				v := c.St.val(uint64(stIndex))
 				vc := make([]byte, len(v))
 				copy(vc, v)
+				c.RUnlock()
 				return vc, nil
 			}
 		}

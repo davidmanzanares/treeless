@@ -53,8 +53,8 @@ func listenRequests(conn *net.TCPConn, id int, tcpc TCPCallback) {
 
 	go func() {
 		tlTCP.Reader(conn, readChannel)
-		close(writeCh)
 		conn.Close()
+		close(readChannel)
 		//log.Println("Connection closed. Connection ID:", id)
 	}()
 

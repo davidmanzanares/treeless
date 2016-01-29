@@ -2,7 +2,6 @@ package tlTCP
 
 import (
 	"encoding/binary"
-	"log"
 	"net"
 	"time"
 )
@@ -104,7 +103,7 @@ func Writer(conn *net.TCPConn, msgChannel <-chan Message) {
 			if !ok {
 				//Channel closed, stop loop
 				//timer.Stop()
-				log.Println("Efficiency:", float64(total)/float64(totalM), total, totalM)
+				//log.Println("Efficiency:", float64(total)/float64(totalM), total, totalM)
 				ticker.Stop()
 				return
 			}

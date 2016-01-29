@@ -406,7 +406,7 @@ func TestHotRebalance(t *testing.T) {
 						panic(ok)
 					}*/
 					written, _ := c.Set(key, value)
-					for !written {
+					for !written { //TODO to sg
 						written, _ = c.Set(key, value)
 						fmt.Println("SLEEP", core, i)
 						time.Sleep(time.Second)

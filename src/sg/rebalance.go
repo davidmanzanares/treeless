@@ -192,7 +192,9 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 	}
 
 	go func() {
-		for !sg.stopped {
+		sg.Lock()
+		for !sg.stopped { //TODO atomic
+			sg.Unlock()
 			c := <-ch
 			sg.Lock()
 			//log.Println("Chunk duplication confirmed, transfering...", c.ID)
@@ -225,8 +227,8 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 			if !finished {
 				log.Println("Chunk duplication aborted", c.ID)
 			}
-			sg.Unlock()
 		}
+		sg.Unlock()
 	}()
 
 	return duplicate

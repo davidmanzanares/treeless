@@ -35,6 +35,7 @@ func (c *DBClient) Set(key, value []byte) (bool, error) {
 	conns := make([]*tlcom.Conn, 0, 4)
 	var firstError error
 	c.sg.Mutex.Lock()
+
 	/*if rand.Float32() < 0.005 {
 		fmt.Println(len(holders))
 	}*/
@@ -47,6 +48,7 @@ func (c *DBClient) Set(key, value []byte) (bool, error) {
 			firstError = err
 		}
 	}
+
 	c.sg.Mutex.Unlock()
 	valueWithTime := make([]byte, 8+len(value))
 	binary.LittleEndian.PutUint64(valueWithTime, uint64(time.Now().UnixNano()))
@@ -55,6 +57,7 @@ func (c *DBClient) Set(key, value []byte) (bool, error) {
 	//TODO sum errors
 	for _, con := range conns {
 		err := con.Set(key, valueWithTime)
+
 		if err == nil {
 			written = true
 		} else {

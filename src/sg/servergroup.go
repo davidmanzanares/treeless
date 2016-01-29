@@ -34,7 +34,7 @@ type ServerGroup struct {
 const channelUpdateBufferSize = 1024
 
 var heartbeatTickDuration = time.Millisecond * 50
-var heartbeatTimeout = time.Millisecond * 100
+var heartbeatTimeout = time.Millisecond * 200
 
 type ChunkStatus int64
 
@@ -199,7 +199,9 @@ func (sg *ServerGroup) startHeartbeatRequester() {
 			}
 			s := l.Front().Value.(*VirtualServer)
 			//Request known chunks list
+			sg.Unlock()
 			aa, err := tlUDP.Request(s.Phy, heartbeatTimeout)
+			sg.Lock()
 			if err == nil {
 				//Detect added servers
 				for _, addr := range aa.KnownServers {

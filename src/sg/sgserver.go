@@ -96,8 +96,12 @@ func udpCreateReplier(sg *ServerGroup) tlcom.UDPCallback {
 
 func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
 	return func(responseChannel chan<- tlTCP.Message, read <-chan tlTCP.Message) {
-		for {
-			message := <-read
+		for { //TODO refactor make fixed number of workers
+			message, ok := <-read
+			if !ok {
+				close(responseChannel)
+				return
+			}
 			//fmt.Println("Server", conn.LocalAddr(), "message recieved", string(message.Key), string(message.Value))
 			switch message.Type {
 			case tlcore.OpGet:
