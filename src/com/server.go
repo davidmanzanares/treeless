@@ -17,7 +17,7 @@ type Server struct {
 	stopped int32
 }
 
-type TCPCallback func(message tlTCP.Message, responseChannel chan tlTCP.Message)
+type TCPCallback func(write chan<- tlTCP.Message, read <-chan tlTCP.Message)
 type UDPCallback func() tlUDP.AmAlive
 
 //Start a Treeless server
@@ -41,24 +41,24 @@ func (s *Server) Stop() {
 	s.tcpListener.Close()
 }
 
-func listenRequests(conn *net.TCPConn, id int, s *Server, tcpc TCPCallback) {
+func listenRequests(conn *net.TCPConn, id int, tcpc TCPCallback) {
 	//log.Println("New connection accepted. Connection ID:", id)
 	//tcpWriter will buffer TCP writes to send more message in less TCP packets
 	//this technique allows bigger throughtputs, but latency in increased a little
 	writeCh := make(chan tlTCP.Message, 1024)
+	readChannel := make(chan tlTCP.Message, 1024)
+
 	go tlTCP.Writer(conn, writeCh)
 	//fmt.Println("Server", conn.LocalAddr(), "listening")
 
-	processMessage := func(message tlTCP.Message) {
-		tcpc(message, writeCh)
-	}
+	go func() {
+		tlTCP.Reader(conn, readChannel)
+		close(writeCh)
+		conn.Close()
+		//log.Println("Connection closed. Connection ID:", id)
+	}()
 
-	tlTCP.Reader(conn, processMessage)
-
-	close(writeCh)
-
-	conn.Close()
-	//log.Println("Connection closed. Connection ID:", id)
+	go tcpc(writeCh, readChannel)
 }
 
 func listenConnections(s *Server, port int, tcpc TCPCallback) {
@@ -85,7 +85,7 @@ func listenConnections(s *Server, port int, tcpc TCPCallback) {
 				panic(err)
 			}
 			tcpConnections = append(tcpConnections, conn)
-			go listenRequests(conn, i, s, tcpc)
+			go listenRequests(conn, i, tcpc)
 		}
 	}(s)
 }

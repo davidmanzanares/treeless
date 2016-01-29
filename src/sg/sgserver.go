@@ -95,136 +95,139 @@ func udpCreateReplier(sg *ServerGroup) tlcom.UDPCallback {
 }
 
 func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
-	return func(message tlTCP.Message, responseChannel chan tlTCP.Message) {
-		//fmt.Println("Server", conn.LocalAddr(), "message recieved", string(message.Key), string(message.Value))
-		switch message.Type {
-		case tlcore.OpGet:
-			var response tlTCP.Message
-			rval, err := s.m.Get(message.Key)
-			//cid := tlhash.GetChunkID(message.Key, s.sg.NumChunks)
-			/*if s.sg.ChunkStatus(cid) != ChunkSynched {
-				fmt.Println("ASD")
-			}*/
-			//fmt.Println(s.sg.ChunkStatus(cid), cid)
-			//fmt.Println("Get operation", message.Key, rval, err)
-			response.ID = message.ID
-			if err != nil {
-				response.Type = tlTCP.OpGetResponse
-			} else {
-				response.Type = tlTCP.OpGetResponse
-				response.Value = rval
-			}
-			responseChannel <- response
-		case tlcore.OpSet:
-			var response tlTCP.Message
-			if len(message.Value) < 8 {
-				log.Println("Error: message value len < 8")
-				return
-			}
-			err := s.m.Set(message.Key, message.Value)
-			response.ID = message.ID
-			if err == nil {
-				response.Type = tlTCP.OpSetOK
-			} else {
-				response.Type = tlTCP.OpErr
-				response.Value = []byte(err.Error())
-			}
-			responseChannel <- response
-		case tlcore.OpDel:
-			var response tlTCP.Message
-			err := s.m.Delete(message.Key)
-			response.ID = message.ID
-			if err == nil {
-				response.Type = tlTCP.OpDelOK
-			} else {
-				response.Type = tlTCP.OpErr
-				response.Value = []byte(err.Error())
-			}
-			responseChannel <- response
-		case tlTCP.OpTransfer:
-			var chunkID int
-			err := json.Unmarshal(message.Key, &chunkID)
-			if err != nil {
-				panic(string(message.Key) + err.Error())
-			}
-			transferFail := func() {
+	return func(responseChannel chan<- tlTCP.Message, read <-chan tlTCP.Message) {
+		for {
+			message := <-read
+			//fmt.Println("Server", conn.LocalAddr(), "message recieved", string(message.Key), string(message.Value))
+			switch message.Type {
+			case tlcore.OpGet:
+				var response tlTCP.Message
+				rval, err := s.m.Get(message.Key)
+				//cid := tlhash.GetChunkID(message.Key, s.sg.NumChunks)
+				/*if s.sg.ChunkStatus(cid) != ChunkSynched {
+					fmt.Println("ASD")
+				}*/
+				//fmt.Println(s.sg.ChunkStatus(cid), cid)
+				//fmt.Println("Get operation", message.Key, rval, err)
+				response.ID = message.ID
+				if err != nil {
+					response.Type = tlTCP.OpGetResponse
+				} else {
+					response.Type = tlTCP.OpGetResponse
+					response.Value = rval
+				}
+				responseChannel <- response
+			case tlcore.OpSet:
+				var response tlTCP.Message
+				if len(message.Value) < 8 {
+					log.Println("Error: message value len < 8")
+					return
+				}
+				err := s.m.Set(message.Key, message.Value)
+				response.ID = message.ID
+				if err == nil {
+					response.Type = tlTCP.OpSetOK
+				} else {
+					response.Type = tlTCP.OpErr
+					response.Value = []byte(err.Error())
+				}
+				responseChannel <- response
+			case tlcore.OpDel:
+				var response tlTCP.Message
+				err := s.m.Delete(message.Key)
+				response.ID = message.ID
+				if err == nil {
+					response.Type = tlTCP.OpDelOK
+				} else {
+					response.Type = tlTCP.OpErr
+					response.Value = []byte(err.Error())
+				}
+				responseChannel <- response
+			case tlTCP.OpTransfer:
+				var chunkID int
+				err := json.Unmarshal(message.Key, &chunkID)
+				if err != nil {
+					panic(string(message.Key) + err.Error())
+				}
+				transferFail := func() {
+					var response tlTCP.Message
+					response.ID = message.ID
+					response.Type = tlTCP.OpErr
+					responseChannel <- response
+				}
+				if s.sg.IsChunkPresent(chunkID) {
+					//New goroutine will put every key value pair into destination, it will manage the OpTransferOK response
+					addr := string(message.Value)
+					c, err := tlcom.CreateConnection(addr)
+					if err != nil {
+						log.Println("Transfer failed, error:", err)
+						transferFail()
+					} else {
+						go func(c *tlcom.Conn) {
+							i := 0
+							s.m.Iterate(chunkID, func(key, value []byte) {
+								err := c.Set(key, value)
+								if err != nil {
+									//TODO transfer aborted
+									log.Println("Transfer error:", err)
+									panic(err)
+								}
+								i++
+								/*if i%1024 == 0 {
+									log.Println("Transfered ", i, "keys")
+								}*/
+								//fmt.Println("Transfer operation", key, value)
+							})
+							fmt.Println("Transfer operation completed, pairs:", i)
+							c.Close()
+							var response tlTCP.Message
+							response.ID = message.ID
+							response.Type = tlTCP.OpTransferCompleted
+							responseChannel <- response
+						}(c)
+					}
+				} else {
+					transferFail()
+				}
+			case tlTCP.OpGetConf:
+				var response tlTCP.Message
+				response.ID = message.ID
+				response.Type = tlTCP.OpGetConfResponse
+				b, err := s.sg.Marshal()
+				if err != nil {
+					panic(err)
+				}
+				response.Value = b
+				responseChannel <- response
+			case tlTCP.OpAddServerToGroup:
+				var response tlTCP.Message
+				response.ID = message.ID
+				err := s.sg.AddServerToGroup(string(message.Key))
+				if err != nil {
+					response.Type = tlTCP.OpErr
+					response.Value = []byte(err.Error())
+					responseChannel <- response
+				} else {
+					response.Type = tlTCP.OpAddServerToGroupACK
+					responseChannel <- response
+				}
+			case tlTCP.OpGetChunkInfo:
+				var response tlTCP.Message
+				response.ID = message.ID
+				c := s.m.Chunks[binary.LittleEndian.Uint32(message.Key)]
+				response.Type = tlTCP.OpGetChunkInfoResponse
+				response.Value = make([]byte, 8)
+				c.Lock()
+				binary.LittleEndian.PutUint64(response.Value, c.St.Length+1)
+				c.Unlock()
+				responseChannel <- response
+			default:
 				var response tlTCP.Message
 				response.ID = message.ID
 				response.Type = tlTCP.OpErr
+				response.Value = []byte("Operation not supported")
 				responseChannel <- response
 			}
-			if s.sg.IsChunkPresent(chunkID) {
-				//New goroutine will put every key value pair into destination, it will manage the OpTransferOK response
-				addr := string(message.Value)
-				c, err := tlcom.CreateConnection(addr)
-				if err != nil {
-					log.Println("Transfer failed, error:", err)
-					transferFail()
-				} else {
-					go func(c *tlcom.Conn) {
-						i := 0
-						s.m.Iterate(chunkID, func(key, value []byte) {
-							err := c.Set(key, value)
-							if err != nil {
-								//TODO transfer aborted
-								log.Println("Transfer error:", err)
-								panic(err)
-							}
-							i++
-							/*if i%1024 == 0 {
-								log.Println("Transfered ", i, "keys")
-							}*/
-							//fmt.Println("Transfer operation", key, value)
-						})
-						fmt.Println("Transfer operation completed, pairs:", i)
-						c.Close()
-						var response tlTCP.Message
-						response.ID = message.ID
-						response.Type = tlTCP.OpTransferCompleted
-						responseChannel <- response
-					}(c)
-				}
-			} else {
-				transferFail()
-			}
-		case tlTCP.OpGetConf:
-			var response tlTCP.Message
-			response.ID = message.ID
-			response.Type = tlTCP.OpGetConfResponse
-			b, err := s.sg.Marshal()
-			if err != nil {
-				panic(err)
-			}
-			response.Value = b
-			responseChannel <- response
-		case tlTCP.OpAddServerToGroup:
-			var response tlTCP.Message
-			response.ID = message.ID
-			err := s.sg.AddServerToGroup(string(message.Key))
-			if err != nil {
-				response.Type = tlTCP.OpErr
-				response.Value = []byte(err.Error())
-				responseChannel <- response
-			} else {
-				response.Type = tlTCP.OpAddServerToGroupACK
-				responseChannel <- response
-			}
-		case tlTCP.OpGetChunkInfo:
-			var response tlTCP.Message
-			response.ID = message.ID
-			c := s.m.Chunks[binary.LittleEndian.Uint32(message.Key)]
-			response.Type = tlTCP.OpGetChunkInfoResponse
-			response.Value = make([]byte, 8)
-			c.Lock()
-			binary.LittleEndian.PutUint64(response.Value, c.St.Length+1)
-			c.Unlock()
-			responseChannel <- response
-		default:
-			var response tlTCP.Message
-			response.ID = message.ID
-			response.Type = tlTCP.OpErr
-			response.Value = []byte("Operation not supported")
-			responseChannel <- response
 		}
 	}
 }

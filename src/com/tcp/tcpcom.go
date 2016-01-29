@@ -79,7 +79,7 @@ func read(src []byte) (m Message) {
 //Close the channel to stop the infinite listening loop.
 //
 //This function blocks, typical usage will be "go Writer(...)""
-func Writer(conn *net.TCPConn, msgChannel chan Message) {
+func Writer(conn *net.TCPConn, msgChannel <-chan Message) {
 	total := 0
 	totalM := 0
 	//timer := time.NewTimer(time.Hour)
@@ -147,7 +147,7 @@ type ReaderCallback func(m Message)
 //The message passed to the callback wont live after the callback returns, it should copy the message
 //Close the socket to end the infinite listening loop
 //This function blocks, typical usage: "go Reader(...)"
-func Reader(conn net.Conn, callback ReaderCallback) error {
+func Reader(conn net.Conn, readChannel chan<- Message) error {
 	//Ping-pong between buffers
 	var slices [2][]byte
 	slices[0] = make([]byte, bufferSize)
@@ -180,7 +180,7 @@ func Reader(conn net.Conn, callback ReaderCallback) error {
 				}
 				index = index + n
 			}
-			callback(read(bigBuffer))
+			readChannel <- read(bigBuffer)
 			index = 0
 			continue
 		}
@@ -194,7 +194,7 @@ func Reader(conn net.Conn, callback ReaderCallback) error {
 			continue
 		}
 
-		callback(read(buffer[:messageSize]))
+		readChannel <- read(buffer[:messageSize])
 
 		//Buffer ping-pong
 		//TODO opt: dont need to copy everytime, be smart

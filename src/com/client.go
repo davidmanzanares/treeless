@@ -30,6 +30,12 @@ type Conn struct {
 	isClosed        bool
 	tickerReserve   [tickerReserveSize]*time.Ticker
 	reservedTickers int
+	responseChannel chan ResponserMsg
+}
+
+type ResponserMsg struct {
+	mess tlTCP.Message
+	rch  chan result
 }
 
 //CreateConnection returns a new DB connection
@@ -50,49 +56,57 @@ func CreateConnection(addr string) (*Conn, error) {
 		return make(chan result)
 	}
 	c.waits = make(map[uint32](chan result))
-	c.writeChannel = make(chan tlTCP.Message, 128)
+	c.writeChannel = make(chan tlTCP.Message, 1024)
+
+	c.responseChannel = make(chan ResponserMsg, 1024)
 
 	go tlTCP.Writer(tcpconn, c.writeChannel)
-	go listenToResponses(&c)
+	go Responser(&c)
 
 	return &c, nil
 }
 
-func listenToResponses(c *Conn) {
-	f := func(m tlTCP.Message) {
-		c.mutex.Lock()
-		ch := c.waits[m.ID]
-		c.mutex.Unlock()
-		switch m.Type {
-		case tlTCP.OpGetResponse:
-			rval := make([]byte, len(m.Value))
-			copy(rval, m.Value)
-			ch <- result{rval, nil}
-		case tlTCP.OpSetOK:
-			ch <- result{nil, nil}
-		case tlTCP.OpDelOK:
-			ch <- result{nil, nil}
-		case tlTCP.OpGetConfResponse:
-			rval := make([]byte, len(m.Value))
-			copy(rval, m.Value)
-			ch <- result{rval, nil}
-		case tlTCP.OpAddServerToGroupACK:
-			ch <- result{nil, nil}
-		case tlTCP.OpGetChunkInfoResponse:
-			rval := make([]byte, len(m.Value))
-			copy(rval, m.Value)
-			ch <- result{rval, nil}
-		case tlTCP.OpTransferCompleted:
-			ch <- result{nil, nil}
-		case tlTCP.OpErr:
-			err := make([]byte, len(m.Value))
-			copy(err, m.Value)
-			ch <- result{nil, errors.New("Response error: " + string(err))}
-		default:
-			ch <- result{nil, errors.New("Invalid response operation code: " + fmt.Sprint(m.Type))}
+func Responser(c *Conn) {
+	//TODO: Pointer to Message?
+	readChannel := make(chan tlTCP.Message, 1024)
+	tid := uint32(0)
+	waits := make(map[uint32](chan result)) //TODO array instead of map
+
+	go func() {
+		for {
+			select {
+			case msg := <-c.responseChannel:
+				msg.mess.ID = tid
+				c.writeChannel <- msg.mess
+				waits[tid] = msg.rch
+				tid++
+			case m := <-readChannel:
+				ch := waits[m.ID]
+				delete(waits, m.ID)
+				switch m.Type {
+				case tlTCP.OpGetResponse:
+					ch <- result{m.Value, nil}
+				case tlTCP.OpSetOK:
+					ch <- result{nil, nil}
+				case tlTCP.OpDelOK:
+					ch <- result{nil, nil}
+				case tlTCP.OpGetConfResponse:
+					ch <- result{m.Value, nil}
+				case tlTCP.OpAddServerToGroupACK:
+					ch <- result{nil, nil}
+				case tlTCP.OpGetChunkInfoResponse:
+					ch <- result{m.Value, nil}
+				case tlTCP.OpTransferCompleted:
+					ch <- result{nil, nil}
+				case tlTCP.OpErr:
+					ch <- result{nil, errors.New("Response error: " + string(m.Value))}
+				default:
+					ch <- result{nil, errors.New("Invalid response operation code: " + fmt.Sprint(m.Type))}
+				}
+			}
 		}
-	}
-	tlTCP.Reader(c.conn, f)
+	}()
+	tlTCP.Reader(c.conn, readChannel)
 	//log.Println("Connection closed", c.conn.RemoteAddr().String())
 }
 
@@ -118,195 +132,68 @@ func (c *Conn) IsClosed() bool {
 	return closed
 }
 
-func (c *Conn) getTIDChannel() (uint32, chan result) {
-	ch := c.chanPool.Get().(chan result)
-	c.mutex.Lock()
-	mytid := c.tid
-	c.waits[c.tid] = ch
-	c.tid++
-	c.mutex.Unlock()
-	return mytid, ch
-}
-
-func (c *Conn) getTIDChannelTicker() (uint32, chan result, *time.Ticker) {
-	ch := c.chanPool.Get().(chan result)
-	c.mutex.Lock()
-	mytid := c.tid
-	c.waits[c.tid] = ch
-	c.tid++
-	var ticker *time.Ticker
-	if c.reservedTickers > 0 {
-		ticker = c.tickerReserve[c.reservedTickers-1]
-		c.reservedTickers--
-	} else {
-		ticker = time.NewTicker(time.Millisecond * 100)
-	}
-	c.mutex.Unlock()
-	return mytid, ch, ticker
-}
-
-func (c *Conn) waitForResponse(tid uint32, ch chan result, timeout <-chan time.Time) ([]byte, error) {
-	timeouted := false
-	for i := 0; ; i++ {
-		select {
-		case <-timeout:
-			if timeouted {
-				c.mutex.Lock()
-				delete(c.waits, tid)
-				c.mutex.Unlock()
-				c.chanPool.Put(ch)
-				return nil, errors.New("Response timeout, server address:" + c.conn.RemoteAddr().String())
-			} else {
-				timeouted = true
-			}
-		case r := <-ch:
-			c.mutex.Lock()
-			delete(c.waits, tid)
-			c.mutex.Unlock()
-			c.chanPool.Put(ch)
-			return r.value, r.err
-		}
-	}
-}
-
-func (c *Conn) freeTicker(ticker *time.Ticker) {
-	c.mutex.Lock()
-	if c.reservedTickers >= tickerReserveSize {
-		ticker.Stop()
-	} else {
-		c.tickerReserve[c.reservedTickers] = ticker
-		c.reservedTickers++
-	}
-	c.mutex.Unlock()
+//TODO timeout
+func (c *Conn) sendAndRecieve(opType tlTCP.Operation, key, value []byte) result {
+	var m ResponserMsg
+	m.mess.Type = opType
+	m.mess.Key = key
+	m.mess.Value = value
+	m.rch = c.chanPool.Get().(chan result)
+	c.responseChannel <- m
+	r := <-m.rch
+	c.chanPool.Put(m.rch)
+	return r
 }
 
 //Get the value of key
 func (c *Conn) Get(key []byte) ([]byte, error) {
-	var mess tlTCP.Message
-
-	tid, ch, ticker := c.getTIDChannelTicker()
-
-	mess.Type = tlTCP.OpGet
-	mess.Key = key
-	mess.ID = tid
-
-	c.writeChannel <- mess
-
-	val, err := c.waitForResponse(tid, ch, ticker.C)
-	c.freeTicker(ticker)
-	return val, err
+	r := c.sendAndRecieve(tlTCP.OpGet, key, nil)
+	return r.value, r.err
 }
 
 //Set a new key/value pair
 func (c *Conn) Set(key, value []byte) error {
-	var mess tlTCP.Message
-
-	tid, ch, ticker := c.getTIDChannelTicker()
-
-	mess.Type = tlTCP.OpSet
-	mess.ID = tid
-	mess.Key = key
-	mess.Value = value
-
-	//fmt.Println("sending put", key, value, len(string(key)), len(key), c.conn.LocalAddr(), c.conn.RemoteAddr())
-	c.writeChannel <- mess
-
-	_, err := c.waitForResponse(tid, ch, ticker.C)
-	c.freeTicker(ticker)
-	return err
+	r := c.sendAndRecieve(tlTCP.OpSet, key, value)
+	return r.err
 }
 
 //Del deletes a key/value pair
 func (c *Conn) Del(key []byte) error {
-	var mess tlTCP.Message
-
-	tid, ch, ticker := c.getTIDChannelTicker()
-
-	mess.Type = tlTCP.OpDel
-	mess.ID = tid
-	mess.Key = key
-
-	//fmt.Println("sending del", key, value, len(string(key)), len(key), c.conn.LocalAddr(), c.conn.RemoteAddr())
-	c.writeChannel <- mess
-	_, err := c.waitForResponse(tid, ch, ticker.C)
-	c.freeTicker(ticker)
-	return err
+	r := c.sendAndRecieve(tlTCP.OpDel, key, nil)
+	return r.err
 }
 
 //Transfer a chunk
 func (c *Conn) Transfer(addr string, chunkID int) error {
-	var mess tlTCP.Message
-
-	tid, ch := c.getTIDChannel()
-
-	mess.Type = tlTCP.OpTransfer
-	mess.ID = tid
-	var err error
-	mess.Key, err = json.Marshal(chunkID)
-	mess.Value = []byte(addr)
+	key, err := json.Marshal(chunkID)
 	if err != nil {
 		panic(err)
 	}
-
-	//fmt.Println("sending put", key, value, len(string(key)), len(key))
-	c.writeChannel <- mess
-	ticker := time.NewTicker(time.Millisecond * 1000000)
-	_, err = c.waitForResponse(tid, ch, ticker.C)
-	ticker.Stop()
-	return err
-
+	value := []byte(addr)
+	r := c.sendAndRecieve(tlTCP.OpTransfer, key, value)
+	return r.err
 }
 
 //GetAccessInfo request DB access info
 func (c *Conn) GetAccessInfo() ([]byte, error) {
-	var mess tlTCP.Message
-
-	tid, ch, ticker := c.getTIDChannelTicker()
-
-	mess.Type = tlTCP.OpGetConf
-	mess.ID = tid
-
-	c.writeChannel <- mess
-
-	v, err := c.waitForResponse(tid, ch, ticker.C)
-	c.freeTicker(ticker)
-	return v, err
+	r := c.sendAndRecieve(tlTCP.OpGetConf, nil, nil)
+	return r.value, r.err
 }
 
 //AddServerToGroup request to add this server to the server group
 func (c *Conn) AddServerToGroup(addr string) error {
-	var mess tlTCP.Message
-
-	tid, ch, ticker := c.getTIDChannelTicker()
-
-	mess.Type = tlTCP.OpAddServerToGroup
-	mess.ID = tid
-	mess.Key = []byte(addr)
-
-	c.writeChannel <- mess
-
-	_, err := c.waitForResponse(tid, ch, ticker.C)
-	c.freeTicker(ticker)
-	return err
+	key := []byte(addr)
+	r := c.sendAndRecieve(tlTCP.OpAddServerToGroup, key, nil)
+	return r.err
 }
 
 //GetChunkInfo request chunk info
 func (c *Conn) GetChunkInfo(chunkID int) (size uint64, err error) {
-	var mess tlTCP.Message
-
-	tid, ch, ticker := c.getTIDChannelTicker()
-
-	mess.Type = tlTCP.OpGetChunkInfo
-	mess.ID = tid
-	b := make([]byte, 4)
-	binary.LittleEndian.PutUint32(b, uint32(chunkID))
-	mess.Key = b
-
-	c.writeChannel <- mess
-	rval, err := c.waitForResponse(tid, ch, ticker.C)
-	c.freeTicker(ticker)
-	if err != nil {
-		return 0, err
+	key := make([]byte, 4) //TODO static array
+	binary.LittleEndian.PutUint32(key, uint32(chunkID))
+	r := c.sendAndRecieve(tlTCP.OpGetChunkInfo, key, nil)
+	if r.err != nil {
+		return 0, r.err
 	}
-	return binary.LittleEndian.Uint64(rval), nil
+	return binary.LittleEndian.Uint64(r.value), nil
 }
