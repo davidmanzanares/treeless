@@ -8,7 +8,7 @@ import (
 )
 
 const bufferSize = 2048
-const bufferSizeTrigger = 1400
+const bufferSizeTrigger = 1450
 const minimumMessageSize = 13
 const windowTimeDuration = time.Microsecond * 10
 
@@ -63,8 +63,10 @@ func read(src []byte) (m Message) {
 	m.ID = binary.LittleEndian.Uint32(src[4:8])
 	keySize := binary.LittleEndian.Uint32(src[8:12])
 	m.Type = Operation(src[12])
-	m.Key = src[13 : 13+keySize]
-	m.Value = src[13+keySize:]
+	array := make([]byte, len(src[13:]))
+	copy(array, src[13:])
+	m.Key = array[:keySize]
+	m.Value = array[keySize:]
 	return m
 }
 
@@ -83,17 +85,19 @@ func Writer(conn *net.TCPConn, msgChannel chan Message) {
 	//timer := time.NewTimer(time.Hour)
 	//timer.Stop()
 	ticker := time.NewTicker(windowTimeDuration)
-
+	dirty := false
 	buffer := make([]byte, bufferSize)
 	index := 0
 	for {
 		select {
 		case <-ticker.C:
-			if index > 0 {
+			if index > 0 && !dirty {
 				conn.Write(buffer[0:index])
 				total += index
 				totalM++
 				index = 0
+			} else {
+				dirty = false
 			}
 			//timer.Stop()
 		case m, ok := <-msgChannel:
@@ -130,6 +134,7 @@ func Writer(conn *net.TCPConn, msgChannel chan Message) {
 				index = 0
 				//timer.Stop()
 			} else {
+				dirty = true
 				//timer.Reset(windowTimeDuration)
 			}
 		}
