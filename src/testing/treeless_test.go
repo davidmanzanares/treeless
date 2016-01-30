@@ -41,7 +41,7 @@ func TestMain(m *testing.M) {
 
 var id = 0
 
-const useProcess = true
+const useProcess = false
 const numChunks = 8
 
 func LaunchServer(assoc string) (addr string, stop func()) {

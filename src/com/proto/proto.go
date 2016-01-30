@@ -1,4 +1,4 @@
-package tlTCP
+package tlproto
 
 import (
 	"encoding/binary"
@@ -42,6 +42,7 @@ type Message struct {
 
 //Write serializes the message on the destination buffer
 func (m *Message) write(dest []byte) (msgSize int, tooLong bool) {
+
 	size := len(m.Key) + len(m.Value) + 13
 
 	if size > len(dest) {
@@ -73,6 +74,7 @@ func read(src []byte) (m Message) {
 func NewBufferedConn(conn net.Conn) (readChannel <-chan Message, writeChannel chan<- Message) {
 	readCh := make(chan Message, 1024)
 	writeCh := make(chan Message, 8)
+
 	go bufferedWriter(conn, writeCh)
 	go bufferedReader(conn, readCh)
 	return readCh, writeCh
@@ -107,7 +109,7 @@ func bufferedWriter(conn net.Conn, msgChannel <-chan Message) {
 			} else {
 				dirty = false
 			}
-			//timer.Stop()
+		//timer.Stop()
 		case m, ok := <-msgChannel:
 			if !ok {
 				//Channel closed, stop loop

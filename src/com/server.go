@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net"
 	"sync/atomic"
-	"treeless/src/com/tcp"
+	"treeless/src/com/proto"
 	"treeless/src/com/udp"
 )
 
@@ -17,7 +17,7 @@ type Server struct {
 	stopped int32
 }
 
-type TCPCallback func(write chan<- tlTCP.Message, read <-chan tlTCP.Message)
+type TCPCallback func(write chan<- tlproto.Message, read <-chan tlproto.Message)
 type UDPCallback func() tlUDP.AmAlive
 
 //Start a Treeless server
@@ -45,7 +45,7 @@ func listenRequests(conn *net.TCPConn, id int, tcpc TCPCallback) {
 	//log.Println("New connection accepted. Connection ID:", id)
 	//tcpWriter will buffer TCP writes to send more message in less TCP packets
 	//this technique allows bigger throughtputs, but latency in increased a little
-	readChannel, writeChannel := tlTCP.NewBufferedConn(conn)
+	readChannel, writeChannel := tlproto.NewBufferedConn(conn)
 
 	//fmt.Println("Server", conn.LocalAddr(), "listening")
 

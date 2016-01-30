@@ -7,7 +7,7 @@ import (
 	"log"
 	"sync/atomic"
 	"treeless/src/com"
-	"treeless/src/com/tcp"
+	"treeless/src/com/proto"
 	"treeless/src/com/udp"
 	"treeless/src/core"
 )
@@ -95,7 +95,7 @@ func udpCreateReplier(sg *ServerGroup) tlcom.UDPCallback {
 }
 
 func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
-	return func(responseChannel chan<- tlTCP.Message, read <-chan tlTCP.Message) {
+	return func(responseChannel chan<- tlproto.Message, read <-chan tlproto.Message) {
 		for { //TODO refactor make fixed number of workers
 			message, ok := <-read
 			if !ok {
@@ -105,7 +105,7 @@ func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
 			//fmt.Println("Server", conn.LocalAddr(), "message recieved", string(message.Key), string(message.Value))
 			switch message.Type {
 			case tlcore.OpGet:
-				var response tlTCP.Message
+				var response tlproto.Message
 				rval, err := s.m.Get(message.Key)
 				//cid := tlhash.GetChunkID(message.Key, s.sg.NumChunks)
 				/*if s.sg.ChunkStatus(cid) != ChunkSynched {
@@ -115,14 +115,14 @@ func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
 				//fmt.Println("Get operation", message.Key, rval, err)
 				response.ID = message.ID
 				if err != nil {
-					response.Type = tlTCP.OpGetResponse
+					response.Type = tlproto.OpGetResponse
 				} else {
-					response.Type = tlTCP.OpGetResponse
+					response.Type = tlproto.OpGetResponse
 					response.Value = rval
 				}
 				responseChannel <- response
 			case tlcore.OpSet:
-				var response tlTCP.Message
+				var response tlproto.Message
 				if len(message.Value) < 8 {
 					log.Println("Error: message value len < 8")
 					return
@@ -130,33 +130,33 @@ func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
 				err := s.m.Set(message.Key, message.Value)
 				response.ID = message.ID
 				if err == nil {
-					response.Type = tlTCP.OpSetOK
+					response.Type = tlproto.OpSetOK
 				} else {
-					response.Type = tlTCP.OpErr
+					response.Type = tlproto.OpErr
 					response.Value = []byte(err.Error())
 				}
 				responseChannel <- response
 			case tlcore.OpDel:
-				var response tlTCP.Message
+				var response tlproto.Message
 				err := s.m.Delete(message.Key)
 				response.ID = message.ID
 				if err == nil {
-					response.Type = tlTCP.OpDelOK
+					response.Type = tlproto.OpDelOK
 				} else {
-					response.Type = tlTCP.OpErr
+					response.Type = tlproto.OpErr
 					response.Value = []byte(err.Error())
 				}
 				responseChannel <- response
-			case tlTCP.OpTransfer:
+			case tlproto.OpTransfer:
 				var chunkID int
 				err := json.Unmarshal(message.Key, &chunkID)
 				if err != nil {
 					panic(string(message.Key) + err.Error())
 				}
 				transferFail := func() {
-					var response tlTCP.Message
+					var response tlproto.Message
 					response.ID = message.ID
-					response.Type = tlTCP.OpErr
+					response.Type = tlproto.OpErr
 					responseChannel <- response
 				}
 				if s.sg.IsChunkPresent(chunkID) {
@@ -184,51 +184,51 @@ func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
 							})
 							fmt.Println("Transfer operation completed, pairs:", i)
 							c.Close()
-							var response tlTCP.Message
+							var response tlproto.Message
 							response.ID = message.ID
-							response.Type = tlTCP.OpTransferCompleted
+							response.Type = tlproto.OpTransferCompleted
 							responseChannel <- response
 						}(c)
 					}
 				} else {
 					transferFail()
 				}
-			case tlTCP.OpGetConf:
-				var response tlTCP.Message
+			case tlproto.OpGetConf:
+				var response tlproto.Message
 				response.ID = message.ID
-				response.Type = tlTCP.OpGetConfResponse
+				response.Type = tlproto.OpGetConfResponse
 				b, err := s.sg.Marshal()
 				if err != nil {
 					panic(err)
 				}
 				response.Value = b
 				responseChannel <- response
-			case tlTCP.OpAddServerToGroup:
-				var response tlTCP.Message
+			case tlproto.OpAddServerToGroup:
+				var response tlproto.Message
 				response.ID = message.ID
 				err := s.sg.AddServerToGroup(string(message.Key))
 				if err != nil {
-					response.Type = tlTCP.OpErr
+					response.Type = tlproto.OpErr
 					response.Value = []byte(err.Error())
 					responseChannel <- response
 				} else {
-					response.Type = tlTCP.OpAddServerToGroupACK
+					response.Type = tlproto.OpAddServerToGroupACK
 					responseChannel <- response
 				}
-			case tlTCP.OpGetChunkInfo:
-				var response tlTCP.Message
+			case tlproto.OpGetChunkInfo:
+				var response tlproto.Message
 				response.ID = message.ID
 				c := s.m.Chunks[binary.LittleEndian.Uint32(message.Key)]
-				response.Type = tlTCP.OpGetChunkInfoResponse
+				response.Type = tlproto.OpGetChunkInfoResponse
 				response.Value = make([]byte, 8)
 				c.Lock()
 				binary.LittleEndian.PutUint64(response.Value, c.St.Length+1)
 				c.Unlock()
 				responseChannel <- response
 			default:
-				var response tlTCP.Message
+				var response tlproto.Message
 				response.ID = message.ID
-				response.Type = tlTCP.OpErr
+				response.Type = tlproto.OpErr
 				response.Value = []byte("Operation not supported")
 				responseChannel <- response
 			}

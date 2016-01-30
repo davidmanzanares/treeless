@@ -3,3 +3,4 @@ treeless
 *.svg
 *.gz
 .vagrant
+*~
