@@ -42,7 +42,7 @@ func TestMain(m *testing.M) {
 var id = 0
 
 const useProcess = false
-const numChunks = 8
+const numChunks = 32
 
 func LaunchServer(assoc string) (addr string, stop func()) {
 	dbpath := "testDB" + fmt.Sprint(id)
@@ -115,10 +115,7 @@ func TestSimple(t *testing.T) {
 	}
 
 	//Get operation
-	value, _, err2 := client.Get([]byte("hola"))
-	if err2 != nil {
-		t.Fatal(err2)
-	}
+	value, _ := client.Get([]byte("hola"))
 	if string(value) != "mundo" {
 		t.Fatal("Get failed, returned string: ", string(value))
 	}
@@ -130,10 +127,7 @@ func TestSimple(t *testing.T) {
 	}
 
 	//Get operation
-	value, _, err2 = client.Get([]byte("hola"))
-	if err2 != nil {
-		t.Fatal(err2)
-	}
+	value, _ = client.Get([]byte("hola"))
 	if value != nil {
 		t.Fatal("Get returned string: ", string(value))
 	}
@@ -158,10 +152,7 @@ func TestBigMessages(t *testing.T) {
 	}
 
 	//GET
-	value, _, err2 := client.Get([]byte("hola"))
-	if err2 != nil {
-		t.Fatal(err2)
-	}
+	value, _ := client.Get([]byte("hola"))
 	if string(value) != string(bytes.Repeat([]byte("X"), 8*1024)) {
 		t.Fatal("Get failed, returned string: ", string(value))
 	}
@@ -191,17 +182,17 @@ func TestBasicRebalance(t *testing.T) {
 	stop1()
 	time.Sleep(time.Second)
 	//Get operation
-	value, _, err2 := client.Get([]byte("hola"))
+	value, _ := client.Get([]byte("hola"))
 	if string(value) != "mundo" {
-		t.Fatal("Get failed, returned string: ", string(value), "Error:", err2)
+		t.Fatal("Get failed, returned string: ", string(value))
 	}
 
 	//Del operation
 	client.Del([]byte("hola"))
 	//Get operation
-	value, _, err2 = client.Get([]byte("hola"))
+	value, _ = client.Get([]byte("hola"))
 	if value != nil {
-		t.Fatal("Get failed, returned string: ", string(value), "Error:", err2)
+		t.Fatal("Get failed, returned string: ", string(value))
 	}
 }
 
@@ -299,12 +290,7 @@ func metaTest(t *testing.T, c *tlsg.DBClient, numOperations, maxKeySize, maxValu
 		if len(value) > 128 {
 			fmt.Println(123)
 		}
-		rval, _, err := c.Get([]byte(key))
-		if err != nil {
-			fmt.Println(rval, "ASDASDSAD", value, len(rval), len(value))
-			fmt.Println([]byte(key), value, rval)
-			panic(err)
-		}
+		rval, _ := c.Get([]byte(key))
 		if !bytes.Equal(rval, value) {
 			fmt.Println(rval, "ASDASDSAD", value, len(rval), len(value))
 			panic(1)
@@ -319,7 +305,7 @@ func metaTest(t *testing.T, c *tlsg.DBClient, numOperations, maxKeySize, maxValu
 		if ok {
 			continue
 		}
-		v, _, _ := c.Get([]byte(key))
+		v, _ := c.Get([]byte(key))
 		dels++
 		if v != nil {
 			t.Fatal("Deleted key present on DB")
@@ -432,11 +418,7 @@ func TestHotRebalance(t *testing.T) {
 		if len(value) > 128 {
 			fmt.Println(123)
 		}
-		rval, _, err := c.Get([]byte(key))
-		/*if err != nil {
-			fmt.Println("GET returned with errors:", err, "Correct value:", value, "DB value:", value)
-			panic(err)
-		}*/
+		rval, _ := c.Get([]byte(key))
 		if !bytes.Equal(rval, value) {
 			fmt.Println("GET value differs. Correct value:", value, "Returned value:", rval, "Errors:", err, "ChunkID:", tlhash.FNV1a64([]byte(key))%8)
 			t.Fail()
@@ -454,7 +436,7 @@ func TestHotRebalance(t *testing.T) {
 		if ok {
 			continue
 		}
-		v, _, _ := c.Get([]byte(key))
+		v, _ := c.Get([]byte(key))
 		dels++
 		if v != nil {
 			t.Fatal("Deleted key present on DB")
@@ -514,7 +496,7 @@ func TestLatency(t *testing.T) {
 	oks := 0
 	go func() {
 		for l := range ch {
-			v, _, _ := c2.Get([]byte(l.key))
+			v, _ := c2.Get([]byte(l.key))
 			if v == nil {
 				k = k * 1.05
 				oks = 0
@@ -576,7 +558,7 @@ func TestClock(t *testing.T) {
 	var maxDiff time.Duration
 	var avgDiff time.Duration
 	for k, goTime := range timestampMap {
-		_, tlTime, err := c.Get([]byte(k))
+		_, tlTime := c.Get([]byte(k))
 		if err != nil {
 			panic(err)
 		}

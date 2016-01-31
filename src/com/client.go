@@ -22,11 +22,8 @@ const tickerReserveSize = 32
 
 //Conn is a DB TCP client connection
 type Conn struct {
-	Addr            string
-	conn            net.Conn   //TCP connection
-	chanPool        sync.Pool  //Pool of channels to be used as mechanisms to wait until response, make a pool to avoid GC performance penalties
-	mutex           sync.Mutex //Remove, use atomic isClosed
-	isClosed        bool
+	conn            net.Conn  //TCP connection
+	chanPool        sync.Pool //Pool of channels to be used as mechanisms to wait until response, make a pool to avoid GC performance penalties
 	tickerReserve   [tickerReserveSize]*time.Ticker
 	reservedTickers int
 	responseChannel chan ResponserMsg
@@ -51,7 +48,6 @@ func CreateConnection(addr string) (*Conn, error) {
 	}
 
 	var c Conn
-	c.Addr = addr
 	c.conn = tcpconn
 	c.chanPool.New = func() interface{} {
 		return make(chan result)
@@ -99,16 +95,10 @@ func Responser(c *Conn) {
 				}
 			case msg, ok := <-c.responseChannel:
 				if !ok {
-					for l.Len() > 0 {
-						el := l.Front()
-						l.Remove(el)
-						f := el.Value.(timeoutMsg)
-						w := waits[f.tid]
-						w.r <- result{nil, errors.New("Connection closed")}
+					if l.Len() > 0{
+						panic("Logic broken")
 					}
-					c.Close()
 					close(writeChannel)
-					//log.Println("Connection closed", c.conn.RemoteAddr().String())
 					return
 				}
 				msg.mess.ID = tid
@@ -165,31 +155,12 @@ func Responser(c *Conn) {
 
 //Close this connection
 func (c *Conn) Close() {
-	if c != nil {
-		c.mutex.Lock()
-		if c.conn != nil {
-			c.conn.Close()
-			if !c.isClosed {
-				close(c.responseChannel)
-			}
-		}
-		c.isClosed = true
-		c.mutex.Unlock()
-	}
-}
-
-func (c *Conn) IsClosed() bool {
-	c.mutex.Lock()
-	closed := c.isClosed
-	c.mutex.Unlock()
-	return closed
+	close(c.responseChannel)
+	c.conn.Close()
 }
 
 //TODO timeout
 func (c *Conn) sendAndReceive(opType tlproto.Operation, key, value []byte, timeout time.Duration) result {
-	if c.IsClosed() {
-		return result{nil, errors.New("Connection closed")}
-	}
 	var m ResponserMsg
 	m.mess.Type = opType
 	m.mess.Key = key

@@ -172,10 +172,9 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 		}
 		//TODO: Check free space (OS)
 		//log.Println(getFreeDiskSpace() / 1024 / 1024 / 1024)
-		s.NeedConnection()
-		size, err := s.Conn.GetChunkInfo(c.ID)
-		if err != nil {
-			log.Println("GetChunkInfo failed, duplication aborted", err)
+		size := s.GetChunkInfo(c.ID)
+		if size == 0 {
+			log.Println("GetChunkInfo failed, duplication aborted")
 			return
 		}
 		freeSpace := uint64(1000000000)
@@ -204,15 +203,10 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 				if s == sg.localhost {
 					continue
 				}
-				err := s.NeedConnection()
-				if err != nil {
-					log.Println(err)
-					continue
-				}
 				log.Println("Chunk duplication began", c.ID)
 				sg.Unlock()
 				time.Sleep(time.Millisecond * 400)
-				err = s.Conn.Transfer(sg.localhost.Phy, c.ID)
+				err := s.Transfer(sg.localhost.Phy, c.ID)
 				sg.Lock()
 				if err != nil {
 					log.Println(c.ID, err)

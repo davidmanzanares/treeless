@@ -14,7 +14,7 @@ import (
 
 //ServerGroup provides an access to a DB server group
 type ServerGroup struct {
-	sync.Mutex //All ServerGroup read/writes are mutex-protected
+	sync.RWMutex //All ServerGroup read/writes are mutex-protected TODO: RWMutex
 	//Database configuration
 	NumChunks  int //Number of DB chunks
 	Redundancy int //DB target redundancy
@@ -161,12 +161,7 @@ func Associate(destAddr string, localport int) (*ServerGroup, error) {
 		if s == sg.localhost {
 			continue
 		}
-		err := s.NeedConnection()
-		if err != nil {
-			log.Println("TCP transmission error when trying to add server", err)
-			continue
-		}
-		err = s.Conn.AddServerToGroup(sg.localhost.Phy)
+		err = s.AddServerToGroup(sg.localhost.Phy)
 		if err != nil {
 			panic(err)
 		}
@@ -312,14 +307,30 @@ func (sg *ServerGroup) GetChunkHolders(chunkID int) []*VirtualServer {
 	return holders
 }
 
+func (sg *ServerGroup) GetChunkServers(chunkID int) (servers [8]*VirtualServer) {
+	sg.RLock()
+	c := sg.chunks[chunkID]
+	i := 0
+	for h := range c.Holders {
+		servers[i] = h
+		i++
+	}
+	sg.RUnlock()
+	return servers
+}
+
 func (sg *ServerGroup) Stop() {
 	sg.Lock()
 	defer sg.Unlock()
 	sg.stopped = true
+	return
 	for _, s := range sg.Servers {
+		s.Lock()
 		if s.Conn != nil {
 			s.Conn.Close()
+			s.Conn=nil
 		}
+		s.Unlock()
 	}
 }
 

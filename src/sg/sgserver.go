@@ -106,7 +106,7 @@ func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
 			switch message.Type {
 			case tlcore.OpGet:
 				var response tlproto.Message
-				rval, err := s.m.Get(message.Key)
+				rval, _ := s.m.Get(message.Key)
 				//cid := tlhash.GetChunkID(message.Key, s.sg.NumChunks)
 				/*if s.sg.ChunkStatus(cid) != ChunkSynched {
 					fmt.Println("ASD")
@@ -114,12 +114,8 @@ func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
 				//fmt.Println(s.sg.ChunkStatus(cid), cid)
 				//fmt.Println("Get operation", message.Key, rval, err)
 				response.ID = message.ID
-				if err != nil {
-					response.Type = tlproto.OpGetResponse
-				} else {
-					response.Type = tlproto.OpGetResponse
-					response.Value = rval
-				}
+				response.Type = tlproto.OpGetResponse
+				response.Value = rval
 				responseChannel <- response
 			case tlcore.OpSet:
 				var response tlproto.Message
@@ -138,14 +134,9 @@ func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
 				responseChannel <- response
 			case tlcore.OpDel:
 				var response tlproto.Message
-				err := s.m.Delete(message.Key)
+				s.m.Delete(message.Key)
 				response.ID = message.ID
-				if err == nil {
-					response.Type = tlproto.OpDelOK
-				} else {
-					response.Type = tlproto.OpErr
-					response.Value = []byte(err.Error())
-				}
+				response.Type = tlproto.OpDelOK
 				responseChannel <- response
 			case tlproto.OpTransfer:
 				var chunkID int

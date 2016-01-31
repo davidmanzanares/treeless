@@ -6,7 +6,7 @@ import "fmt"
 //VirtualChunk stores generical chunk info, including server holders
 type VirtualChunk struct {
 	ID      int
-	Holders map[*VirtualServer]bool //Set of server holders
+	Holders map[*VirtualServer]bool //Set of server holders TODO: array
 	//Rebalancer data
 	timeToReview time.Time
 	index        int

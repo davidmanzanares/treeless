@@ -9,6 +9,7 @@ type Progress struct {
 	lastPrintedIndex int
 }
 
+//TODO multithread
 func NewProgress(reason string, total int) *Progress {
 	p := &Progress{reason: reason, total: total}
 	p.print()

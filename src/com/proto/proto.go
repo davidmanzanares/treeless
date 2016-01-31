@@ -73,7 +73,7 @@ func read(src []byte) (m Message) {
 //Close it by closing conn and writeChannel
 func NewBufferedConn(conn net.Conn) (readChannel <-chan Message, writeChannel chan<- Message) {
 	readCh := make(chan Message, 1024)
-	writeCh := make(chan Message, 8)
+	writeCh := make(chan Message, 1024)
 
 	go bufferedWriter(conn, writeCh)
 	go bufferedReader(conn, readCh)
