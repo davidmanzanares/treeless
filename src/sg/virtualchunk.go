@@ -1,6 +1,7 @@
 package tlsg
 
 import "time"
+
 import "fmt"
 
 //VirtualChunk stores generical chunk info, including server holders
@@ -15,7 +16,7 @@ type VirtualChunk struct {
 func (c *VirtualChunk) String() {
 	str := "Chunk" + fmt.Sprint(c.ID)
 	str += "\nHolders:"
-	for k, _ := range c.Holders {
+	for k := range c.Holders {
 		str += " " + k.Phy
 	}
 }

@@ -18,7 +18,7 @@ import (
 	"treeless/src/com"
 	"treeless/src/hash"
 	"treeless/src/sg"
-	"treeless/src/utils"
+	"treeless/src/tlutils"
 )
 
 func TestMain(m *testing.M) {
