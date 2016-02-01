@@ -42,7 +42,7 @@ func TestMain(m *testing.M) {
 var id = 0
 
 const useProcess = false
-const numChunks = 32
+const numChunks = 8
 
 func LaunchServer(assoc string) (addr string, stop func()) {
 	dbpath := "testDB" + fmt.Sprint(id)
@@ -321,7 +321,6 @@ func TestHotRebalance(t *testing.T) {
 	var stop2 func()
 	//Server set-up
 	addr, stop := LaunchServer("")
-	defer stop()
 	//Client set-up
 	c, err := tlsg.Connect(addr)
 	if err != nil {

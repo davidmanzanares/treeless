@@ -294,19 +294,6 @@ func (sg *ServerGroup) ChunkStatus(id int) ChunkStatus {
 	return ChunkStatus(atomic.LoadInt64((*int64)(&sg.chunkStatus[id])))
 }
 
-func (sg *ServerGroup) GetChunkHolders(chunkID int) []*VirtualServer {
-	sg.Lock()
-	defer sg.Unlock()
-	c := sg.chunks[chunkID]
-	holders := make([]*VirtualServer, len(c.Holders))
-	i := 0
-	for h := range c.Holders {
-		holders[i] = h
-		i++
-	}
-	return holders
-}
-
 func (sg *ServerGroup) GetChunkServers(chunkID int) (servers [8]*VirtualServer) {
 	sg.RLock()
 	c := sg.chunks[chunkID]
@@ -323,12 +310,11 @@ func (sg *ServerGroup) Stop() {
 	sg.Lock()
 	defer sg.Unlock()
 	sg.stopped = true
-	return
 	for _, s := range sg.Servers {
 		s.Lock()
-		if s.Conn != nil {
-			s.Conn.Close()
-			s.Conn=nil
+		if s.conn != nil {
+			s.conn.Close()
+			s.conn = nil
 		}
 		s.Unlock()
 	}

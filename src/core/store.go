@@ -87,8 +87,18 @@ func (st *Store) open(path string) {
 	}
 }
 func (st *Store) close() {
-	st.file.UnsafeUnmap()
-	st.osFile.Close()
+	if st.file==nil{
+		panic("Already closed")
+	}
+	err:=st.file.UnsafeUnmap()
+	if err!=nil{
+		panic(err)
+	}
+	st.file=nil
+	err=st.osFile.Close()
+	if err!=nil{
+		panic(err)
+	}
 }
 
 //Expand the store instance giving more available space for items
@@ -105,7 +115,10 @@ func (st *Store) expand() (err error) {
 	}
 	//TODO: check order speed truncate vs unmap, need set benchmarks
 	st.osFile.Truncate(int64(st.Size))
-	st.file.UnsafeUnmap()
+	err=st.file.UnsafeUnmap()
+	if err!=nil{
+		panic(err)
+	}
 	st.file, err = gommap.Map(st.osFile.Fd(), gommap.PROT_READ|gommap.PROT_WRITE, gommap.MAP_SHARED)
 	if err != nil {
 		panic(err)

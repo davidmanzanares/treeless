@@ -12,17 +12,17 @@ type VirtualServer struct {
 	Phy           string      //Physcal address
 	LastHeartbeat time.Time   //Last time a heartbeat was listened
 	HeldChunks    []int       //List of all chunks that this server holds
-	Conn          *tlcom.Conn //TCP connection, it may not exists
+	conn          *tlcom.Conn //TCP connection, it may not exists
 	sync.RWMutex
 }
 
 func (s *VirtualServer) needConnection() (err error) {
 	s.RLock()
-	if s.Conn == nil {
+	for s.conn == nil {
 		s.RUnlock()
 		s.Lock()
-		if s.Conn == nil {
-			s.Conn, err = tlcom.CreateConnection(s.Phy)
+		if s.conn == nil {
+			s.conn, err = tlcom.CreateConnection(s.Phy)
 			if err != nil {
 				s.Unlock()
 				return err
@@ -40,9 +40,9 @@ func (s *VirtualServer) freeConnection(cerr error) {
 		log.Println("Connection problem", cerr)
 		s.RUnlock()
 		s.Lock()
-		if s.Conn != nil {
-			s.Conn.Close()
-			s.Conn = nil
+		if s.conn != nil {
+			s.conn.Close()
+			s.conn = nil
 		}
 		s.Unlock()
 		return
@@ -55,7 +55,7 @@ func (s *VirtualServer) Get(key []byte) []byte {
 	if err := s.needConnection(); err != nil {
 		return nil
 	}
-	v, cerr := s.Conn.Get(key)
+	v, cerr := s.conn.Get(key)
 	s.freeConnection(cerr)
 	return v
 }
@@ -65,7 +65,7 @@ func (s *VirtualServer) Set(key, value []byte) error {
 	if err := s.needConnection(); err != nil {
 		return nil
 	}
-	cerr := s.Conn.Set(key, value)
+	cerr := s.conn.Set(key, value)
 	s.freeConnection(cerr)
 	return cerr
 }
@@ -75,7 +75,7 @@ func (s *VirtualServer) Del(key []byte) error {
 	if err := s.needConnection(); err != nil {
 		return nil
 	}
-	cerr := s.Conn.Del(key)
+	cerr := s.conn.Del(key)
 	s.freeConnection(cerr)
 	return cerr
 }
@@ -84,7 +84,7 @@ func (s *VirtualServer) Transfer(addr string, chunkID int) error {
 	if err := s.needConnection(); err != nil {
 		return nil
 	}
-	cerr := s.Conn.Transfer(addr, chunkID)
+	cerr := s.conn.Transfer(addr, chunkID)
 	s.freeConnection(cerr)
 	return cerr
 }
@@ -94,7 +94,7 @@ func (s *VirtualServer) GetAccessInfo() []byte {
 	if err := s.needConnection(); err != nil {
 		return nil
 	}
-	v, cerr := s.Conn.GetAccessInfo()
+	v, cerr := s.conn.GetAccessInfo()
 	s.freeConnection(cerr)
 	return v
 }
@@ -104,7 +104,7 @@ func (s *VirtualServer) AddServerToGroup(addr string) error {
 	if err := s.needConnection(); err != nil {
 		return nil
 	}
-	cerr := s.Conn.AddServerToGroup(addr)
+	cerr := s.conn.AddServerToGroup(addr)
 	s.freeConnection(cerr)
 	return cerr
 }
@@ -114,7 +114,7 @@ func (s *VirtualServer) GetChunkInfo(chunkID int) (size uint64) {
 	if err := s.needConnection(); err != nil {
 		return 0
 	}
-	v, cerr := s.Conn.GetChunkInfo(chunkID)
+	v, cerr := s.conn.GetChunkInfo(chunkID)
 	s.freeConnection(cerr)
 	return v
 }

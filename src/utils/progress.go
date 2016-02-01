@@ -1,12 +1,16 @@
 package tlutils
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
 type Progress struct {
 	reason           string
 	index            int
 	total            int
 	lastPrintedIndex int
+	sync.Mutex
 }
 
 //TODO multithread
@@ -17,10 +21,12 @@ func NewProgress(reason string, total int) *Progress {
 }
 
 func (p *Progress) Set(index int) {
+	p.Lock()
 	p.index = index
 	if p.index-p.lastPrintedIndex > p.total/1000 {
 		p.print()
 	}
+	p.Unlock()
 }
 
 func (p *Progress) print() {

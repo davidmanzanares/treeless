@@ -95,7 +95,7 @@ func Responser(c *Conn) {
 				}
 			case msg, ok := <-c.responseChannel:
 				if !ok {
-					if l.Len() > 0{
+					if l.Len() > 0 {
 						panic("Logic broken")
 					}
 					close(writeChannel)

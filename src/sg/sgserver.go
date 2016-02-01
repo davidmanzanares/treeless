@@ -66,7 +66,7 @@ func (s *DBServer) IsStopped() bool {
 
 //Stop the server, close all TCP/UDP connections
 func (s *DBServer) Stop() {
-	atomic.StoreInt32(&s.stopped, 1)
+	atomic.StoreInt32(&s.stopped, 1)//TODO reorder
 	s.s.Stop()
 	s.m.Close()
 	s.sg.Stop()
