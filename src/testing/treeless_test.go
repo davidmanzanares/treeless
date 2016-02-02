@@ -599,7 +599,7 @@ func BenchmarkGetUnpopulated(b *testing.B) {
 	b.RunParallel(
 		func(pb *testing.PB) {
 			core := int(atomic.AddUint64(&gid, 1))
-			c := clients[core%5]
+			c := clients[1]
 			rNext := randKVOpGenerator(maxKeySize, maxValueSize, core, 64, core)
 			for pb.Next() {
 				_, key, _ := rNext()

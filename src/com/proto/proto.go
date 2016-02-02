@@ -35,9 +35,10 @@ const (
 
 //Message represents a DB message that can be sent and recieved using a network
 type Message struct {
-	Type       Operation
-	ID         uint32
-	Key, Value []byte
+	Type            Operation
+	ID              uint32
+	Key, Value      []byte
+	ResponseChannel chan Message
 }
 
 //Write serializes the message on the destination buffer
@@ -71,13 +72,11 @@ func read(src []byte) (m Message) {
 }
 
 //Close it by closing conn and writeChannel
-func NewBufferedConn(conn net.Conn) (readChannel <-chan Message, writeChannel chan<- Message) {
-	readCh := make(chan Message, 1024)
+func NewBufferedConn(conn net.Conn, readChannel chan<- Message) (writeChannel chan<- Message) {
 	writeCh := make(chan Message, 1024)
-
 	go bufferedWriter(conn, writeCh)
-	go bufferedReader(conn, readCh)
-	return readCh, writeCh
+	go bufferedReader(conn, readChannel, writeCh)
+	return writeCh
 }
 
 //Writer will write to conn messages recieved by the channel
@@ -155,7 +154,7 @@ func bufferedWriter(conn net.Conn, msgChannel <-chan Message) {
 //The message passed to the callback wont live after the callback returns, it should copy the message
 //Close the socket to end the infinite listening loop
 //This function blocks, typical usage: "go Reader(...)"
-func bufferedReader(conn net.Conn, readChannel chan<- Message) error {
+func bufferedReader(conn net.Conn, readChannel chan<- Message, writeChannel chan Message) error {
 	//Ping-pong between buffers
 	var slices [2][]byte
 	slices[0] = make([]byte, bufferSize)
@@ -188,7 +187,9 @@ func bufferedReader(conn net.Conn, readChannel chan<- Message) error {
 				}
 				index = index + n
 			}
-			readChannel <- read(bigBuffer)
+			msg := read(bigBuffer)
+			msg.ResponseChannel = writeChannel
+			readChannel <- msg
 			index = 0
 			continue
 		}
@@ -202,7 +203,9 @@ func bufferedReader(conn net.Conn, readChannel chan<- Message) error {
 			continue
 		}
 
-		readChannel <- read(buffer[:messageSize])
+		msg := read(buffer[:messageSize])
+		msg.ResponseChannel = writeChannel
+		readChannel <- msg
 
 		//Buffer ping-pong
 		//TODO opt: dont need to copy everytime, be smart

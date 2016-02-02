@@ -55,7 +55,7 @@ func CreateConnection(addr string) (*Conn, error) {
 
 	c.responseChannel = make(chan ResponserMsg, 1024)
 
-	go Responser(&c)
+	go broker(&c)
 
 	return &c, nil
 }
@@ -69,20 +69,20 @@ type waiter struct {
 	el *list.Element
 }
 
-func Responser(c *Conn) {
-	readChannel, writeChannel := tlproto.NewBufferedConn(c.conn)
+func broker(c *Conn) {
+	readChannel := make(chan tlproto.Message, 1024)
+	writeChannel := tlproto.NewBufferedConn(c.conn, readChannel)
 	waits := make(map[uint32]waiter)
 	tid := uint32(0)
-	l := list.New()
+	l := list.New() //TODO use array
 	ticker := time.NewTicker(time.Millisecond * 10)
 	go func() {
 		for {
 			select {
-			case <-ticker.C:
+			case now := <-ticker.C:
 				for l.Len() > 0 {
 					el := l.Front()
 					f := el.Value.(timeoutMsg)
-					now := time.Now()
 					if now.After(f.t) {
 						//Timeout'ed
 						w := waits[f.tid]

@@ -21,10 +21,10 @@ type TCPCallback func(write chan<- tlproto.Message, read <-chan tlproto.Message)
 type UDPCallback func() tlUDP.AmAlive
 
 //Start a Treeless server
-func Start(addr string, localport int, tcpc TCPCallback, udpc UDPCallback) *Server {
+func Start(addr string, localport int, worker chan<- tlproto.Message, udpc UDPCallback) *Server {
 	var s Server
 	//Init server
-	listenConnections(&s, localport, tcpc)
+	listenConnections(&s, localport, worker)
 	s.udpCon = tlUDP.Reply(tlUDP.ReplyCallback(udpc), localport)
 	return &s
 }
@@ -41,18 +41,17 @@ func (s *Server) Stop() {
 	s.tcpListener.Close()
 }
 
-func listenRequests(conn *net.TCPConn, id int, tcpc TCPCallback) {
+func listenRequests(conn *net.TCPConn, id int, worker chan<- tlproto.Message) {
 	//log.Println("New connection accepted. Connection ID:", id)
 	//tcpWriter will buffer TCP writes to send more message in less TCP packets
 	//this technique allows bigger throughtputs, but latency in increased a little
-	readChannel, writeChannel := tlproto.NewBufferedConn(conn)
+	tlproto.NewBufferedConn(conn, worker)
 
 	//fmt.Println("Server", conn.LocalAddr(), "listening")
 
-	go tcpc(writeChannel, readChannel)
 }
 
-func listenConnections(s *Server, port int, tcpc TCPCallback) {
+func listenConnections(s *Server, port int, worker chan<- tlproto.Message) {
 	taddr, err := net.ResolveTCPAddr("tcp", GetLocalIP()+":"+fmt.Sprint(port))
 	if err != nil {
 		panic(err)
@@ -76,7 +75,7 @@ func listenConnections(s *Server, port int, tcpc TCPCallback) {
 				panic(err)
 			}
 			tcpConnections = append(tcpConnections, conn)
-			go listenRequests(conn, i, tcpc)
+			go listenRequests(conn, i, worker)
 		}
 	}(s)
 }

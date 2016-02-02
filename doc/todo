@@ -1,13 +1,13 @@
 Core: 1 sem
 	-last write wins
-	
+
 	-old SSD
 	-size limit to map wide instead of chunk wide
 	-IO error?
-	
+
 	-MurmurHash
-	
-Com: 1sem	
+
+Com: 1sem
 	-add SyncDel
 	-add lock & unlock
 
@@ -22,11 +22,11 @@ Test: 1 sem
     -add benchmarks
 	-2 modes of operation: N processes, N goroutines
 	-Profile with gouroutine mode of operation
-	
+
 	-space per chunk tests (hash quality tests)
 Others: 3 sem
 	-info command
-	
+
 	-transactions: lock table
 	-security
 	-constantes use const or parametrizar
@@ -34,6 +34,7 @@ Others: 3 sem
 	-docs: dependencies and constraints
 	-json performance? => use another
 	-stats
+	-memprofile
 	-progress utils
 
 ...:

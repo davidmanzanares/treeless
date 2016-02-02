@@ -24,6 +24,8 @@ type DBServer struct {
 	stopped int32
 }
 
+const serverWorkers = 4
+
 //Start a Treeless server
 func Start(addr string, localport int, numChunks, redundancy int, dbpath string) *DBServer {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
@@ -54,7 +56,11 @@ func Start(addr string, localport int, numChunks, redundancy int, dbpath string)
 		}
 	}
 	//Init server
-	s.s = tlcom.Start(addr, localport, tcpCreateReplier(&s), udpCreateReplier(s.sg))
+	readChannel := make(chan tlproto.Message, 1024)
+	for i := 0; i < serverWorkers; i++ {
+		createWorker(&s, readChannel)
+	}
+	s.s = tlcom.Start(addr, localport, readChannel, udpCreateReplier(s.sg))
 	log.Println("Server boot-up completed")
 	return &s
 }
@@ -66,7 +72,7 @@ func (s *DBServer) IsStopped() bool {
 
 //Stop the server, close all TCP/UDP connections
 func (s *DBServer) Stop() {
-	atomic.StoreInt32(&s.stopped, 1)//TODO reorder
+	atomic.StoreInt32(&s.stopped, 1) //TODO reorder
 	s.s.Stop()
 	s.m.Close()
 	s.sg.Stop()
@@ -94,10 +100,11 @@ func udpCreateReplier(sg *ServerGroup) tlcom.UDPCallback {
 	}
 }
 
-func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
-	return func(responseChannel chan<- tlproto.Message, read <-chan tlproto.Message) {
+func createWorker(s *DBServer, readChannel <-chan tlproto.Message) {
+	go func() {
 		for { //TODO refactor make fixed number of workers
-			message, ok := <-read
+			message, ok := <-readChannel
+			responseChannel := message.ResponseChannel
 			if !ok {
 				close(responseChannel)
 				return
@@ -224,5 +231,5 @@ func tcpCreateReplier(s *DBServer) tlcom.TCPCallback {
 				responseChannel <- response
 			}
 		}
-	}
+	}()
 }

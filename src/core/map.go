@@ -65,7 +65,7 @@ func (m *Map) Close() {
 	if err != nil {
 		panic(err)
 	}
-	err = ioutil.WriteFile(m.path+"meta.json", str, filePerms)
+	err = ioutil.WriteFile(m.path+"/meta.json", str, filePerms)
 	if err != nil {
 		panic(err)
 	}
