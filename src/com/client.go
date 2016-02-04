@@ -9,7 +9,7 @@ import (
 	"net"
 	"sync"
 	"time"
-	"treeless/src/com/proto"
+	"treeless/src/com/tlproto"
 )
 
 //Stores a DB operation result

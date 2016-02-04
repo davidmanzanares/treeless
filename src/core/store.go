@@ -10,14 +10,22 @@ import (
 	"launchpad.net/gommap"
 )
 
+//TODO: deleted pairs arent freed
+
+/*
+	A Store is a dynamically growing array stored on a memory mapped file.
+	It manages additions and deletions, but it is indexed by Store ids.
+	An additional data structure is needed to perform fast key-value look-ups.
+*/
+
 /*
 Binary structure of the Store
 
 The store is composed of key-value pairs.
 Each pair is represented this way:
 	4 bytes:
-		1  bit (MSB)	present?
-		31 bits			key len
+		1  bit (MSB)	is the pair present?
+		31 bits			key length
 	4 bytes: value len
 	Key len   bytes: key
 	Value len bytes: value
@@ -40,6 +48,8 @@ const (
 	headerSize        = 8
 )
 
+//Typical DB usage will access to random positions, this won't be true
+//if it is used to store long (more bytes than the page size) pairs
 var mmapAdviseFlags = gommap.MADV_RANDOM
 
 const defaultStoreSizeLimit = 1024 * 1024 * 16
@@ -87,16 +97,16 @@ func (st *Store) open(path string) {
 	}
 }
 func (st *Store) close() {
-	if st.file==nil{
+	if st.file == nil {
 		panic("Already closed")
 	}
-	err:=st.file.UnsafeUnmap()
-	if err!=nil{
+	err := st.file.UnsafeUnmap()
+	if err != nil {
 		panic(err)
 	}
-	st.file=nil
-	err=st.osFile.Close()
-	if err!=nil{
+	st.file = nil
+	err = st.osFile.Close()
+	if err != nil {
 		panic(err)
 	}
 }
@@ -104,7 +114,7 @@ func (st *Store) close() {
 //Expand the store instance giving more available space for items
 func (st *Store) expand() (err error) {
 	if st.Size == st.SizeLimit {
-		//TODO limit errors per second
+		//TODO constant error?
 		err := errors.New("Store size limit reached")
 		log.Println(err)
 		return err
@@ -115,8 +125,8 @@ func (st *Store) expand() (err error) {
 	}
 	//TODO: check order speed truncate vs unmap, need set benchmarks
 	st.osFile.Truncate(int64(st.Size))
-	err=st.file.UnsafeUnmap()
-	if err!=nil{
+	err = st.file.UnsafeUnmap()
+	if err != nil {
 		panic(err)
 	}
 	st.file, err = gommap.Map(st.osFile.Fd(), gommap.PROT_READ|gommap.PROT_WRITE, gommap.MAP_SHARED)
@@ -155,7 +165,7 @@ func (st *Store) key(index uint64) []byte {
 }
 
 //Returns a slice to the selected value
-func (st *Store) val(index uint64) []byte {
+func (st *Store) val(index uint64) []byte { //TODO use uint32 instead of uint64
 	return st.file[index+8+uint64(st.keyLen(index)) : index+headerSize+uint64(st.totalLen(index))]
 }
 

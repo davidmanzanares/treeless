@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net"
 	"sync/atomic"
-	"treeless/src/com/proto"
+	"treeless/src/com/tlproto"
 	"treeless/src/com/udp"
 )
 

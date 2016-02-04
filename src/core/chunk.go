@@ -10,15 +10,20 @@ import (
 )
 
 /*
-This module implements DB chunks.
+	This module implements DB chunks.
+
+	A DB chunk is a database fragment. Database are divided in different fragments
+	by using some of the bits of hash function.
+	Each chunk access is serialized by using a read-write mutex.
+	Thread contention is determined by the number of fragments in the DB.
 */
 
-//Chunk is a DB chunk
+//Chunk is a DB fragment
 type Chunk struct {
 	Hm      *HashMap //TODO hm
 	St      *Store
 	stopped bool
-	sync.RWMutex
+	sync.Mutex
 }
 
 func newChunk(path string) *Chunk {
@@ -46,9 +51,9 @@ func (c *Chunk) restore(path string) {
 
 func (c *Chunk) close() {
 	c.Lock()
+	defer c.Unlock()
 	c.stopped = true
 	c.St.close()
-	c.Unlock()
 }
 
 /*
@@ -56,9 +61,9 @@ func (c *Chunk) close() {
 */
 
 func (c *Chunk) get(h64 uint64, key []byte) ([]byte, error) {
-	c.RLock()
-	if c.stopped {
-		c.RUnlock()
+	c.Lock()
+	if c.stopped { //TODO: pasar a Map
+		c.Unlock()
 		return nil, errors.New("Chunk closed")
 	}
 
@@ -69,19 +74,20 @@ func (c *Chunk) get(h64 uint64, key []byte) ([]byte, error) {
 	for {
 		storedHash := c.Hm.getHash(index)
 		if storedHash == emptyBucket {
-			c.RUnlock()
-			return nil, errors.New("Key not present")
-		}
-		if h == storedHash {
+			c.Unlock()
+			return nil, nil
+		} else if h == storedHash {
 			//Same hash: perform full key comparison
 			stIndex := c.Hm.getStoreIndex(index)
 			storedKey := c.St.key(uint64(stIndex))
 			if bytes.Equal(storedKey, key) {
 				//Full match, the key was in the map
 				v := c.St.val(uint64(stIndex))
+				//We need to copy the value, returning a memory mapped file slice is dangerous,
+				//the mutex wont be hold after this function returns
 				vc := make([]byte, len(v))
 				copy(vc, v)
-				c.RUnlock()
+				c.Unlock()
 				return vc, nil
 			}
 		}
@@ -91,8 +97,8 @@ func (c *Chunk) get(h64 uint64, key []byte) ([]byte, error) {
 
 func (c *Chunk) set(h64 uint64, key, value []byte) error {
 	c.Lock()
-	defer c.Unlock()
 	if c.stopped {
+		c.Unlock()
 		return errors.New("Chunk closed")
 	}
 
@@ -100,6 +106,7 @@ func (c *Chunk) set(h64 uint64, key, value []byte) error {
 	if c.Hm.numStoredKeys >= c.Hm.numKeysToExpand {
 		err := c.Hm.expand()
 		if err != nil {
+			c.Unlock()
 			return err
 		}
 	}
@@ -112,11 +119,13 @@ func (c *Chunk) set(h64 uint64, key, value []byte) error {
 			//Empty bucket: put the pair
 			storeIndex, err := c.St.put(key, value)
 			if err != nil {
+				c.Unlock()
 				return err
 			}
 			c.Hm.setHash(index, h)
 			c.Hm.setStoreIndex(index, storeIndex)
 			c.Hm.numStoredKeys++
+			c.Unlock()
 			return nil
 		}
 		if h == storedHash {
@@ -128,20 +137,21 @@ func (c *Chunk) set(h64 uint64, key, value []byte) error {
 				//Last write wins
 				v := c.St.val(uint64(stIndex))
 				oldT := time.Unix(0, int64(binary.LittleEndian.Uint64(v[:8])))
-
 				t := time.Unix(0, int64(binary.LittleEndian.Uint64(value[:8])))
-
 				if t.Before(oldT) {
+					//Stored pair is newer than the provided pair
+					c.Unlock()
 					return nil
 				}
-
 				c.St.del(stIndex)
 				storeIndex, err := c.St.put(key, value)
 				if err != nil {
+					c.Unlock()
 					return err
 				}
 				c.Hm.setHash(index, h)
 				c.Hm.setStoreIndex(index, storeIndex)
+				c.Unlock()
 				return nil
 			}
 		}
@@ -164,7 +174,7 @@ func (c *Chunk) del(h64 uint64, key []byte) error {
 	for {
 		storedHash := c.Hm.getHash(index)
 		if storedHash == emptyBucket {
-			return errors.New("Key not present")
+			return nil
 		}
 		if h == storedHash {
 			//Same hash: perform full key comparison
@@ -182,11 +192,12 @@ func (c *Chunk) del(h64 uint64, key []byte) error {
 }
 
 func (c *Chunk) iterate(foreach func(key, value []byte)) error {
-	c.RLock()
-	defer c.RUnlock()
+	c.Lock()
 	if c.stopped {
+		c.Unlock()
 		return errors.New("Chunk closed")
 	}
+	//TODO: this is a long-running function and it locks the mutex, it should release-retrieve it at some interval
 	for index := uint64(0); index < c.St.Length; {
 		if c.St.isPresent(index) {
 			key := c.St.key(index)
@@ -199,9 +210,11 @@ func (c *Chunk) iterate(foreach func(key, value []byte)) error {
 		}
 		index += 8 + uint64(c.St.totalLen(index))
 	}
+	c.Unlock()
 	return nil
 }
 
+//This function is only used to restore the chunk after a DB close
 func (c *Chunk) restorePair(h64 uint64, key, value []byte, storeIndex uint32) error {
 	h := hashReMap(uint32(h64))
 	index := h & c.Hm.sizeMask
@@ -219,7 +232,7 @@ func (c *Chunk) restorePair(h64 uint64, key, value []byte, storeIndex uint32) er
 			stIndex := c.Hm.getStoreIndex(index)
 			storedKey := c.St.key(uint64(stIndex))
 			if bytes.Equal(storedKey, key) {
-				//Full match, the key was in the map
+				//Full match, the key was in the map: DB corrupted!
 				panic("Key already in the map")
 			}
 		}

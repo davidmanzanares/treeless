@@ -1,7 +1,9 @@
 package tlcore
 
 /*
-This module implements DB maps.
+	This module implements DB maps-dicctionaries of key-value pairs.
+
+	Replication and external communication is out of the scope of this package.
 */
 
 import (
@@ -14,21 +16,24 @@ import (
 
 const filePerms = 0700
 
-const OpGet = 0
-const OpSet = 1
-const OpDel = 2
+/*
+	External interface
 
-//Map is a TreeLess map
+	All external usage of tlcore should use only these functions
+*/
+
+//Map is a Treeless map, it stores key-value pairs on different fragmets (chunks)
+//on the file system using memory mapped files
+//An associated hashmap for fast key lookup is stored on RAM
 type Map struct {
 	Chunks []*Chunk
 	path   string
 }
 
-/*
-	Utils functions
-*/
-
 //NewMap returns a new Map located at path and divided in numChunks fragments
+//High values of numChunks provides low thread contention, but each chunk hash a minimum memory cost
+//The numChunks values cannot be change dynamically, but "good" values resides in a wide range,
+//only extreme values will have significant problems.
 func NewMap(path string, numChunks int) (m *Map) {
 	os.MkdirAll(path+"/chunks/", filePerms)
 	m = &Map{path: path}
@@ -39,7 +44,8 @@ func NewMap(path string, numChunks int) (m *Map) {
 	return m
 }
 
-//OpenMap loads an existing map located at path
+//OpenMap loads an existing Map located at path, it will recreate
+//associated hashmaps
 func OpenMap(path string) *Map {
 	str, err := ioutil.ReadFile(path + "meta.json")
 	if err != nil {
@@ -73,6 +79,13 @@ func (m *Map) Close() {
 
 /*
 	Primitives
+
+	//The cost of these functions should be O(1) (in terms of DB size)
+	//for present and non present keys.
+	//Present keys will have normally one memory access and one memory mapped file access.
+	//Non-present keys will have normally only one memory access.
+	//Throughput will be highly affected if the memory mapped file access generates a page fault.
+	//This should only happen if the DB size is bigger than the free RAM space.
 */
 
 //Get the value for the provided key
@@ -99,7 +112,7 @@ func (m *Map) Delete(key []byte) error {
 	return m.Chunks[chunkIndex].del(h, key)
 }
 
-//Iterate all key-value pairs of a chunk
+//Iterate all key-value pairs of a chunk, executing foreach for each key-value pair
 func (m *Map) Iterate(chunkID int, foreach func(key, value []byte)) error {
 	return m.Chunks[chunkID].iterate(foreach)
 }

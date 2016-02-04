@@ -2,6 +2,13 @@ package tlcore
 
 import "errors"
 
+/*
+	These are some hashmap specific functions.
+
+	Real primitives (Get,Set and Del) are written in chunk.go since
+	these primitives needs to use this file and store.go.
+*/
+
 //HashMap stores an open-addressed hashmap and all its meta-data
 type HashMap struct {
 	SizeLimit       uint32   //Maximum size, the map won't be expanded more than this value
@@ -25,9 +32,9 @@ const (
 
 func newHashMap(initialLog2Size, sizeLimit uint32) *HashMap {
 	m := new(HashMap)
-	m.setSize(initialLog2Size)
 	m.SizeLimit = sizeLimit
-	m.mem = make([]uint32, m.size*8)
+	m.Sizelog2 = initialLog2Size
+	m.alloc()
 	return m
 }
 
@@ -50,7 +57,7 @@ func (m *HashMap) setSize(log2Size uint32) {
 func (m *HashMap) expand() error {
 	if m.size*2 > m.SizeLimit {
 		err := errors.New("HashMap size limit reached")
-		//TODO limit errors per second
+		//TODO constant error??
 		return err
 	}
 	newHM := newHashMap(m.Sizelog2+1, m.SizeLimit)

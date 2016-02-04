@@ -12,8 +12,7 @@ import (
 import "bytes"
 
 /*
-This file contains all core testing functions.
-
+	This file contains all core testing functions.
 */
 
 const numChunks = 256
@@ -217,9 +216,9 @@ func metaTest(numOperations, maxKeySize, maxValueSize, threads int) {
 		for i := 0; i < numOperations; i++ {
 			opType, key, value := rNext()
 			switch opType {
-			case OpSet:
+			case 1:
 				goMap[string(key)] = value
-			case OpDel:
+			case 2:
 				if _, ok := goMap[string(key)]; ok {
 					delete(goMap, string(key))
 					goDeletes = append(goDeletes, key)
@@ -239,9 +238,9 @@ func metaTest(numOperations, maxKeySize, maxValueSize, threads int) {
 				for i := 0; i < numOperations; i++ {
 					opType, key, value := rNext()
 					switch opType {
-					case OpSet:
+					case 1:
 						m1.Set(key, value)
-					case OpDel:
+					case 2:
 						m1.Delete(key)
 					}
 				}

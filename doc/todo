@@ -18,6 +18,7 @@ Dist: 2 sem
 	-rebalanceo: eliminacion de trozos por exceso de redundancia
 	-eliminacion de servidores "muertos"
 Test: 1 sem
+	-faster tests
 	-real tests
     -add benchmarks
 	-2 modes of operation: N processes, N goroutines

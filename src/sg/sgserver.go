@@ -7,7 +7,7 @@ import (
 	"log"
 	"sync/atomic"
 	"treeless/src/com"
-	"treeless/src/com/proto"
+	"treeless/src/com/tlproto"
 	"treeless/src/com/udp"
 	"treeless/src/core"
 )
@@ -111,7 +111,7 @@ func createWorker(s *DBServer, readChannel <-chan tlproto.Message) {
 			}
 			//fmt.Println("Server", conn.LocalAddr(), "message recieved", string(message.Key), string(message.Value))
 			switch message.Type {
-			case tlcore.OpGet:
+			case tlproto.OpGet:
 				var response tlproto.Message
 				rval, _ := s.m.Get(message.Key)
 				//cid := tlhash.GetChunkID(message.Key, s.sg.NumChunks)
@@ -124,7 +124,7 @@ func createWorker(s *DBServer, readChannel <-chan tlproto.Message) {
 				response.Type = tlproto.OpGetResponse
 				response.Value = rval
 				responseChannel <- response
-			case tlcore.OpSet:
+			case tlproto.OpSet:
 				var response tlproto.Message
 				if len(message.Value) < 8 {
 					log.Println("Error: message value len < 8")
@@ -139,7 +139,7 @@ func createWorker(s *DBServer, readChannel <-chan tlproto.Message) {
 					response.Value = []byte(err.Error())
 				}
 				responseChannel <- response
-			case tlcore.OpDel:
+			case tlproto.OpDel:
 				var response tlproto.Message
 				s.m.Delete(message.Key)
 				response.ID = message.ID
