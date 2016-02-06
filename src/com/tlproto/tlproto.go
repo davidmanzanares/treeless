@@ -6,10 +6,28 @@ import (
 	"time"
 )
 
-const bufferSize = 2048
-const bufferSizeTrigger = 1450
-const minimumMessageSize = 13
+//TODO: error control at conn.Write()
+
+//For maximum performance set this variable to the MSS(maximum segment size)
+const bufferSize = 1450
+
+//High values favours throughput, low values favours low Latency
 const windowTimeDuration = time.Microsecond * 10
+
+/*
+	TCP treeless protocol
+
+	Each message is composed by:
+		0:4 bytes:						message size
+		4:8 bytes:						message ID
+		8:12 bytes:						message key len
+		12 byte:						operation type
+		13:13+key len bytes:			key
+		13+key len:message size bytes:	value
+
+*/
+
+const minimumMessageSize = 13
 
 //Operation represents a DB operation or result, the Message type
 type Operation uint8
@@ -38,7 +56,18 @@ type Message struct {
 	Type            Operation
 	ID              uint32
 	Key, Value      []byte
-	ResponseChannel chan Message
+	ResponseChannel chan Message //Only used for inconming messages, buffered reader will set it to the connection write channel
+}
+
+//NewBufferedConn creates a new buffered tlproto connection that uses an existing TCP connection (conn).
+//It returns a writeChannel, use it to send messages throught conn
+//It recieves a readChannel, inconming messages will be sent to this channel
+//Close it by closing conn and writeChannel
+func NewBufferedConn(conn *net.TCPConn, readChannel chan<- Message) (writeChannel chan<- Message) {
+	writeCh := make(chan Message, 1024)
+	go bufferedWriter(conn, writeCh)
+	go bufferedReader(conn, readChannel, writeCh)
+	return writeCh
 }
 
 //Write serializes the message on the destination buffer
@@ -59,7 +88,7 @@ func (m *Message) write(dest []byte) (msgSize int, tooLong bool) {
 	return size, false
 }
 
-//Read unserialize a message from a buffer
+//Read unserializes a message from a buffer
 func read(src []byte) (m Message) {
 	m.ID = binary.LittleEndian.Uint32(src[4:8])
 	keySize := binary.LittleEndian.Uint32(src[8:12])
@@ -71,15 +100,7 @@ func read(src []byte) (m Message) {
 	return m
 }
 
-//Close it by closing conn and writeChannel
-func NewBufferedConn(conn net.Conn, readChannel chan<- Message) (writeChannel chan<- Message) {
-	writeCh := make(chan Message, 1024)
-	go bufferedWriter(conn, writeCh)
-	go bufferedReader(conn, readChannel, writeCh)
-	return writeCh
-}
-
-//Writer will write to conn messages recieved by the channel
+//bufferedWriter will write to conn messages recieved by the channel
 //
 //This function implements buffering, and uses a time window:
 //messages won't be written instantly, they will be written
@@ -87,12 +108,10 @@ func NewBufferedConn(conn net.Conn, readChannel chan<- Message) (writeChannel ch
 //
 //Close the channel to stop the infinite listening loop.
 //
-//This function blocks, typical usage will be "go Writer(...)""
-func bufferedWriter(conn net.Conn, msgChannel <-chan Message) {
+//This function blocks, typical usage will be "go bufferedWriter(...)""
+func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
 	total := 0
 	totalM := 0
-	//timer := time.NewTimer(time.Hour)
-	//timer.Stop()
 	ticker := time.NewTicker(windowTimeDuration)
 	dirty := false
 	buffer := make([]byte, bufferSize)
@@ -108,11 +127,9 @@ func bufferedWriter(conn net.Conn, msgChannel <-chan Message) {
 			} else {
 				dirty = false
 			}
-		//timer.Stop()
 		case m, ok := <-msgChannel:
 			if !ok {
 				//Channel closed, stop loop
-				//timer.Stop()
 				//log.Println("Efficiency:", float64(total)/float64(totalM), total, totalM)
 				ticker.Stop()
 				return
@@ -120,41 +137,39 @@ func bufferedWriter(conn net.Conn, msgChannel <-chan Message) {
 
 			//Append message to buffer
 			msgSize, tooLong := m.write(buffer[index:])
-			//fmt.Println(msgSize)
 			if tooLong {
-				//Big message
-				//Send previous buffer
+				//Message too long for the buffer remaining space
 				if index > 0 {
+					//Send buffer
 					conn.Write(buffer[:index])
 					index = 0
 				}
-				//timer.Stop()
-				//Send this message
-				bigMsg := make([]byte, msgSize)
-				m.write(bigMsg)
-				conn.Write(bigMsg)
-				continue
-			}
-			index += msgSize
-			if index > bufferSizeTrigger {
-				total += index
-				totalM++
-				conn.Write(buffer[:index])
-				index = 0
-				//timer.Stop()
+				if msgSize > bufferSize {
+					//Too big message for the buffer (even if empty)
+					//Send this message
+					bigMsg := make([]byte, msgSize)
+					m.write(bigMsg)
+					conn.Write(bigMsg)
+					continue
+				} else {
+					//Add msg to the buffer
+					m.write(buffer)
+					index += msgSize
+					dirty = true
+				}
 			} else {
+				//Fast path
+				index += msgSize
 				dirty = true
-				//timer.Reset(windowTimeDuration)
 			}
 		}
 	}
 }
 
-//Reader calls callback each time a message is recieved by the conn TCP connection
-//The message passed to the callback wont live after the callback returns, it should copy the message
+//bufferedReader reads messages from conn and sends them to readChannel
 //Close the socket to end the infinite listening loop
-//This function blocks, typical usage: "go Reader(...)"
-func bufferedReader(conn net.Conn, readChannel chan<- Message, writeChannel chan Message) error {
+//This function blocks, typical usage: "go bufferedReader(...)"
+func bufferedReader(conn *net.TCPConn, readChannel chan<- Message, writeChannel chan Message) error {
 	//Ping-pong between buffers
 	var slices [2][]byte
 	slices[0] = make([]byte, bufferSize)

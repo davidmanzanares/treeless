@@ -22,7 +22,7 @@ const tickerReserveSize = 32
 
 //Conn is a DB TCP client connection
 type Conn struct {
-	conn            net.Conn  //TCP connection
+	conn            *net.TCPConn
 	chanPool        sync.Pool //Pool of channels to be used as mechanisms to wait until response, make a pool to avoid GC performance penalties
 	tickerReserve   [tickerReserveSize]*time.Ticker
 	reservedTickers int

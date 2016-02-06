@@ -1,13 +1,13 @@
 Core: 1 sem
-	-last write wins
-
+	-del last write wins
 	-old SSD
 	-size limit to map wide instead of chunk wide
-	-IO error?
 
+	-IO error?
 	-MurmurHash
 
 Com: 1sem
+	-conn write error control
 	-add SyncDel
 	-add lock & unlock
 
