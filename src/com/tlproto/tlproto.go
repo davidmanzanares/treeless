@@ -116,6 +116,8 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
 	dirty := false
 	buffer := make([]byte, bufferSize)
 	index := 0
+	fast := false
+	sents := 0
 	for {
 		select {
 		case <-ticker.C:
@@ -127,6 +129,15 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
 			} else {
 				dirty = false
 			}
+			fast = sents > 1
+			if !fast && index > 0 {
+				//flush now
+				conn.Write(buffer[0:index])
+				total += index
+				totalM++
+				index = 0
+			}
+			sents = sents / 8
 		case m, ok := <-msgChannel:
 			if !ok {
 				//Channel closed, stop loop
@@ -137,7 +148,16 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
 
 			//Append message to buffer
 			msgSize, tooLong := m.write(buffer[index:])
-			if tooLong {
+			sents++
+			if !fast {
+				if !tooLong {
+					conn.Write(buffer[:msgSize])
+				} else {
+					bigMsg := make([]byte, msgSize)
+					m.write(bigMsg)
+					conn.Write(bigMsg)
+				}
+			} else if tooLong {
 				//Message too long for the buffer remaining space
 				if index > 0 {
 					//Send buffer

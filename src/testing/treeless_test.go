@@ -331,7 +331,7 @@ func TestHotRebalance(t *testing.T) {
 	threads := 4
 	maxKeySize := 4
 	maxValueSize := 4
-	numOperations := 20000
+	numOperations := 50000
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	//Operate on built-in map, DB will be checked against this map
 	goMap := make(map[string][]byte)
@@ -373,7 +373,7 @@ func TestHotRebalance(t *testing.T) {
 					//Second server set-up
 					_, stop2 = LaunchServer(addr)
 					//Wait for rebalance
-					time.Sleep(time.Second * 10)
+					time.Sleep(time.Second * 7)
 					//First server shut down
 					fmt.Println("Server 1 shut down")
 					stop()
@@ -471,8 +471,8 @@ func TestLatency(t *testing.T) {
 
 	maxKeySize := 4
 	maxValueSize := 4
-	numOperations := 40000
-	initOps := 40000
+	numOperations := 20000
+	initOps := 10000
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	var w sync.WaitGroup
 	ch := make(chan lat)
@@ -526,7 +526,7 @@ func TestClock(t *testing.T) {
 	maxKeySize := 4
 	maxValueSize := 4
 	numOperations := 1000
-	initOps := 40000
+	initOps := 1000
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	timestampMap := make(map[string]time.Time)
 	var m sync.Mutex

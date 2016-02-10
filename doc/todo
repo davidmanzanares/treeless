@@ -1,42 +1,39 @@
-Core: 1 sem
-	-del last write wins
+Core: 3+3
+	3-del last write wins
 	-old SSD
 	-size limit to map wide instead of chunk wide
 
 	-IO error?
 	-MurmurHash
 
-Com: 1sem
-	-conn write error control
-	-add SyncDel
-	-add lock & unlock
+Com: 2+3
+	2-conn write error control
+	4-add SyncDel
 
+	-add lock & unlock
 	-local ip set by parameter, defaultIP := getLocalIP()
-Dist: 2 sem
+Dist: 8
 	-Client Topology-Check
 	-SYNCHED mechanism
 	-rebalanceo: eliminacion de trozos por exceso de redundancia
 	-eliminacion de servidores "muertos"
-Test: 1 sem
-	-faster tests
+
+Test: 5+1
 	-real tests
     -add benchmarks
-	-2 modes of operation: N processes, N goroutines
-	-Profile with gouroutine mode of operation
 
 	-space per chunk tests (hash quality tests)
-Others: 3 sem
+
+Others: 1+4+4+4+3+1+1+1
 	-info command
 
 	-transactions: lock table
 	-security
-	-constantes use const or parametrizar
 	-start stop
 	-docs: dependencies and constraints
 	-json performance? => use another
 	-stats
 	-memprofile
-	-progress utils
 
 ...:
     -procedures: TTL procedure
