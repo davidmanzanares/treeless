@@ -1,5 +1,5 @@
 Core: 3+3
-	3-del last write wins
+	1-del last write wins
 	-old SSD
 	-size limit to map wide instead of chunk wide
 
@@ -7,8 +7,7 @@ Core: 3+3
 	-MurmurHash
 
 Com: 2+3
-	2-conn write error control
-	4-add SyncDel
+	2-add SyncDel
 
 	-add lock & unlock
 	-local ip set by parameter, defaultIP := getLocalIP()

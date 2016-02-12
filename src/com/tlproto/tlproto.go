@@ -6,8 +6,6 @@ import (
 	"time"
 )
 
-//TODO: error control at conn.Write()
-
 //For maximum performance set this variable to the MSS(maximum segment size)
 const bufferSize = 1450
 
@@ -100,6 +98,17 @@ func read(src []byte) (m Message) {
 	return m
 }
 
+func tcpWrite(conn *net.TCPConn, buffer []byte) {
+	for len(buffer) > 0 {
+		n, err := conn.Write(buffer)
+		if err != nil {
+			conn.Close()
+			return
+		}
+		buffer = buffer[n:]
+	}
+}
+
 //bufferedWriter will write to conn messages recieved by the channel
 //
 //This function implements buffering, and uses a time window:
@@ -122,7 +131,7 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
 		select {
 		case <-ticker.C:
 			if index > 0 && !dirty {
-				conn.Write(buffer[0:index])
+				tcpWrite(conn, buffer[0:index])
 				total += index
 				totalM++
 				index = 0
@@ -132,7 +141,7 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
 			fast = sents > 1
 			if !fast && index > 0 {
 				//flush now
-				conn.Write(buffer[0:index])
+				tcpWrite(conn, buffer[0:index])
 				total += index
 				totalM++
 				index = 0
@@ -151,17 +160,17 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
 			sents++
 			if !fast {
 				if !tooLong {
-					conn.Write(buffer[:msgSize])
+					tcpWrite(conn, buffer[0:msgSize])
 				} else {
 					bigMsg := make([]byte, msgSize)
 					m.write(bigMsg)
-					conn.Write(bigMsg)
+					tcpWrite(conn, bigMsg)
 				}
 			} else if tooLong {
 				//Message too long for the buffer remaining space
 				if index > 0 {
 					//Send buffer
-					conn.Write(buffer[:index])
+					tcpWrite(conn, buffer[:index])
 					index = 0
 				}
 				if msgSize > bufferSize {
@@ -169,7 +178,7 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
 					//Send this message
 					bigMsg := make([]byte, msgSize)
 					m.write(bigMsg)
-					conn.Write(bigMsg)
+					tcpWrite(conn, bigMsg)
 					continue
 				} else {
 					//Add msg to the buffer
