@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sync/atomic"
+	"time"
 	"treeless/src/com"
 	"treeless/src/com/tlproto"
 	"treeless/src/com/udp"
@@ -168,7 +169,7 @@ func createWorker(s *DBServer, readChannel <-chan tlproto.Message) {
 						go func(c *tlcom.Conn) {
 							i := 0
 							s.m.Iterate(chunkID, func(key, value []byte) {
-								err := c.Set(key, value)
+								err := c.Set(key, value, time.Millisecond*100)
 								if err != nil {
 									//TODO transfer aborted
 									log.Println("Transfer error:", err)

@@ -50,32 +50,41 @@ func (s *VirtualServer) freeConnection(cerr error) {
 	s.RUnlock()
 }
 
+func (s *VirtualServer) Timeout() {
+	s.Lock()
+	if s.conn != nil {
+		s.conn.Close()
+		s.conn = nil
+	}
+	s.Unlock()
+}
+
 //Get the value of key
-func (s *VirtualServer) Get(key []byte) []byte {
+//Caller must issue a s.RUnlock() after using the channel
+func (s *VirtualServer) Get(key []byte, timeout time.Duration) chan tlcom.Result {
 	if err := s.needConnection(); err != nil {
 		return nil
 	}
-	v, cerr := s.conn.Get(key)
-	s.freeConnection(cerr)
-	return v
+	r := s.conn.Get(key, timeout)
+	return r
 }
 
 //Set a new key/value pair
-func (s *VirtualServer) Set(key, value []byte) error {
+func (s *VirtualServer) Set(key, value []byte, timeout time.Duration) error {
 	if err := s.needConnection(); err != nil {
 		return nil
 	}
-	cerr := s.conn.Set(key, value)
+	cerr := s.conn.Set(key, value, timeout)
 	s.freeConnection(cerr)
 	return cerr
 }
 
 //Del deletes a key/value pair
-func (s *VirtualServer) Del(key []byte) error {
+func (s *VirtualServer) Del(key []byte, timeout time.Duration) error {
 	if err := s.needConnection(); err != nil {
 		return nil
 	}
-	cerr := s.conn.Del(key)
+	cerr := s.conn.Del(key, timeout)
 	s.freeConnection(cerr)
 	return cerr
 }

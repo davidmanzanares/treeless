@@ -250,7 +250,7 @@ func (sg *ServerGroup) startHeartbeatRequester() {
 				}
 				s.LastHeartbeat = time.Now()
 			} else {
-				log.Println("UDP request timeout. Server", s.Phy, "UDP error:", err)
+				//log.Println("UDP request timeout. Server", s.Phy, "UDP error:", err)
 			}
 			//if sg.localhost == nil {
 			//	fmt.Println(sg)

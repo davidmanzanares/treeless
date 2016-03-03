@@ -42,17 +42,33 @@ func TestMain(m *testing.M) {
 var id = 0
 
 const useProcess = false
-const numChunks = 8
+const testingNumChunks = 8
+const benchmarkingNumChunks = 64
 
-func LaunchServer(assoc string) (addr string, stop func()) {
-	dbpath := "testDB" + fmt.Sprint(id)
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true
+	}
+	if os.IsNotExist(err) {
+		return false
+	}
+	return true
+}
+func LaunchServer(assoc string, numChunks int) (addr string, stop func()) {
+	dbTestFolder := ""
+	if exists("/mnt/dbs/") {
+		dbTestFolder = "/mnt/dbs/"
+	}
+	dbpath := dbTestFolder + "testDB" + fmt.Sprint(id)
 	var cmd *exec.Cmd
 	var s *tlsg.DBServer
 	if assoc == "" {
 		id = 0
 		dbpath = "testDB" + fmt.Sprint(id)
 		if useProcess {
-			cmd = exec.Command("./treeless", "-create", "-port", fmt.Sprint(10000+id), "-dbpath", dbpath) //, "-cpuprofile"
+			cmd = exec.Command("./treeless", "-create", "-port",
+				fmt.Sprint(10000+id), "-dbpath", dbpath) //, "-cpuprofile"
 		} else {
 			s = tlsg.Start("", 10000+id, numChunks, 2, dbpath)
 		}
@@ -86,6 +102,7 @@ func LaunchServer(assoc string) (addr string, stop func()) {
 	return newAddr,
 		func() {
 			if useProcess {
+				fmt.Println("KILL")
 				cmd.Process.Signal(os.Interrupt)
 			} else {
 				s.Stop()
@@ -99,7 +116,7 @@ func LaunchServer(assoc string) (addr string, stop func()) {
 //Test just a few hard-coded operations with one server - one client
 func TestSimple(t *testing.T) {
 	//Server set-up
-	addr, stop := LaunchServer("")
+	addr, stop := LaunchServer("", testingNumChunks)
 	defer stop()
 	//Client set-up
 	client, err := tlsg.Connect(addr)
@@ -136,7 +153,7 @@ func TestSimple(t *testing.T) {
 //TestBigMessages, send 8KB GET, SET messages
 func TestBigMessages(t *testing.T) {
 	//Server set-up
-	addr, stop := LaunchServer("")
+	addr, stop := LaunchServer("", testingNumChunks)
 	defer stop()
 	//Client set-up
 	client, err := tlsg.Connect(addr)
@@ -160,7 +177,7 @@ func TestBigMessages(t *testing.T) {
 
 func TestBasicRebalance(t *testing.T) {
 	//Server set-up
-	addr1, stop1 := LaunchServer("")
+	addr1, stop1 := LaunchServer("", testingNumChunks)
 	//Client set-up
 	client, err := tlsg.Connect(addr1)
 	if err != nil {
@@ -173,7 +190,7 @@ func TestBasicRebalance(t *testing.T) {
 		t.Fatal(err)
 	}
 	//Second server set-up
-	_, stop2 := LaunchServer(addr1)
+	_, stop2 := LaunchServer(addr1, testingNumChunks)
 	defer stop2()
 	//Wait for rebalance
 	time.Sleep(time.Second * 5)
@@ -199,16 +216,9 @@ func TestBasicRebalance(t *testing.T) {
 //Test lots of operations made by a single client against a single DB server
 func TestCmplx1_1(t *testing.T) {
 	//Server set-up
-	addr, stop := LaunchServer("")
+	addr, stop := LaunchServer("", testingNumChunks)
 	defer stop()
-	//Client set-up
-	client, err := tlsg.Connect(addr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.Close()
-
-	metaTest(t, client, 10*1000, 4, 8, 10, 1024)
+	metaTest(t, addr, 10*1000, 4, 8, 10, 1024)
 }
 
 //Test lots of operations made by multiple clients against a single DB server
@@ -241,7 +251,7 @@ func randKVOpGenerator(maxKeySize, maxValueSize, seed, mult, offset int) func() 
 }
 
 //This test will make lots of PUT/SET/DELETE operations using a PRNG, then it will use GET operations to check the DB status
-func metaTest(t *testing.T, c *tlsg.DBClient, numOperations, maxKeySize, maxValueSize, threads, maxKeys int) {
+func metaTest(t *testing.T, addr string, numOperations, maxKeySize, maxValueSize, threads, maxKeys int) {
 	runtime.GOMAXPROCS(threads)
 	//Operate on built-in map, DB will be checked against this map
 	goMap := make(map[string][]byte)
@@ -268,6 +278,12 @@ func metaTest(t *testing.T, c *tlsg.DBClient, numOperations, maxKeySize, maxValu
 	w.Add(threads)
 	for core := 0; core < threads; core++ {
 		go func(core int) {
+			//Client set-up
+			c, err := tlsg.Connect(addr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close()
 			rNext := randKVOpGenerator(maxKeySize, maxValueSize, core, 64, core)
 			for i := 0; i < numOperations; i++ {
 				opType, key, value := rNext()
@@ -286,6 +302,12 @@ func metaTest(t *testing.T, c *tlsg.DBClient, numOperations, maxKeySize, maxValu
 		fmt.Println("Write phase completed in:", time.Now().Sub(t1))
 	}
 	//Check map is in DB
+	c, err := tlsg.Connect(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
 	for key, value := range goMap {
 		if len(value) > 128 {
 			fmt.Println(123)
@@ -317,10 +339,93 @@ func metaTest(t *testing.T, c *tlsg.DBClient, numOperations, maxKeySize, maxValu
 	}
 }
 
+func TestConsistency(t *testing.T) {
+	addr, stop := LaunchServer("", testingNumChunks)
+	defer stop()
+	metaTestConsistency(t, addr, 20, 200)
+}
+
+func metaTestConsistency(t *testing.T, serverAddr string, numClients, iterations int) {
+	runtime.GOMAXPROCS(4)
+	var w sync.WaitGroup
+	w.Add(numClients)
+	//Test
+	var mutex sync.Mutex
+	goMap := make(map[string][]byte)
+	quitASAP := false
+	for i := 0; i < numClients; i++ {
+		go func(thread int) {
+			var p *tlutils.Progress
+			if thread == numClients-1 {
+				p = tlutils.NewProgress("Operating...", iterations)
+			}
+			mutex.Lock()
+			//Create client and connect it to the fake server
+			c, err := tlsg.Connect(serverAddr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.SetTimeout = 0
+			defer c.Close()
+			mutex.Unlock()
+
+			for i := 0; i < iterations; i++ {
+				if thread == numClients-1 {
+					p.Set(i)
+				}
+				op := int(rand.Int31n(int32(3)))
+				key := make([]byte, 1)
+				key[0] = byte(1)
+				value := make([]byte, 4)
+				binary.LittleEndian.PutUint32(value, uint32(rand.Int63()))
+				runtime.Gosched()
+				mutex.Lock()
+				if quitASAP {
+					mutex.Unlock()
+					break
+				}
+				//fmt.Println(op, key, value)
+				switch op {
+				case 0:
+					goMap[string(key)] = value
+					c.Set(key, value)
+					mutex.Unlock()
+				case 1:
+					//delete(goMap, string(key))
+					//c.Del(key)
+					mutex.Unlock()
+				case 2:
+					v2 := goMap[string(key)]
+					var v1 []byte
+					for i := 1; i < 1000; i = i * 2 {
+						time.Sleep(time.Millisecond * time.Duration(i))
+						v1, _ = c.Get(key)
+						if bytes.Equal(v1, v2) {
+							break
+						}
+					}
+					if !bytes.Equal(v1, v2) {
+						fmt.Println("Mismatch, server returned:", v1,
+							"gomap returned:", v2)
+						t.Error("Mismatch, server returned:", v1,
+							"gomap returned:", v2)
+						quitASAP = true
+					}
+					mutex.Unlock()
+					//fmt.Println("GET", key, v1, v2)
+				}
+			}
+			w.Done()
+			w.Wait() //THIS IS CRITICAL: WAIT FOR PENDING WRITE OPERATIONS TO COMPLETE
+		}(i)
+	}
+	w.Wait()
+}
+
 func TestHotRebalance(t *testing.T) {
 	var stop2 func()
 	//Server set-up
-	addr, stop := LaunchServer("")
+	addr, stop := LaunchServer("", testingNumChunks)
 	//Client set-up
 	c, err := tlsg.Connect(addr)
 	if err != nil {
@@ -371,7 +476,7 @@ func TestHotRebalance(t *testing.T) {
 				if core == 0 && i == 0 {
 					fmt.Println("Server 2 power up")
 					//Second server set-up
-					_, stop2 = LaunchServer(addr)
+					_, stop2 = LaunchServer(addr, testingNumChunks)
 					//Wait for rebalance
 					time.Sleep(time.Second * 7)
 					//First server shut down
@@ -450,7 +555,7 @@ func TestHotRebalance(t *testing.T) {
 //TestLatency tests latency between a SET operation and a GET operaton that sees the the SET written value
 func TestLatency(t *testing.T) {
 	//Server set-up
-	addr, stop := LaunchServer("")
+	addr, stop := LaunchServer("", testingNumChunks)
 	defer stop()
 	//Client set-up
 	c, err := tlsg.Connect(addr)
@@ -512,7 +617,7 @@ func TestLatency(t *testing.T) {
 //TestClock tests records timestamps synchronization
 func TestClock(t *testing.T) {
 	//Server set-up
-	addr, stop := LaunchServer("")
+	addr, stop := LaunchServer("", testingNumChunks)
 	defer stop()
 	//Client set-up
 	c, err := tlsg.Connect(addr)
@@ -574,13 +679,52 @@ func TestClock(t *testing.T) {
 	fmt.Println("Max time difference: ", maxDiff, "\nAverage time difference:", avgDiff)
 }
 
+const vServers = 10
+const vClients = 3
+
+func TestVirtual(t *testing.T) {
+	//Start VMs and treeless instances
+
+	//Wait for servers
+
+	//Initialize vars
+	operations := 1000
+
+	//Start several clients on this process
+	for i := 0; i < vClients; i++ {
+		go func() {
+			for i := 0; i < operations; i++ {
+				//Operate
+				//Check consistency
+				//Collect stats
+
+			}
+		}()
+	}
+	//Print stats
+}
+
 //Benchmark GET operations by issuing lots of GET operations from different goroutines.
 //The DB is clean, all operations will return a "Key not present" error
-func BenchmarkGetUnpopulated(b *testing.B) {
+func BenchmarkGetUnpopulated1Server(b *testing.B) {
+	metaBenchmarkGetUnpopulated(1, b)
+}
+func BenchmarkGetUnpopulated2Servers(b *testing.B) {
+	metaBenchmarkGetUnpopulated(2, b)
+}
+func metaBenchmarkGetUnpopulated(nservers int, b *testing.B) {
 	fmt.Println(b.N)
 	//Server set-up
-	addr, stop := LaunchServer("")
+	addr, stop := LaunchServer("", benchmarkingNumChunks)
 	defer stop()
+	if nservers > 1 {
+		time.Sleep(time.Second)
+		for i := 1; i < nservers; i++ {
+			_, stop2 := LaunchServer(addr, benchmarkingNumChunks)
+			defer stop2()
+		}
+		time.Sleep(time.Second * 6)
+	}
 	//Clients set-up
 	var clients [8]*tlsg.DBClient
 	for i := 0; i < 8; i++ {

@@ -96,6 +96,7 @@ func (c *Chunk) get(h64 uint64, key []byte) ([]byte, error) {
 }
 
 func (c *Chunk) set(h64 uint64, key, value []byte) error {
+	//fmt.Println("Set initiated", key, value)
 	c.Lock()
 	if c.stopped {
 		c.Unlock()
@@ -140,9 +141,11 @@ func (c *Chunk) set(h64 uint64, key, value []byte) error {
 				t := time.Unix(0, int64(binary.LittleEndian.Uint64(value[:8])))
 				if t.Before(oldT) {
 					//Stored pair is newer than the provided pair
+					//fmt.Println("Discarded", key, value, t)
 					c.Unlock()
 					return nil
 				}
+				//fmt.Println("Set", key, value, t)
 				c.St.del(stIndex)
 				storeIndex, err := c.St.put(key, value)
 				if err != nil {

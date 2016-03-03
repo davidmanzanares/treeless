@@ -3,11 +3,15 @@ package tlsg
 import (
 	"encoding/binary"
 	"time"
+	"treeless/src/com"
 	"treeless/src/hash"
 )
 
 type DBClient struct {
-	sg *ServerGroup
+	sg         *ServerGroup
+	GetTimeout time.Duration
+	SetTimeout time.Duration
+	DelTimeout time.Duration
 }
 
 func Connect(addr string) (*DBClient, error) {
@@ -17,6 +21,9 @@ func Connect(addr string) (*DBClient, error) {
 		return nil, err
 	}
 	c.sg = sg
+	c.GetTimeout = time.Millisecond * 100
+	c.SetTimeout = time.Millisecond * 100
+	c.DelTimeout = time.Millisecond * 100
 	return c, nil
 }
 
@@ -24,11 +31,30 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 	//Last write wins policy
 	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks)
 	servers := c.sg.GetChunkServers(chunkID)
+	var charray [8]chan tlcom.Result
+	var vsarray [8]*VirtualServer
+	chs := 0
+
 	for _, s := range servers {
 		if s == nil {
 			continue
 		}
-		v := s.Get(key)
+		ch := s.Get(key, c.GetTimeout)
+		if ch == nil {
+			continue
+		}
+		charray[chs] = ch
+		vsarray[chs] = s
+		chs++
+	}
+	for i := 0; i < chs; i++ {
+		r := <-charray[i]
+		vsarray[i].RUnlock()
+		if r.Err != nil {
+			vsarray[i].Timeout() //TODO value, err, cerr
+			continue
+		}
+		v := r.Value
 		if len(v) >= 8 {
 			t := time.Unix(0, int64(binary.LittleEndian.Uint64(v[:8])))
 			if lastTime.Before(t) {
@@ -53,7 +79,7 @@ func (c *DBClient) Set(key, value []byte) (written bool, errs error) {
 		if s == nil {
 			continue
 		}
-		err := s.Set(key, valueWithTime)
+		err := s.Set(key, valueWithTime, c.SetTimeout)
 		if err == nil {
 			written = true
 		} else {
@@ -70,7 +96,7 @@ func (c *DBClient) Del(key []byte) (errs error) {
 		if s == nil {
 			continue
 		}
-		err := s.Del(key)
+		err := s.Del(key, c.DelTimeout)
 		errs = err
 	}
 	return errs

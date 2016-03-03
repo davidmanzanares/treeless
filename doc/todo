@@ -1,24 +1,26 @@
 Core: 3+3
-	1-del last write wins
-	-old SSD
-	-size limit to map wide instead of chunk wide
+	E*-del last write wins
 
+	-size limit to map wide instead of chunk wide
 	-IO error?
 	-MurmurHash
 
 Com: 2+3
-	2-add SyncDel
+	E*-Two phase operation: parallel com
 
-	-add lock & unlock
+	-CAS
 	-local ip set by parameter, defaultIP := getLocalIP()
 Dist: 8
-	-Client Topology-Check
-	-SYNCHED mechanism
-	-rebalanceo: eliminacion de trozos por exceso de redundancia
-	-eliminacion de servidores "muertos"
+	-del assurance
+	E*-read repair (con test: tapo A, read repair, tapo B, read and check)
+	-random repair
+	*-rebalanceo: eliminacion de trozos por exceso de redundancia
+	-eliminacion de servidores "muertos"??
+	-fast nul transfer?
 
 Test: 5+1
-	-real tests
+	-real test: test consitency with lots of servers, network problems and server shutdowns:
+		-vagrant
     -add benchmarks
 
 	-space per chunk tests (hash quality tests)
@@ -26,14 +28,17 @@ Test: 5+1
 Others: 1+4+4+4+3+1+1+1
 	-info command
 
-	-transactions: lock table
-	-security
 	-start stop
 	-docs: dependencies and constraints
 	-json performance? => use another
 	-stats
 	-memprofile
 
+	-log rotation: max size
+
 ...:
-    -procedures: TTL procedure
-    -java, python
+    -procedures: TTL procedure,...
+
+Memoria:
+	https://codahale.com/you-cant-sacrifice-partition-tolerance/
+	-security: no by desing: see Redis
