@@ -685,30 +685,98 @@ func TestClock(t *testing.T) {
 	fmt.Println("Max time difference: ", maxDiff, "\nAverage time difference:", avgDiff)
 }
 
-//const vServers = 10
+const vServers = 5
 const vClients = 5
 
+const vagrantEnabled = true
+
+//TODO parrallel up
 func TestVirtual(t *testing.T) {
-	runtime.GOMAXPROCS(4)
-	//Start VMs and treeless instances
+	if !vagrantEnabled {
+		fmt.Println("Vagrant tests disabled")
+		return
+	}
 	exec.Command("cp", "treeless", "testing/").Run()
 	os.Chdir("testing")
+	defer exec.Command("rm", "treeless").Run()
 	defer os.Chdir("..")
-	cmd := exec.Command("vagrant", "up")
+	runtime.GOMAXPROCS(4)
+
+	//Initialize Vagrant auxiliary files
+	//Vagrantfile
+	middle := ""
+	for i := 1; i < vServers; i++ {
+		middle = middle + `config.vm.define "vm` + fmt.Sprint(i) + `" do |vmN|
+			vmN.vm.provision :shell, path: "vm` + fmt.Sprint(i) + `.sh"
+			vmN.vm.network "private_network", ip: "192.168.2.` + fmt.Sprint(100+i) + `"
+		end
+		`
+	}
+	vf := `Vagrant.configure(2) do |config|
+	  config.vm.box = "ubuntu/trusty64"
+	  config.vm.define "vm0" do |vmN|
+	      vmN.vm.provision :shell, path: "vm0.sh"
+	      vmN.vm.network "private_network", ip: "192.168.2.100"
+	  end
+	  ` + middle + `
+	end`
+	err := ioutil.WriteFile("Vagrantfile", []byte(vf), 0777)
+	defer os.Remove("Vagrantfile")
+	if err != nil {
+		panic(err)
+	}
+
+	//Provision bash scripts
+	//First VM provision script
+	sh0 := `echo Starting up VM0...
+	cd /mnt
+	start-stop-daemon -b -S --exec /vagrant/treeless -- -create -localip 192.168.2.100 -port 9876 -dbpath /home/vagrant -logtofile
+	sleep 1
+	echo VM0 is online`
+	err = ioutil.WriteFile("vm0.sh", []byte(sh0), 0777)
+	defer os.Remove("vm0.sh")
+	if err != nil {
+		panic(err)
+	}
+
+	//Rest of VM provision script
+	for i := 1; i < vServers; i++ {
+		sh := `echo Starting up VM` + fmt.Sprint(i) + `...
+		cd /mnt
+		start-stop-daemon -b -S --exec /vagrant/treeless -- -assoc 192.168.2.100:9876 -localip 192.168.2.` + fmt.Sprint(100+i) + ` -port 9876 -dbpath /home/vagrant -logtofile
+		sleep 1
+		echo VM` + fmt.Sprint(i) + ` is online`
+		err = ioutil.WriteFile("vm"+fmt.Sprint(i)+".sh", []byte(sh), 0777)
+		defer os.Remove("vm" + fmt.Sprint(i) + ".sh")
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	//Start VMs and treeless instances
+	cmd := exec.Command("vagrant", "up", "--parallel")
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	cmd.Run()
-	defer exec.Command("vagrant", "destroy", "-f").Run()
+	defer func() {
+		cmd := exec.Command("vagrant", "destroy", "-f")
+		cmd.Stderr = os.Stderr
+		cmd.Stdout = os.Stdout
+		cmd.Run()
+	}()
 
 	//Wait for servers
-	fmt.Println("Waiting for servers")
+	fmt.Println("Waiting for server 192.168.2.100")
 	ready := waitForServer("192.168.2.100:9876")
 	if !ready {
 		t.Fatal("Servers not ready")
 	}
-	ready = waitForServer("192.168.2.101:9876")
-	if !ready {
-		t.Fatal("Servers not ready")
+	for i := 1; i < vServers; i++ {
+		fmt.Println("Waiting for server 192.168.2." + fmt.Sprint(100+i))
+		ready = waitForServer("192.168.2." + fmt.Sprint(100+i) + ":9876")
+		if !ready {
+			t.Fatal("Servers not ready")
+		}
 	}
 	fmt.Println("Servers ready")
 	//Initialize vars

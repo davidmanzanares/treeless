@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-var rebalanceWakeupPeriod = time.Second * 100
+var rebalanceWakeupPeriod = time.Second * 10
 
 //The following priority queue is used to store chunk review candidates
 //Each candidate is formed by a chunk ID and a review timestamp

@@ -20,13 +20,14 @@ Dist: 8
 
 Test: 5+1
 	-real test: test consitency with lots of servers, network problems and server shutdowns:
-		-vagrant
     -add benchmarks
+	-divide tests
 
 	-space per chunk tests (hash quality tests)
 
 Others: 1+4+4+4+3+1+1+1
-	-info command
+	-parametrizar constantes
+	-monitor command: +periodic flush +info
 	-chunk treeless parameter
 	-log treeless parameter
 

@@ -12,6 +12,8 @@ import (
 	"treeless/src/com/udp"
 )
 
+//Todo extract hearbeat module
+
 //ServerGroup provides an access to a DB server group
 type ServerGroup struct {
 	sync.RWMutex //All ServerGroup read/writes are mutex-protected TODO: RWMutex

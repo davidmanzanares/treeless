@@ -27,6 +27,8 @@ const windowTimeDuration = time.Microsecond * 10
 
 const minimumMessageSize = 13
 
+const fastModeEnable = true
+
 //Operation represents a DB operation or result, the Message type
 type Operation uint8
 
@@ -119,77 +121,88 @@ func tcpWrite(conn *net.TCPConn, buffer []byte) {
 //
 //This function blocks, typical usage will be "go bufferedWriter(...)""
 func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
-	total := 0
-	totalM := 0
-	ticker := time.NewTicker(windowTimeDuration)
+	var ticker *time.Ticker
 	dirty := false
 	buffer := make([]byte, bufferSize)
 	index := 0
-	fast := false
+	lastTime := time.Now()
 	sents := 0
 	for {
-		select {
-		case <-ticker.C:
-			if index > 0 && !dirty {
-				tcpWrite(conn, buffer[0:index])
-				total += index
-				totalM++
-				index = 0
-			} else {
-				dirty = false
-			}
-			fast = sents > 1
-			if !fast && index > 0 {
-				//flush now
-				tcpWrite(conn, buffer[0:index])
-				total += index
-				totalM++
-				index = 0
-			}
-			sents = sents / 8
-		case m, ok := <-msgChannel:
+		if ticker == nil {
+			//Slow path
+			m, ok := <-msgChannel
 			if !ok {
 				//Channel closed, stop loop
-				//log.Println("Efficiency:", float64(total)/float64(totalM), total, totalM)
-				ticker.Stop()
 				return
 			}
-
 			//Append message to buffer
 			msgSize, tooLong := m.write(buffer[index:])
 			sents++
-			if !fast {
-				if !tooLong {
-					tcpWrite(conn, buffer[0:msgSize])
+			if !tooLong {
+				tcpWrite(conn, buffer[0:msgSize])
+				if fastModeEnable && time.Now().Sub(lastTime) < windowTimeDuration {
+					//Activate fast mode
+					ticker = time.NewTicker(windowTimeDuration)
 				} else {
-					bigMsg := make([]byte, msgSize)
-					m.write(bigMsg)
-					tcpWrite(conn, bigMsg)
+					lastTime = time.Now()
 				}
-			} else if tooLong {
-				//Message too long for the buffer remaining space
-				if index > 0 {
-					//Send buffer
-					tcpWrite(conn, buffer[:index])
+			} else {
+				bigMsg := make([]byte, msgSize)
+				m.write(bigMsg)
+				tcpWrite(conn, bigMsg)
+			}
+		} else {
+			select {
+			case <-ticker.C:
+				if index > 0 && !dirty {
+					tcpWrite(conn, buffer[0:index])
 					index = 0
 				}
-				if msgSize > bufferSize {
-					//Too big message for the buffer (even if empty)
-					//Send this message
-					bigMsg := make([]byte, msgSize)
-					m.write(bigMsg)
-					tcpWrite(conn, bigMsg)
-					continue
+				dirty = false
+				fast := sents > 1
+				if !fast && index > 0 {
+					//flush now
+					tcpWrite(conn, buffer[0:index])
+					index = 0
+				}
+				if !fast {
+					ticker.Stop()
+					ticker = nil
+				}
+				sents = sents / 8
+			case m, ok := <-msgChannel:
+				if !ok {
+					//Channel closed, stop loop
+					ticker.Stop()
+					return
+				}
+				//Append message to buffer
+				msgSize, tooLong := m.write(buffer[index:])
+				sents++
+				if tooLong {
+					//Message too long for the buffer remaining space
+					if index > 0 {
+						//Send buffer
+						tcpWrite(conn, buffer[:index])
+						index = 0
+					}
+					if msgSize > bufferSize {
+						//Too big message for the buffer (even if empty)
+						//Send this message
+						bigMsg := make([]byte, msgSize)
+						m.write(bigMsg)
+						tcpWrite(conn, bigMsg)
+					} else {
+						//Add msg to the buffer
+						m.write(buffer)
+						index += msgSize
+						dirty = true
+					}
 				} else {
-					//Add msg to the buffer
-					m.write(buffer)
+					//Fast path
 					index += msgSize
 					dirty = true
 				}
-			} else {
-				//Fast path
-				index += msgSize
-				dirty = true
 			}
 		}
 	}

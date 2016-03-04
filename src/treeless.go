@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"runtime"
 	"runtime/pprof"
+	"time"
 	"treeless/src/com"
 	"treeless/src/sg"
 )
@@ -24,16 +25,30 @@ func main() {
 	dbpath := flag.String("dbpath", "tmp_DB", "Filesystem path to store DB info")
 	cpuprofile := flag.Bool("cpuprofile", false, "write cpu profile to file")
 	localIP := flag.String("localip", tlcom.GetLocalIP(), "set local IP")
+	logToFile := flag.Bool("logtofile", false, "set logging to file")
 
 	flag.Parse()
 
+	if *logToFile {
+		f, err := os.OpenFile("/mnt/treeless.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+		if err != nil {
+			fmt.Println("Error when opening log file")
+			return
+		}
+		defer f.Close()
+		log.SetOutput(f)
+	}
+
 	var f *os.File
 	if *cpuprofile {
-		f, err := os.Create("cpu.prof")
-		if err != nil {
-			log.Fatal(err)
-		}
-		pprof.StartCPUProfile(f)
+		go func() {
+			f, err := os.Create("cpu.prof")
+			if err != nil {
+				log.Fatal(err)
+			}
+			time.Sleep(time.Second * 10)
+			pprof.StartCPUProfile(f)
+		}()
 	}
 
 	if *monitor != "" {
