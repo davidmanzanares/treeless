@@ -10,6 +10,7 @@ import (
 
 //Server listen to TCP & UDP, accepting connections and responding to clients
 type Server struct {
+	localIP string
 	//Net
 	udpCon      net.Conn
 	tcpListener *net.TCPListener
@@ -21,9 +22,10 @@ type TCPCallback func(write chan<- tlproto.Message, read <-chan tlproto.Message)
 type UDPCallback func() tlUDP.AmAlive
 
 //Start a Treeless server
-func Start(addr string, localport int, worker chan<- tlproto.Message, udpc UDPCallback) *Server {
+func Start(addr string, localIP string, localport int, worker chan<- tlproto.Message, udpc UDPCallback) *Server {
 	var s Server
 	//Init server
+	s.localIP = localIP
 	listenConnections(&s, localport, worker)
 	s.udpCon = tlUDP.Reply(tlUDP.ReplyCallback(udpc), localport)
 	return &s
@@ -52,7 +54,7 @@ func listenRequests(conn *net.TCPConn, id int, worker chan<- tlproto.Message) {
 }
 
 func listenConnections(s *Server, port int, worker chan<- tlproto.Message) {
-	taddr, err := net.ResolveTCPAddr("tcp", GetLocalIP()+":"+fmt.Sprint(port))
+	taddr, err := net.ResolveTCPAddr("tcp", s.localIP+":"+fmt.Sprint(port))
 	if err != nil {
 		panic(err)
 	}

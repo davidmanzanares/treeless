@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"runtime"
 	"runtime/pprof"
+	"treeless/src/com"
 	"treeless/src/sg"
 )
 
@@ -22,6 +23,7 @@ func main() {
 	redundancy := flag.Int("redundancy", 2, "Redundancy of the new DB server group")
 	dbpath := flag.String("dbpath", "tmp_DB", "Filesystem path to store DB info")
 	cpuprofile := flag.Bool("cpuprofile", false, "write cpu profile to file")
+	localIP := flag.String("localip", tlcom.GetLocalIP(), "set local IP")
 
 	flag.Parse()
 
@@ -43,7 +45,7 @@ func main() {
 		fmt.Println(s)
 	} else if *create {
 		//TODO 8 parametrizar
-		s := tlsg.Start("", *port, 8, *redundancy, *dbpath)
+		s := tlsg.Start("", *localIP, *port, 8, *redundancy, *dbpath)
 		go func() {
 			c := make(chan os.Signal, 1)
 			signal.Notify(c, os.Interrupt)
@@ -62,7 +64,7 @@ func main() {
 		}()
 		select {}
 	} else if *assoc != "" {
-		s := tlsg.Start(*assoc, *port, 8, *redundancy, *dbpath)
+		s := tlsg.Start(*assoc, *localIP, *port, 8, *redundancy, *dbpath)
 		go func() {
 			c := make(chan os.Signal, 1)
 			signal.Notify(c, os.Interrupt)

@@ -27,6 +27,8 @@ Test: 5+1
 
 Others: 1+4+4+4+3+1+1+1
 	-info command
+	-chunk treeless parameter
+	-log treeless parameter
 
 	-start stop
 	-docs: dependencies and constraints

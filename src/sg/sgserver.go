@@ -28,9 +28,9 @@ type DBServer struct {
 const serverWorkers = 4
 
 //Start a Treeless server
-func Start(addr string, localport int, numChunks, redundancy int, dbpath string) *DBServer {
+func Start(addr string, localIP string, localport int, numChunks, redundancy int, dbpath string) *DBServer {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	log.SetPrefix(tlcom.GetLocalIP() + ":" + fmt.Sprint(localport) + " ")
+	log.SetPrefix(localIP + ":" + fmt.Sprint(localport) + " ")
 	//Recover: log and quit
 	defer func() {
 		if r := recover(); r != nil {
@@ -48,10 +48,10 @@ func Start(addr string, localport int, numChunks, redundancy int, dbpath string)
 	//Servergroup initialization
 	if addr == "" {
 		//New DB group
-		s.sg = CreateServerGroup(len(s.m.Chunks), localport, redundancy)
+		s.sg = CreateServerGroup(len(s.m.Chunks), localIP, localport, redundancy)
 	} else {
 		//Associate to an existing DB group
-		s.sg, err = Associate(addr, localport)
+		s.sg, err = Associate(addr, localIP, localport)
 		if err != nil {
 			panic(err)
 		}
@@ -61,7 +61,7 @@ func Start(addr string, localport int, numChunks, redundancy int, dbpath string)
 	for i := 0; i < serverWorkers; i++ {
 		createWorker(&s, readChannel)
 	}
-	s.s = tlcom.Start(addr, localport, readChannel, udpCreateReplier(s.sg))
+	s.s = tlcom.Start(addr, localIP, localport, readChannel, udpCreateReplier(s.sg))
 	log.Println("Server boot-up completed")
 	return &s
 }

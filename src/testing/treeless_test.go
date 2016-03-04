@@ -15,7 +15,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-	"treeless/src/com"
 	"treeless/src/hash"
 	"treeless/src/sg"
 	"treeless/src/tlutils"
@@ -55,6 +54,19 @@ func exists(path string) bool {
 	}
 	return true
 }
+
+func waitForServer(addr string) bool {
+	for i := 0; i < 50; i++ {
+		time.Sleep(time.Millisecond * 50)
+		client, err := tlsg.Connect(addr)
+		if err == nil {
+			client.Close()
+			return true
+		}
+	}
+	return false
+}
+
 func LaunchServer(assoc string, numChunks int) (addr string, stop func()) {
 	dbTestFolder := ""
 	if exists("/mnt/dbs/") {
@@ -70,13 +82,13 @@ func LaunchServer(assoc string, numChunks int) (addr string, stop func()) {
 			cmd = exec.Command("./treeless", "-create", "-port",
 				fmt.Sprint(10000+id), "-dbpath", dbpath) //, "-cpuprofile"
 		} else {
-			s = tlsg.Start("", 10000+id, numChunks, 2, dbpath)
+			s = tlsg.Start("", "127.0.0.1", 10000+id, numChunks, 2, dbpath)
 		}
 	} else {
 		if useProcess {
 			cmd = exec.Command("./treeless", "-assoc", assoc, "-port", fmt.Sprint(10000+id), "-dbpath", dbpath)
 		} else {
-			s = tlsg.Start(assoc, 10000+id, numChunks, 2, dbpath)
+			s = tlsg.Start(assoc, "127.0.0.1", 10000+id, numChunks, 2, dbpath)
 		}
 	}
 	if useProcess && testing.Verbose() {
@@ -90,15 +102,9 @@ func LaunchServer(assoc string, numChunks int) (addr string, stop func()) {
 			panic(err)
 		}
 	}
-	newAddr := string(tlcom.GetLocalIP()) + ":" + fmt.Sprint(10000+id-1)
-	for i := 0; i < 50; i++ {
-		time.Sleep(time.Millisecond * 50)
-		client, err := tlsg.Connect(newAddr)
-		if err == nil {
-			client.Close()
-			break
-		}
-	}
+	newAddr := string("127.0.0.1" + ":" + fmt.Sprint(10000+id-1))
+	waitForServer(newAddr)
+
 	return newAddr,
 		func() {
 			if useProcess {
@@ -679,29 +685,96 @@ func TestClock(t *testing.T) {
 	fmt.Println("Max time difference: ", maxDiff, "\nAverage time difference:", avgDiff)
 }
 
-const vServers = 10
-const vClients = 3
+//const vServers = 10
+const vClients = 5
 
 func TestVirtual(t *testing.T) {
+	runtime.GOMAXPROCS(4)
 	//Start VMs and treeless instances
+	exec.Command("cp", "treeless", "testing/").Run()
+	os.Chdir("testing")
+	defer os.Chdir("..")
+	cmd := exec.Command("vagrant", "up")
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	cmd.Run()
+	defer exec.Command("vagrant", "destroy", "-f").Run()
 
 	//Wait for servers
-
+	fmt.Println("Waiting for servers")
+	ready := waitForServer("192.168.2.100:9876")
+	if !ready {
+		t.Fatal("Servers not ready")
+	}
+	ready = waitForServer("192.168.2.101:9876")
+	if !ready {
+		t.Fatal("Servers not ready")
+	}
+	fmt.Println("Servers ready")
 	//Initialize vars
-	operations := 1000
+	operations := 10000
+	var mutex sync.Mutex
+	var w sync.WaitGroup
+	w.Add(vClients)
+	goMap := make(map[string][]byte)
 
 	//Start several clients on this process
 	for i := 0; i < vClients; i++ {
-		go func() {
+		go func(thread int) {
+			//Create client and connect it to the fake server
+			c, err := tlsg.Connect("192.168.2.100:9876")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var p *tlutils.Progress
+			if thread == vClients-1 {
+				p = tlutils.NewProgress("Operating...", operations)
+			}
+			defer c.Close()
 			for i := 0; i < operations; i++ {
+				if thread == vClients-1 {
+					p.Set(i)
+				}
 				//Operate
+				op := int(rand.Int31n(int32(3)))
+				key := make([]byte, 1)
+				key[0] = byte(1)
+				value := make([]byte, 4)
+				binary.LittleEndian.PutUint32(value, uint32(rand.Int63()))
+				runtime.Gosched()
+				mutex.Lock()
+				//fmt.Println(op, key, value)
+				switch op {
+				case 0:
+					goMap[string(key)] = value
+					c.Set(key, value)
+					mutex.Unlock()
+				case 1:
+					//delete(goMap, string(key))
+					//c.Del(key)
+					mutex.Unlock()
+				case 2:
+					v2 := goMap[string(key)]
+					v1, _ := c.Get(key)
+					if !bytes.Equal(v1, v2) {
+						fmt.Println("Mismatch, server returned:", v1,
+							"gomap returned:", v2)
+						t.Error("Mismatch, server returned:", v1,
+							"gomap returned:", v2)
+					}
+					mutex.Unlock()
+					//fmt.Println("GET", key, v1, v2)
+				}
 				//Check consistency
 				//Collect stats
 
 			}
-		}()
+			w.Done()
+		}(i)
 	}
+	w.Wait()
 	//Print stats
+	//Test
 }
 
 //Benchmark GET operations by issuing lots of GET operations from different goroutines.

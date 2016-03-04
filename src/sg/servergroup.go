@@ -54,8 +54,8 @@ func (sg *ServerGroup) initChunks() {
 	}
 }
 
-func (sg *ServerGroup) initLocalhost(port int) {
-	localhost := tlcom.GetLocalIP() + ":" + fmt.Sprint(port)
+func (sg *ServerGroup) initLocalhost(localIP string, port int) {
+	localhost := localIP + ":" + fmt.Sprint(port)
 	s := new(VirtualServer)
 	sg.Servers[localhost] = s
 	s.Phy = localhost
@@ -64,7 +64,7 @@ func (sg *ServerGroup) initLocalhost(port int) {
 }
 
 //CreateServerGroup creates a new DB server group, without connecting to an existing group
-func CreateServerGroup(numChunks int, port int, redundancy int) *ServerGroup {
+func CreateServerGroup(numChunks int, localIP string, port int, redundancy int) *ServerGroup {
 	sg := new(ServerGroup)
 	sg.Lock()
 	defer sg.Unlock()
@@ -79,7 +79,7 @@ func CreateServerGroup(numChunks int, port int, redundancy int) *ServerGroup {
 	sg.StartRebalance()
 	sg.startHeartbeatRequester()
 
-	sg.initLocalhost(port)
+	sg.initLocalhost(localIP, port)
 	//Localhost holds all chunks
 	sg.localhost.HeldChunks = make([]int, numChunks)
 	for i := 0; i < numChunks; i++ {
@@ -141,7 +141,7 @@ func ConnectAsClient(addr string) (*ServerGroup, error) {
 }
 
 //Associate connects to an existing server group and adds this server to it
-func Associate(destAddr string, localport int) (*ServerGroup, error) {
+func Associate(destAddr string, localIP string, localport int) (*ServerGroup, error) {
 	sg, err := baseConnect(destAddr)
 	if err != nil {
 		return nil, err
@@ -154,7 +154,7 @@ func Associate(destAddr string, localport int) (*ServerGroup, error) {
 	sg.startHeartbeatRequester()
 
 	//Add localhost
-	sg.initLocalhost(localport)
+	sg.initLocalhost(localIP, localport)
 	//Add to external servergroup instances
 	//For each other server: add localhost
 	for _, s := range sg.Servers {
