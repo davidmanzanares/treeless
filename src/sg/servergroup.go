@@ -29,13 +29,12 @@ type ServerGroup struct {
 	chunkStatus   []ChunkStatus  //Array of all DB chunks status
 	heartbeatList *list.List     //List of pending heartbeats to request
 	//Rebalance data
-	useChannel         bool               //Send chunk updates to chunkUpdateChannel channel?
 	chunkUpdateChannel chan *VirtualChunk //Each time a chunk status is updated the chunk is sent to the channel
 }
 
 const channelUpdateBufferSize = 1024
 
-var heartbeatTickDuration = time.Millisecond * 50
+var heartbeatTickDuration = time.Millisecond * 200
 var heartbeatTimeout = time.Millisecond * 200
 
 type ChunkStatus int64
@@ -115,7 +114,10 @@ func baseConnect(addr string) (*ServerGroup, error) {
 	//Lookup for servers
 	for _, s := range sg.Servers {
 		//Request known chunks list
-		aa, err := tlUDP.Request(s.Phy, time.Millisecond*50)
+		aa, err := tlUDP.Request(s.Phy, time.Millisecond*750)
+		for i := 1; err != nil && i < 3; i++ {
+			aa, err = tlUDP.Request(s.Phy, time.Millisecond*750)
+		}
 		if err == nil {
 			s.LastHeartbeat = time.Now()
 			s.HeldChunks = aa.KnownChunks
@@ -218,8 +220,8 @@ func (sg *ServerGroup) startHeartbeatRequester() {
 							break
 						}
 					}
-					if !ok && sg.useChannel {
-						sg.Unlock()
+					if !ok && sg.chunkUpdateChannel != nil {
+						sg.Unlock() //looks bad
 						sg.chunkUpdateChannel <- &sg.chunks[c]
 						sg.Lock()
 					}
@@ -233,8 +235,8 @@ func (sg *ServerGroup) startHeartbeatRequester() {
 							break
 						}
 					}
-					if !ok && sg.useChannel {
-						sg.Unlock()
+					if !ok && sg.chunkUpdateChannel != nil {
+						sg.Unlock() //looks bad
 						sg.chunkUpdateChannel <- &sg.chunks[c]
 						sg.Lock()
 					}

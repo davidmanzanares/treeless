@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"runtime/debug"
 	"sync/atomic"
 	"time"
 	"treeless/src/com"
@@ -34,7 +35,7 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 	//Recover: log and quit
 	defer func() {
 		if r := recover(); r != nil {
-			log.Println("DB panic", r)
+			log.Println("DB panic", r, "STACK:", string(debug.Stack()))
 			panic(r)
 		}
 	}()

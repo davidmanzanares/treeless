@@ -26,6 +26,7 @@ Test: 5+1
 	-space per chunk tests (hash quality tests)
 
 Others: 1+4+4+4+3+1+1+1
+	-desacoplar dist
 	-parametrizar constantes
 	-monitor command: +periodic flush +info
 	-chunk treeless parameter

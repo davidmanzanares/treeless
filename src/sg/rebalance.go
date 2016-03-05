@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+const maxRebalanceWaitSeconds = 10
+
 var rebalanceWakeupPeriod = time.Second * 10
 
 //The following priority queue is used to store chunk review candidates
@@ -54,14 +56,13 @@ func (pq *PriorityQueue) update(c *VirtualChunk, t time.Time) {
 }
 
 func (sg *ServerGroup) StartRebalance() {
+	//We need a channel to get informed about chunk updates
 	sg.chunkUpdateChannel = make(chan *VirtualChunk, channelUpdateBufferSize)
-	sg.useChannel = true
-
-	ch := sg.chunkUpdateChannel
+	//Delegate chunk downloads to the duplicator
 	duplicate := duplicator(sg)
 
 	//Constantly check for possible duplications to rebalance the servers,
-	//servers should have the more or less the same work
+	//servers should have more or less the same work
 	go func() {
 		time.Sleep(rebalanceWakeupPeriod)
 		sg.Lock()
@@ -69,16 +70,21 @@ func (sg *ServerGroup) StartRebalance() {
 			known := float64(len(sg.localhost.HeldChunks))
 			total := float64(sg.NumChunks) * float64(sg.Redundancy)
 			avg := total / float64(len(sg.Servers))
-			if known < avg*0.95 {
+			if known+1 < avg*0.95 {
+				//Local server hass less work than it should
+				//Try to download a random chunk
 				c := &sg.chunks[rand.Int31n(int32(sg.NumChunks))]
 				if !c.Holders[sg.localhost] {
 					log.Println("Duplicate to rebalance")
 					duplicate(c)
 				}
 			}
-			timetowait := 1.0 / (avg - known)
-			if (avg-known) <= 0.0 || timetowait > 20 {
-				timetowait = 20
+			//We should wait a little
+			//Wait more if the local server has almost an average work
+			//Wait less if the local server has little work
+			timetowait := 1.0 / (avg*0.95 - (known + 1))
+			if timetowait <= 0.0 || timetowait > maxRebalanceWaitSeconds {
+				timetowait = maxRebalanceWaitSeconds
 			}
 			log.Println("Time to wait:", timetowait, "Avg: ", avg, "Known:", known)
 			sg.Unlock()
@@ -116,7 +122,7 @@ func (sg *ServerGroup) StartRebalance() {
 			}
 			sg.Unlock()
 			select {
-			case chunk := <-ch:
+			case chunk := <-sg.chunkUpdateChannel:
 				sg.Lock()
 				chunk.timeToReview = time.Now().Add(time.Millisecond * time.Duration(time.Duration(100*rand.Float32()))) //TODO add variable server k
 				//log.Println("Chunk eta:", chunk.timeToReview, "ID:", chunk.ID)
@@ -154,8 +160,15 @@ func getFreeDiskSpace() uint64 {
 	return stat.Bavail * uint64(stat.Bsize)
 }
 
+//The duplicator recieves chunkIDs and tries to download a copy from an external server
+//It returns a function that should be called upon these IDs
+//This function will check the avaibility of the chunk and it will begin
+//an async download if the chunk is available
+//It will download the chunk otherwise
+//However this download will be executed in the background (i.e. in another goroutine).
+//Duplicate will return inmediatly unless the channel buffer is filled
 func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
-	ch := make(chan *VirtualChunk, 1024)
+	duplicateChannel := make(chan *VirtualChunk, 1024)
 
 	duplicate = func(c *VirtualChunk) {
 		//Execute this code as soon as possible, adding the chunk to the known list is time critical
@@ -186,15 +199,18 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 		c.Holders[sg.localhost] = true
 		sg.localhost.HeldChunks = append(sg.localhost.HeldChunks, c.ID)
 		sg.Unlock()
-		ch <- c
+		go func() { //TODO optimizable
+			time.Sleep(time.Second)
+			duplicateChannel <- c
+		}()
 		sg.Lock()
 	}
 
 	go func() {
 		sg.Lock()
-		for !sg.stopped { //TODO atomic
+		for !sg.stopped {
 			sg.Unlock()
-			c := <-ch
+			c := <-duplicateChannel
 			sg.Lock()
 			//log.Println("Chunk duplication confirmed, transfering...", c.ID)
 			//Ready to transfer: request chunk transfer, get SYNC params
@@ -205,7 +221,6 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 				}
 				log.Println("Chunk duplication began", c.ID)
 				sg.Unlock()
-				time.Sleep(time.Millisecond * 400)
 				err := s.Transfer(sg.localhost.Phy, c.ID)
 				sg.Lock()
 				if err != nil {

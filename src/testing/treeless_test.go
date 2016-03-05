@@ -20,6 +20,15 @@ import (
 	"treeless/src/tlutils"
 )
 
+const useProcess = false
+
+const testingNumChunks = 8
+const benchmarkingNumChunks = 64
+
+const vagrantEnabled = true
+const vServers = 5
+const vClients = 5
+
 func TestMain(m *testing.M) {
 	cmd := exec.Command("killall", "-s", "INT", "treeless")
 	cmd.Run()
@@ -39,10 +48,6 @@ func TestMain(m *testing.M) {
 }
 
 var id = 0
-
-const useProcess = false
-const testingNumChunks = 8
-const benchmarkingNumChunks = 64
 
 func exists(path string) bool {
 	_, err := os.Stat(path)
@@ -685,11 +690,6 @@ func TestClock(t *testing.T) {
 	fmt.Println("Max time difference: ", maxDiff, "\nAverage time difference:", avgDiff)
 }
 
-const vServers = 5
-const vClients = 5
-
-const vagrantEnabled = true
-
 //TODO parrallel up
 func TestVirtual(t *testing.T) {
 	if !vagrantEnabled {
@@ -721,7 +721,6 @@ func TestVirtual(t *testing.T) {
 	  ` + middle + `
 	end`
 	err := ioutil.WriteFile("Vagrantfile", []byte(vf), 0777)
-	defer os.Remove("Vagrantfile")
 	if err != nil {
 		panic(err)
 	}
@@ -754,16 +753,14 @@ func TestVirtual(t *testing.T) {
 	}
 
 	//Start VMs and treeless instances
-	cmd := exec.Command("vagrant", "up", "--parallel")
+	cmd := exec.Command("vagrant", "destroy", "-f")
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	cmd.Run()
-	defer func() {
-		cmd := exec.Command("vagrant", "destroy", "-f")
-		cmd.Stderr = os.Stderr
-		cmd.Stdout = os.Stdout
-		cmd.Run()
-	}()
+	cmd = exec.Command("vagrant", "up", "--parallel")
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	cmd.Run()
 
 	//Wait for servers
 	fmt.Println("Waiting for server 192.168.2.100")
@@ -842,7 +839,11 @@ func TestVirtual(t *testing.T) {
 	}
 	w.Wait()
 	//Print stats
-	//Test
+	cmd = exec.Command("vagrant", "destroy", "-f")
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	cmd.Run()
+	os.Remove("Vagrantfile")
 }
 
 //Benchmark GET operations by issuing lots of GET operations from different goroutines.

@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"os/signal"
 	"runtime"
@@ -14,6 +15,7 @@ import (
 )
 
 func main() {
+	rand.Seed(time.Now().UnixNano())
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	//Operations
 	create := flag.Bool("create", false, "Create a new DB server group")
