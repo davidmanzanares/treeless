@@ -77,6 +77,14 @@ func (m *Map) Close() {
 	}
 }
 
+func (m *Map) ChunkEnable(chunkID int) {
+	m.Chunks[chunkID].enable()
+}
+
+func (m *Map) ChunkDisable(chunkID int) {
+	m.Chunks[chunkID].disable()
+}
+
 /*
 	Primitives
 

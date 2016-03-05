@@ -204,7 +204,7 @@ func TestBasicRebalance(t *testing.T) {
 	_, stop2 := LaunchServer(addr1, testingNumChunks)
 	defer stop2()
 	//Wait for rebalance
-	time.Sleep(time.Second * 5)
+	time.Sleep(time.Second * 3)
 	//First server shut down
 	fmt.Println("Server 1 shut down")
 	stop1()

@@ -48,6 +48,8 @@ const (
 	OpGetChunkInfoResponse
 	OpTransfer
 	OpTransferCompleted
+	OpProtect
+	OpProtectOK
 	OpErr
 )
 

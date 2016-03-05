@@ -10,6 +10,7 @@ import (
 	"time"
 	"treeless/src/com"
 	"treeless/src/com/udp"
+	"treeless/src/core"
 )
 
 //Todo extract hearbeat module
@@ -65,7 +66,7 @@ func (sg *ServerGroup) initLocalhost(localIP string, port int) {
 }
 
 //CreateServerGroup creates a new DB server group, without connecting to an existing group
-func CreateServerGroup(numChunks int, localIP string, port int, redundancy int) *ServerGroup {
+func CreateServerGroup(numChunks int, localIP string, port int, redundancy int, core *tlcore.Map) *ServerGroup {
 	sg := new(ServerGroup)
 	sg.Lock()
 	defer sg.Unlock()
@@ -77,7 +78,7 @@ func CreateServerGroup(numChunks int, localIP string, port int, redundancy int) 
 	sg.initChunks()
 
 	//Start daemons
-	sg.StartRebalance()
+	sg.StartRebalance(core)
 	sg.startHeartbeatRequester()
 
 	sg.initLocalhost(localIP, port)
@@ -145,7 +146,7 @@ func ConnectAsClient(addr string) (*ServerGroup, error) {
 }
 
 //Associate connects to an existing server group and adds this server to it
-func Associate(destAddr string, localIP string, localport int) (*ServerGroup, error) {
+func Associate(destAddr string, localIP string, localport int, core *tlcore.Map) (*ServerGroup, error) {
 	sg, err := baseConnect(destAddr)
 	if err != nil {
 		return nil, err
@@ -154,7 +155,7 @@ func Associate(destAddr string, localIP string, localport int) (*ServerGroup, er
 	defer sg.Unlock()
 
 	//Start daemons
-	sg.StartRebalance()
+	sg.StartRebalance(core)
 	sg.startHeartbeatRequester()
 
 	//Add localhost

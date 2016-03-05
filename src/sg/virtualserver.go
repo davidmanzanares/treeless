@@ -118,6 +118,15 @@ func (s *VirtualServer) AddServerToGroup(addr string) error {
 	return cerr
 }
 
+func (s *VirtualServer) Protect(chunkID int) (ok bool) {
+	if err := s.needConnection(); err != nil {
+		return false
+	}
+	cerr := s.conn.Protect(chunkID)
+	s.freeConnection(cerr)
+	return cerr == nil
+}
+
 //GetChunkInfo request chunk info
 func (s *VirtualServer) GetChunkInfo(chunkID int) (size uint64) {
 	if err := s.needConnection(); err != nil {

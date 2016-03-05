@@ -49,10 +49,13 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 	//Servergroup initialization
 	if addr == "" {
 		//New DB group
-		s.sg = CreateServerGroup(len(s.m.Chunks), localIP, localport, redundancy)
+		for i := 0; i < numChunks; i++ {
+			s.m.ChunkEnable(i)
+		}
+		s.sg = CreateServerGroup(len(s.m.Chunks), localIP, localport, redundancy, s.m)
 	} else {
 		//Associate to an existing DB group
-		s.sg, err = Associate(addr, localIP, localport)
+		s.sg, err = Associate(addr, localIP, localport, s.m)
 		if err != nil {
 			panic(err)
 		}

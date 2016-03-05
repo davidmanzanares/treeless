@@ -7,6 +7,7 @@ import (
 	"os"
 	"syscall"
 	"time"
+	"treeless/src/core"
 )
 
 const maxRebalanceWaitSeconds = 10
@@ -55,11 +56,11 @@ func (pq *PriorityQueue) update(c *VirtualChunk, t time.Time) {
 	heap.Fix(pq, c.index)
 }
 
-func (sg *ServerGroup) StartRebalance() {
+func (sg *ServerGroup) StartRebalance(core *tlcore.Map) {
 	//We need a channel to get informed about chunk updates
 	sg.chunkUpdateChannel = make(chan *VirtualChunk, channelUpdateBufferSize)
 	//Delegate chunk downloads to the duplicator
-	duplicate := duplicator(sg)
+	duplicate := duplicator(sg, core)
 
 	//Constantly check for possible duplications to rebalance the servers,
 	//servers should have more or less the same work
@@ -78,6 +79,10 @@ func (sg *ServerGroup) StartRebalance() {
 					log.Println("Duplicate to rebalance")
 					duplicate(c)
 				}
+			} else if known-1 > avg*1.05 {
+				//Local server has more work than it should
+				//Locate a chunk with more redundancy than the required redundancy and *not* protected
+
 			}
 			//We should wait a little
 			//Wait more if the local server has almost an average work
@@ -160,6 +165,49 @@ func getFreeDiskSpace() uint64 {
 	return stat.Bavail * uint64(stat.Bsize)
 }
 
+func releaser(sg *ServerGroup, core *tlcore.Map) (release func(c *VirtualChunk)) {
+	releaseChannel := make(chan *VirtualChunk, 1024)
+
+	release = func(c *VirtualChunk) {
+		releaseChannel <- c
+	}
+	go func() {
+		sg.Lock()
+		for !sg.stopped {
+			sg.Unlock()
+			c := <-releaseChannel
+			sg.Lock()
+			//Request chunk protection?
+			//Release repair
+
+			//Request chunk protection
+			protected := true
+			for s := range c.Holders {
+				if s == sg.localhost {
+					continue
+				}
+				sg.Unlock()
+				ok := s.Protect(c.ID)
+				sg.Lock()
+				if !ok {
+					protected = false
+					break
+				}
+			}
+			if !protected {
+				continue
+			}
+			//Release
+			sg.chunkStatus[c.ID] = 0
+			log.Println("Disabling chunk...", c.ID)
+			core.ChunkDisable(c.ID)
+		}
+		sg.Unlock()
+	}()
+
+	return release
+}
+
 //The duplicator recieves chunkIDs and tries to download a copy from an external server
 //It returns a function that should be called upon these IDs
 //This function will check the avaibility of the chunk and it will begin
@@ -167,7 +215,7 @@ func getFreeDiskSpace() uint64 {
 //It will download the chunk otherwise
 //However this download will be executed in the background (i.e. in another goroutine).
 //Duplicate will return inmediatly unless the channel buffer is filled
-func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
+func duplicator(sg *ServerGroup, core *tlcore.Map) (duplicate func(c *VirtualChunk)) {
 	duplicateChannel := make(chan *VirtualChunk, 1024)
 
 	duplicate = func(c *VirtualChunk) {
@@ -195,6 +243,7 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 			log.Println("Chunk duplication aborted, low free space. Chunk size:", size, "Free space:", freeSpace)
 			return
 		}
+		core.ChunkEnable(c.ID)
 		sg.chunkStatus[c.ID] = ChunkPresent
 		c.Holders[sg.localhost] = true
 		sg.localhost.HeldChunks = append(sg.localhost.HeldChunks, c.ID)
@@ -234,7 +283,7 @@ func duplicator(sg *ServerGroup) (duplicate func(c *VirtualChunk)) {
 				break
 			}
 			if !finished {
-				log.Println("Chunk duplication aborted", c.ID)
+				log.Println("Chunk duplication aborted", c.ID) //TODO problem list
 			}
 		}
 		sg.Unlock()

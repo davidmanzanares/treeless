@@ -22,14 +22,17 @@ import (
 type Chunk struct {
 	Hm      *HashMap //TODO hm
 	St      *Store
+	path    string
+	Enable  bool
 	stopped bool
 	sync.Mutex
 }
 
 func newChunk(path string) *Chunk {
 	c := new(Chunk)
+	c.path = path
 	c.Hm = newHashMap(defaultHashMapInitialLog2Size, defaultHashMapSizeLimit)
-	c.St = newStore(path)
+	c.St = newStore(c.path)
 	return c
 }
 
@@ -56,6 +59,19 @@ func (c *Chunk) close() {
 	c.St.close()
 }
 
+func (c *Chunk) enable() {
+	c.Lock()
+	defer c.Unlock()
+	c.Enable = true
+}
+func (c *Chunk) disable() {
+	c.Lock()
+	defer c.Unlock()
+	c.close()
+	c.Hm = newHashMap(defaultHashMapInitialLog2Size, defaultHashMapSizeLimit)
+	c.St = newStore(c.path)
+}
+
 /*
 	Primitives
 */
@@ -65,6 +81,10 @@ func (c *Chunk) get(h64 uint64, key []byte) ([]byte, error) {
 	if c.stopped { //TODO: pasar a Map
 		c.Unlock()
 		return nil, errors.New("Chunk closed")
+	}
+	if !c.Enable {
+		c.Unlock()
+		return nil, errors.New("Chunk disabled")
 	}
 
 	h := hashReMap(uint32(h64))
@@ -101,6 +121,10 @@ func (c *Chunk) set(h64 uint64, key, value []byte) error {
 	if c.stopped {
 		c.Unlock()
 		return errors.New("Chunk closed")
+	}
+	if !c.Enable {
+		c.Unlock()
+		return errors.New("Chunk disabled")
 	}
 
 	//Check for available space
@@ -169,6 +193,9 @@ func (c *Chunk) del(h64 uint64, key []byte) error {
 	if c.stopped {
 		return errors.New("Chunk closed")
 	}
+	if !c.Enable {
+		return errors.New("Chunk disabled")
+	}
 
 	h := hashReMap(uint32(h64))
 
@@ -200,6 +227,11 @@ func (c *Chunk) iterate(foreach func(key, value []byte)) error {
 		c.Unlock()
 		return errors.New("Chunk closed")
 	}
+	if !c.Enable {
+		c.Unlock()
+		return errors.New("Chunk disabled")
+	}
+
 	//TODO: this is a long-running function and it locks the mutex, it should release-retrieve it at some interval
 	for index := uint64(0); index < c.St.Length; {
 		if c.St.isPresent(index) {

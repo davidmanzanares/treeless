@@ -132,6 +132,8 @@ func broker(c *Conn) {
 					ch <- Result{nil, nil}
 				case tlproto.OpDelOK:
 					ch <- Result{nil, nil}
+				case tlproto.OpProtectOK:
+					ch <- Result{nil, nil}
 				case tlproto.OpGetConfResponse:
 					ch <- Result{m.Value, nil}
 				case tlproto.OpAddServerToGroupACK:
@@ -226,6 +228,16 @@ func (c *Conn) AddServerToGroup(addr string) error {
 	key := []byte(addr)
 	r := c.sendAndReceive(tlproto.OpAddServerToGroup, key, nil, 500*time.Millisecond)
 	return r.Err
+}
+
+func (c *Conn) Protect(chunkID int) error {
+	key := make([]byte, 4) //TODO static array
+	binary.LittleEndian.PutUint32(key, uint32(chunkID))
+	r := c.sendAndReceive(tlproto.OpProtect, key, nil, 500*time.Millisecond)
+	if r.Err != nil {
+		return r.Err
+	}
+	return nil
 }
 
 //GetChunkInfo request chunk info
