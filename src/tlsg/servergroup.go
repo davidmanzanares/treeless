@@ -7,6 +7,7 @@ import (
 	"log"
 	"sync"
 	"time"
+	"treeless/src/tlcom"
 )
 
 //Hide virtuals
@@ -41,6 +42,20 @@ func CreateServerGroup(numChunks int, redundancy int) *ServerGroup {
 		sg.chunks[i].Holders = make(map[*VirtualServer]bool)
 	}
 	return sg
+}
+
+func Assoc(addr string) (*ServerGroup, error) {
+	//Connect to the provided address
+	c, err := tlcom.CreateConnection(addr)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Close()
+	serialization, err := c.GetAccessInfo()
+	if err != nil {
+		panic(err)
+	}
+	return UnmarhalServerGroup(serialization)
 }
 
 //UnmarhalServerGroup unmarshalles serialization creating a new ServerGroup

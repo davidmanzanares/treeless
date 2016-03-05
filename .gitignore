@@ -1,4 +1,5 @@
 *.iml
+*.png
 .idea*
 tmpDB*
 treeless

@@ -4,7 +4,7 @@ import (
 	"log"
 	"sync"
 	"time"
-	"treeless/src/com"
+	"treeless/src/tlcom"
 )
 
 //VirtualServer stores generical server info

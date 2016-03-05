@@ -6,7 +6,7 @@ import (
 	"errors"
 	"sync"
 	"time"
-	"treeless/src/hash"
+	"treeless/src/tlhash"
 )
 
 /*

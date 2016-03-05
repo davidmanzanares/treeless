@@ -1,4 +1,4 @@
-package tlsgOLD
+package tlserver
 
 import (
 	"encoding/binary"
@@ -7,12 +7,14 @@ import (
 	"log"
 	"runtime/debug"
 	"time"
-	"treeless/src/com"
-	"treeless/src/com/tlproto"
-	"treeless/src/com/udp"
-	"treeless/src/core"
-	"treeless/src/sg/heartbeat"
-	"treeless/src/sg/sg"
+	"treeless/src/tlcom"
+	"treeless/src/tlcom/tlproto"
+	"treeless/src/tlcom/udp"
+	"treeless/src/tlcore"
+	"treeless/src/tlheartbeat"
+	"treeless/src/tllocals"
+	"treeless/src/tlrebalance"
+	"treeless/src/tlsg"
 )
 
 //Server listen to TCP & UDP, accepting connections and responding to clients
@@ -24,25 +26,10 @@ type DBServer struct {
 	//Distribution
 	sg *tlsg.ServerGroup
 	//Status
-	lh *LHStatus
+	lh *tllocals.LHStatus
 }
 
 const serverWorkers = 4
-
-func getSGByAssoc(addr string) (*tlsg.ServerGroup, error) {
-	//Connect to the provided address
-	c, err := tlcom.CreateConnection(addr)
-	if err != nil {
-		return nil, err
-	}
-	defer c.Close()
-	serialization, err := c.GetAccessInfo()
-	if err != nil {
-		panic(err)
-	}
-	return tlsg.UnmarhalServerGroup(serialization)
-
-}
 
 //Start a Treeless server
 func Start(addr string, localIP string, localport int, numChunks, redundancy int, dbpath string) *DBServer {
@@ -63,7 +50,7 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 		panic(err)
 	}
 
-	s.lh = NewLHStatus(numChunks, localIP+":"+fmt.Sprint(localport))
+	s.lh = tllocals.NewLHStatus(numChunks, localIP+":"+fmt.Sprint(localport))
 	if addr == "" {
 		for i := 0; i < numChunks; i++ {
 			s.lh.ChunkSetSynched(i)
@@ -85,7 +72,7 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 		s.sg.SetServerChunks(localIP+":"+fmt.Sprint(localport), list)
 	} else {
 		//Associate to an existing DB group
-		s.sg, err = getSGByAssoc(addr)
+		s.sg, err = tlsg.Assoc(addr)
 		if err != nil {
 			panic(err)
 		}
@@ -101,7 +88,7 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 	}
 
 	//Rebalancer start
-	chunkUpdateChannel := StartRebalance(s.sg, s.lh, s.m, func() bool { return false })
+	chunkUpdateChannel := tlrebalance.StartRebalance(s.sg, s.lh, s.m, func() bool { return false })
 
 	//Heartbeat start
 	tlheartbeat.Start(s.sg, chunkUpdateChannel)
@@ -128,7 +115,7 @@ func (s *DBServer) LogInfo() {
 	log.Println(s.sg)
 }
 
-func udpCreateReplier(sg *tlsg.ServerGroup, lh *LHStatus) tlcom.UDPCallback {
+func udpCreateReplier(sg *tlsg.ServerGroup, lh *tllocals.LHStatus) tlcom.UDPCallback {
 	return func() tlUDP.AmAlive {
 		var r tlUDP.AmAlive
 		r.KnownChunks = lh.KnownChunksList()

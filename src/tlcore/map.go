@@ -11,7 +11,7 @@ import (
 	"io/ioutil"
 	"os"
 	"strconv"
-	"treeless/src/hash"
+	"treeless/src/tlhash"
 )
 
 const filePerms = 0700

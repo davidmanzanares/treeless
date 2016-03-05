@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"net"
 	"time"
-	"treeless/src/com/tlproto"
+	"treeless/src/tlcom/tlproto"
 )
 
 //Stores a DB operation result

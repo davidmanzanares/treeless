@@ -5,8 +5,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"treeless/src/com/udp"
-	"treeless/src/sg/sg"
+	"treeless/src/tlcom/udp"
+	"treeless/src/tlsg"
 )
 
 var heartbeatTickDuration = time.Millisecond * 200

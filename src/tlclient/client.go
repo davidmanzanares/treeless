@@ -1,12 +1,12 @@
-package tlsgOLD
+package tlcient
 
 import (
 	"encoding/binary"
 	"time"
-	"treeless/src/com"
-	"treeless/src/hash"
-	"treeless/src/sg/heartbeat"
-	"treeless/src/sg/sg"
+	"treeless/src/tlcom"
+	"treeless/src/tlhash"
+	"treeless/src/tlheartbeat"
+	"treeless/src/tlsg"
 )
 
 type DBClient struct {
@@ -18,7 +18,7 @@ type DBClient struct {
 
 func Connect(addr string) (*DBClient, error) {
 	c := new(DBClient)
-	sg, err := getSGByAssoc(addr)
+	sg, err := tlsg.Assoc(addr)
 	if err != nil {
 		return nil, err
 	}

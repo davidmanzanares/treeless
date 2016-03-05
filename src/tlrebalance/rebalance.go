@@ -1,4 +1,4 @@
-package tlsgOLD
+package tlrebalance
 
 import (
 	"container/heap"
@@ -7,8 +7,9 @@ import (
 	"os"
 	"syscall"
 	"time"
-	"treeless/src/core"
-	"treeless/src/sg/sg"
+	"treeless/src/tlcore"
+	"treeless/src/tllocals"
+	"treeless/src/tlsg"
 )
 
 const maxRebalanceWaitSeconds = 10
@@ -64,7 +65,7 @@ func (pq *PriorityQueue) update(c *ChunkToReview, t time.Time) {
 	heap.Fix(pq, c.index)
 }
 
-func StartRebalance(sg *tlsg.ServerGroup, lh *LHStatus, core *tlcore.Map, ShouldStop func() bool) (chunkUpdateChannel chan int) {
+func StartRebalance(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map, ShouldStop func() bool) (chunkUpdateChannel chan int) {
 	//We need a channel to get informed about chunk updates
 	chunkUpdateChannel = make(chan int, channelUpdateBufferSize)
 	//Delegate chunk downloads to the duplicator
@@ -215,7 +216,7 @@ func releaser(sg *tlsg.ServerGroup, core *tlcore.Map) (release func(c *VirtualCh
 //It will download the chunk otherwise
 //However this download will be executed in the background (i.e. in another goroutine).
 //Duplicate will return inmediatly unless the channel buffer is filled
-func duplicator(sg *tlsg.ServerGroup, lh *LHStatus, core *tlcore.Map,
+func duplicator(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map,
 	ShouldStop func() bool) (duplicate func(cid int)) {
 
 	duplicateChannel := make(chan int, 1024)
@@ -255,17 +256,29 @@ func duplicator(sg *tlsg.ServerGroup, lh *LHStatus, core *tlcore.Map,
 
 			//log.Println("Chunk duplication confirmed, transfering...", c.ID)
 			//Ready to transfer: request chunk transfer, get SYNC params
-			s := sg.GetAnyHolder(cid)
+			servers := sg.GetChunkHolders(cid)
 
 			log.Println("Chunk duplication began", cid)
-			err := s.Transfer(lh.LocalhostIPPort, cid)
-			if err != nil {
-				log.Println(cid, s.Phy, err)
-				log.Println("Chunk duplication aborted", cid) //TODO problem list
-			} else {
-				//Set chunk as ready
-				lh.ChunkSetSynched(cid)
-				log.Println("Chunk duplication completed", cid)
+			transferred := false
+			for _, s := range servers {
+				if s == nil || s.Phy == lh.LocalhostIPPort {
+					continue
+				}
+				err := s.Transfer(lh.LocalhostIPPort, cid)
+				if err != nil {
+					log.Println(cid, s.Phy, err)
+					log.Println("Chunk duplication aborted", cid)
+					continue
+				} else {
+					//Set chunk as ready
+					lh.ChunkSetSynched(cid)
+					log.Println("Chunk duplication completed", cid)
+					transferred = true
+					break
+				}
+			}
+			if !transferred {
+				duplicate(cid)
 			}
 
 		}

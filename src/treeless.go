@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"time"
-	"treeless/src/com"
-	"treeless/src/sg"
+	"treeless/src/tlcom"
+	"treeless/src/tlserver"
 )
 
 func main() {
@@ -62,7 +62,7 @@ func main() {
 		fmt.Println(s)*/
 	} else if *create {
 		//TODO 8 parametrizar
-		s := tlsgOLD.Start("", *localIP, *port, 8, *redundancy, *dbpath)
+		s := tlserver.Start("", *localIP, *port, 8, *redundancy, *dbpath)
 		go func() {
 			c := make(chan os.Signal, 1)
 			signal.Notify(c, os.Interrupt)
@@ -81,7 +81,7 @@ func main() {
 		}()
 		select {}
 	} else if *assoc != "" {
-		s := tlsgOLD.Start(*assoc, *localIP, *port, 8, *redundancy, *dbpath)
+		s := tlserver.Start(*assoc, *localIP, *port, 8, *redundancy, *dbpath)
 		go func() {
 			c := make(chan os.Signal, 1)
 			signal.Notify(c, os.Interrupt)
