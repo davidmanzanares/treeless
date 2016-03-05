@@ -1,4 +1,4 @@
-package tlsg
+package tlsgOLD
 
 import (
 	"encoding/binary"
@@ -6,27 +6,43 @@ import (
 	"fmt"
 	"log"
 	"runtime/debug"
-	"sync/atomic"
 	"time"
 	"treeless/src/com"
 	"treeless/src/com/tlproto"
 	"treeless/src/com/udp"
 	"treeless/src/core"
+	"treeless/src/sg/heartbeat"
+	"treeless/src/sg/sg"
 )
 
 //Server listen to TCP & UDP, accepting connections and responding to clients
 type DBServer struct {
 	//Core
-	m *tlcore.Map
+	m *tlcore.Map //todo rename to core
 	//Com
 	s *tlcom.Server
 	//Distribution
-	sg *ServerGroup
+	sg *tlsg.ServerGroup
 	//Status
-	stopped int32
+	lh *LHStatus
 }
 
 const serverWorkers = 4
+
+func getSGByAssoc(addr string) (*tlsg.ServerGroup, error) {
+	//Connect to the provided address
+	c, err := tlcom.CreateConnection(addr)
+	if err != nil {
+		return nil, err
+	}
+	defer c.Close()
+	serialization, err := c.GetAccessInfo()
+	if err != nil {
+		panic(err)
+	}
+	return tlsg.UnmarhalServerGroup(serialization)
+
+}
 
 //Start a Treeless server
 func Start(addr string, localIP string, localport int, numChunks, redundancy int, dbpath string) *DBServer {
@@ -35,7 +51,7 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 	//Recover: log and quit
 	defer func() {
 		if r := recover(); r != nil {
-			log.Println("DB panic", r, "STACK:", string(debug.Stack()))
+			log.Println("DB panic", r, "STACK:\n", string(debug.Stack()))
 			panic(r)
 		}
 	}()
@@ -46,41 +62,65 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 	if err != nil {
 		panic(err)
 	}
+
+	s.lh = NewLHStatus(numChunks, localIP+":"+fmt.Sprint(localport))
+	if addr == "" {
+		for i := 0; i < numChunks; i++ {
+			s.lh.ChunkSetSynched(i)
+		}
+	}
+
 	//Servergroup initialization
 	if addr == "" {
 		//New DB group
 		for i := 0; i < numChunks; i++ {
 			s.m.ChunkEnable(i)
 		}
-		s.sg = CreateServerGroup(len(s.m.Chunks), localIP, localport, redundancy, s.m)
+		s.sg = tlsg.CreateServerGroup(len(s.m.Chunks), redundancy)
+		s.sg.AddServerToGroup(localIP + ":" + fmt.Sprint(localport))
+		list := make([]int, numChunks)
+		for i := 0; i < numChunks; i++ {
+			list[i] = i
+		}
+		s.sg.SetServerChunks(localIP+":"+fmt.Sprint(localport), list)
 	} else {
 		//Associate to an existing DB group
-		s.sg, err = Associate(addr, localIP, localport, s.m)
+		s.sg, err = getSGByAssoc(addr)
 		if err != nil {
 			panic(err)
 		}
+		//Add to external servergroup instances
+		//For each other server: add localhost
+		for _, s2 := range s.sg.Servers {
+			err = s2.AddServerToGroup(s.lh.LocalhostIPPort)
+			if err != nil {
+				panic(err)
+			}
+		}
+		s.sg.AddServerToGroup(localIP + ":" + fmt.Sprint(localport))
 	}
+
+	//Rebalancer start
+	chunkUpdateChannel := StartRebalance(s.sg, s.lh, s.m, func() bool { return false })
+
+	//Heartbeat start
+	tlheartbeat.Start(s.sg, chunkUpdateChannel)
+
 	//Init server
 	readChannel := make(chan tlproto.Message, 1024)
 	for i := 0; i < serverWorkers; i++ {
 		createWorker(&s, readChannel)
 	}
-	s.s = tlcom.Start(addr, localIP, localport, readChannel, udpCreateReplier(s.sg))
+	s.s = tlcom.Start(addr, localIP, localport, readChannel, udpCreateReplier(s.sg, s.lh))
 	log.Println("Server boot-up completed")
 	return &s
 }
 
-//IsStopped returns true if the server is not running
-func (s *DBServer) IsStopped() bool {
-	return atomic.LoadInt32(&s.stopped) != 0
-}
-
 //Stop the server, close all TCP/UDP connections
 func (s *DBServer) Stop() {
-	atomic.StoreInt32(&s.stopped, 1) //TODO reorder
+	//LH stop
 	s.s.Stop()
 	s.m.Close()
-	s.sg.Stop()
 }
 
 func (s *DBServer) LogInfo() {
@@ -88,19 +128,11 @@ func (s *DBServer) LogInfo() {
 	log.Println(s.sg)
 }
 
-func udpCreateReplier(sg *ServerGroup) tlcom.UDPCallback {
+func udpCreateReplier(sg *tlsg.ServerGroup, lh *LHStatus) tlcom.UDPCallback {
 	return func() tlUDP.AmAlive {
 		var r tlUDP.AmAlive
-		sg.Lock()
-		defer sg.Unlock()
-		for i := 0; i < sg.NumChunks; i++ {
-			if sg.IsChunkPresent(i) {
-				r.KnownChunks = append(r.KnownChunks, i)
-			}
-		}
-		for _, s := range sg.Servers {
-			r.KnownServers = append(r.KnownServers, s.Phy)
-		}
+		r.KnownChunks = lh.KnownChunksList()
+		r.KnownServers = sg.KnownServers()
 		return r
 	}
 }
@@ -162,7 +194,7 @@ func createWorker(s *DBServer, readChannel <-chan tlproto.Message) {
 					response.Type = tlproto.OpErr
 					responseChannel <- response
 				}
-				if s.sg.IsChunkPresent(chunkID) {
+				if s.lh.ChunkStatus(chunkID).Synched() {
 					//New goroutine will put every key value pair into destination, it will manage the OpTransferOK response
 					addr := string(message.Value)
 					c, err := tlcom.CreateConnection(addr)

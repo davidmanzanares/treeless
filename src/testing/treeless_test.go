@@ -63,7 +63,7 @@ func exists(path string) bool {
 func waitForServer(addr string) bool {
 	for i := 0; i < 50; i++ {
 		time.Sleep(time.Millisecond * 50)
-		client, err := tlsg.Connect(addr)
+		client, err := tlsgOLD.Connect(addr)
 		if err == nil {
 			client.Close()
 			return true
@@ -79,21 +79,21 @@ func LaunchServer(assoc string, numChunks int) (addr string, stop func()) {
 	}
 	dbpath := dbTestFolder + "testDB" + fmt.Sprint(id)
 	var cmd *exec.Cmd
-	var s *tlsg.DBServer
+	var s *tlsgOLD.DBServer
 	if assoc == "" {
 		id = 0
 		dbpath = "testDB" + fmt.Sprint(id)
 		if useProcess {
 			cmd = exec.Command("./treeless", "-create", "-port",
-				fmt.Sprint(10000+id), "-dbpath", dbpath) //, "-cpuprofile"
+				fmt.Sprint(10000+id), "-dbpath", dbpath, "-localip", "127.0.0.1") //, "-cpuprofile"
 		} else {
-			s = tlsg.Start("", "127.0.0.1", 10000+id, numChunks, 2, dbpath)
+			s = tlsgOLD.Start("", "127.0.0.1", 10000+id, numChunks, 2, dbpath)
 		}
 	} else {
 		if useProcess {
-			cmd = exec.Command("./treeless", "-assoc", assoc, "-port", fmt.Sprint(10000+id), "-dbpath", dbpath)
+			cmd = exec.Command("./treeless", "-assoc", assoc, "-port", fmt.Sprint(10000+id), "-dbpath", dbpath, "-localip", "127.0.0.1")
 		} else {
-			s = tlsg.Start(assoc, "127.0.0.1", 10000+id, numChunks, 2, dbpath)
+			s = tlsgOLD.Start(assoc, "127.0.0.1", 10000+id, numChunks, 2, dbpath)
 		}
 	}
 	if useProcess && testing.Verbose() {
@@ -130,7 +130,7 @@ func TestSimple(t *testing.T) {
 	addr, stop := LaunchServer("", testingNumChunks)
 	defer stop()
 	//Client set-up
-	client, err := tlsg.Connect(addr)
+	client, err := tlsgOLD.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestBigMessages(t *testing.T) {
 	addr, stop := LaunchServer("", testingNumChunks)
 	defer stop()
 	//Client set-up
-	client, err := tlsg.Connect(addr)
+	client, err := tlsgOLD.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestBasicRebalance(t *testing.T) {
 	//Server set-up
 	addr1, stop1 := LaunchServer("", testingNumChunks)
 	//Client set-up
-	client, err := tlsg.Connect(addr1)
+	client, err := tlsgOLD.Connect(addr1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +290,7 @@ func metaTest(t *testing.T, addr string, numOperations, maxKeySize, maxValueSize
 	for core := 0; core < threads; core++ {
 		go func(core int) {
 			//Client set-up
-			c, err := tlsg.Connect(addr)
+			c, err := tlsgOLD.Connect(addr)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -313,7 +313,7 @@ func metaTest(t *testing.T, addr string, numOperations, maxKeySize, maxValueSize
 		fmt.Println("Write phase completed in:", time.Now().Sub(t1))
 	}
 	//Check map is in DB
-	c, err := tlsg.Connect(addr)
+	c, err := tlsgOLD.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -372,7 +372,7 @@ func metaTestConsistency(t *testing.T, serverAddr string, numClients, iterations
 			}
 			mutex.Lock()
 			//Create client and connect it to the fake server
-			c, err := tlsg.Connect(serverAddr)
+			c, err := tlsgOLD.Connect(serverAddr)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -438,7 +438,7 @@ func TestHotRebalance(t *testing.T) {
 	//Server set-up
 	addr, stop := LaunchServer("", testingNumChunks)
 	//Client set-up
-	c, err := tlsg.Connect(addr)
+	c, err := tlsgOLD.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -489,7 +489,7 @@ func TestHotRebalance(t *testing.T) {
 					//Second server set-up
 					_, stop2 = LaunchServer(addr, testingNumChunks)
 					//Wait for rebalance
-					time.Sleep(time.Second * 7)
+					time.Sleep(time.Second * 9)
 					//First server shut down
 					fmt.Println("Server 1 shut down")
 					stop()
@@ -569,12 +569,12 @@ func TestLatency(t *testing.T) {
 	addr, stop := LaunchServer("", testingNumChunks)
 	defer stop()
 	//Client set-up
-	c, err := tlsg.Connect(addr)
+	c, err := tlsgOLD.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	c2, err2 := tlsg.Connect(addr)
+	c2, err2 := tlsgOLD.Connect(addr)
 	if err2 != nil {
 		t.Fatal(err2)
 	}
@@ -631,7 +631,7 @@ func TestClock(t *testing.T) {
 	addr, stop := LaunchServer("", testingNumChunks)
 	defer stop()
 	//Client set-up
-	c, err := tlsg.Connect(addr)
+	c, err := tlsgOLD.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -787,7 +787,7 @@ func TestVirtual(t *testing.T) {
 	for i := 0; i < vClients; i++ {
 		go func(thread int) {
 			//Create client and connect it to the fake server
-			c, err := tlsg.Connect("192.168.2.100:9876")
+			c, err := tlsgOLD.Connect("192.168.2.100:9876")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -831,6 +831,7 @@ func TestVirtual(t *testing.T) {
 					//fmt.Println("GET", key, v1, v2)
 				}
 				//Check consistency
+				//Ping servers randomly
 				//Collect stats
 
 			}
@@ -868,9 +869,9 @@ func metaBenchmarkGetUnpopulated(nservers int, b *testing.B) {
 		time.Sleep(time.Second * 6)
 	}
 	//Clients set-up
-	var clients [8]*tlsg.DBClient
+	var clients [8]*tlsgOLD.DBClient
 	for i := 0; i < 8; i++ {
-		c, err := tlsg.Connect(addr)
+		c, err := tlsgOLD.Connect(addr)
 		if err != nil {
 			b.Fatal(err)
 		}

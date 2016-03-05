@@ -1,14 +1,16 @@
-package tlsg
+package tlsgOLD
 
 import (
 	"encoding/binary"
 	"time"
 	"treeless/src/com"
 	"treeless/src/hash"
+	"treeless/src/sg/heartbeat"
+	"treeless/src/sg/sg"
 )
 
 type DBClient struct {
-	sg         *ServerGroup
+	sg         *tlsg.ServerGroup
 	GetTimeout time.Duration
 	SetTimeout time.Duration
 	DelTimeout time.Duration
@@ -16,11 +18,15 @@ type DBClient struct {
 
 func Connect(addr string) (*DBClient, error) {
 	c := new(DBClient)
-	sg, err := ConnectAsClient(addr)
+	sg, err := getSGByAssoc(addr)
 	if err != nil {
 		return nil, err
 	}
 	c.sg = sg
+
+	//Start heartbeat listener
+	tlheartbeat.Start(sg, nil)
+
 	c.GetTimeout = time.Millisecond * 100
 	c.SetTimeout = time.Millisecond * 100
 	c.DelTimeout = time.Millisecond * 100
@@ -30,9 +36,9 @@ func Connect(addr string) (*DBClient, error) {
 func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 	//Last write wins policy
 	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks)
-	servers := c.sg.GetChunkServers(chunkID)
+	servers := c.sg.GetChunkHolders(chunkID)
 	var charray [8]chan tlcom.Result
-	var vsarray [8]*VirtualServer
+	var vsarray [8]*tlsg.VirtualServer
 	chs := 0
 
 	for _, s := range servers {
@@ -71,7 +77,7 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 
 func (c *DBClient) Set(key, value []byte) (written bool, errs error) {
 	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks)
-	servers := c.sg.GetChunkServers(chunkID)
+	servers := c.sg.GetChunkHolders(chunkID)
 	valueWithTime := make([]byte, 8+len(value))
 	binary.LittleEndian.PutUint64(valueWithTime, uint64(time.Now().UnixNano()))
 	copy(valueWithTime[8:], value)
@@ -91,7 +97,7 @@ func (c *DBClient) Set(key, value []byte) (written bool, errs error) {
 
 func (c *DBClient) Del(key []byte) (errs error) {
 	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks)
-	servers := c.sg.GetChunkServers(chunkID)
+	servers := c.sg.GetChunkHolders(chunkID)
 	for _, s := range servers {
 		if s == nil {
 			continue
@@ -103,7 +109,7 @@ func (c *DBClient) Del(key []byte) (errs error) {
 }
 
 func (c *DBClient) Close() {
-	if c.sg != nil {
-		c.sg.Stop()
-	}
+	//Stop hearbeat
+
+	//Stop sockets
 }

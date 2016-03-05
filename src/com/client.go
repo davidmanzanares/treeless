@@ -40,6 +40,7 @@ func CreateConnection(addr string) (*Conn, error) {
 	if errp != nil {
 		return nil, errp
 	}
+
 	tcpconn, err := net.DialTCP("tcp", nil, taddr)
 	if err != nil {
 		return nil, err

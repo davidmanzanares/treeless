@@ -54,15 +54,15 @@ func main() {
 	}
 
 	if *monitor != "" {
-		s, err := tlsg.ConnectAsClient(*monitor)
+		/*s, err := tlsgOLD.ConnectAsClient(*monitor)
 		if err != nil {
 			fmt.Println("Access couldn't be established")
 			fmt.Println(err)
 		}
-		fmt.Println(s)
+		fmt.Println(s)*/
 	} else if *create {
 		//TODO 8 parametrizar
-		s := tlsg.Start("", *localIP, *port, 8, *redundancy, *dbpath)
+		s := tlsgOLD.Start("", *localIP, *port, 8, *redundancy, *dbpath)
 		go func() {
 			c := make(chan os.Signal, 1)
 			signal.Notify(c, os.Interrupt)
@@ -81,7 +81,7 @@ func main() {
 		}()
 		select {}
 	} else if *assoc != "" {
-		s := tlsg.Start(*assoc, *localIP, *port, 8, *redundancy, *dbpath)
+		s := tlsgOLD.Start(*assoc, *localIP, *port, 8, *redundancy, *dbpath)
 		go func() {
 			c := make(chan os.Signal, 1)
 			signal.Notify(c, os.Interrupt)

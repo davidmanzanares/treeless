@@ -9,9 +9,11 @@ import (
 
 //VirtualServer stores generical server info
 type VirtualServer struct {
-	Phy           string      //Physcal address
-	LastHeartbeat time.Time   //Last time a heartbeat was listened
-	HeldChunks    []int       //List of all chunks that this server holds
+	Phy string //Physcal address
+
+	//TODO simplify
+	lastHeartbeat time.Time   //Last time a heartbeat was listened
+	heldChunks    []int       //List of all chunks that this server holds
 	conn          *tlcom.Conn //TCP connection, it may not exists
 	sync.RWMutex
 }
