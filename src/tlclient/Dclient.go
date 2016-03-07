@@ -36,7 +36,7 @@ func Connect(addr string) (*DBClient, error) {
 
 func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 	//Last write wins policy
-	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks)
+	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks())
 	servers := c.sg.GetChunkHolders(chunkID)
 	var charray [8]chan tlcom.Result
 	var vsarray [8]*tlsg.VirtualServer
@@ -84,7 +84,7 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 }
 
 func (c *DBClient) Set(key, value []byte) (written bool, errs error) {
-	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks)
+	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks())
 	servers := c.sg.GetChunkHolders(chunkID)
 	valueWithTime := make([]byte, 8+len(value))
 	binary.LittleEndian.PutUint64(valueWithTime, uint64(time.Now().UnixNano()))
@@ -104,7 +104,7 @@ func (c *DBClient) Set(key, value []byte) (written bool, errs error) {
 }
 
 func (c *DBClient) Del(key []byte) (errs error) {
-	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks)
+	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks())
 	servers := c.sg.GetChunkHolders(chunkID)
 	for _, s := range servers {
 		if s == nil {

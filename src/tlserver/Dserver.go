@@ -79,7 +79,7 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 		}
 		//Add to external servergroup instances
 		//For each other server: add localhost
-		for _, s2 := range s.sg.Servers {
+		for _, s2 := range s.sg.Servers() {
 			err = s2.AddServerToGroup(s.lh.LocalhostIPPort)
 			if err != nil {
 				panic(err)

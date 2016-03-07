@@ -77,12 +77,12 @@ func StartRebalance(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Ma
 		time.Sleep(rebalanceWakeupPeriod)
 		for !ShouldStop() {
 			known := float64(lh.KnownChunks())
-			total := float64(sg.NumChunks) * float64(sg.Redundancy)
-			avg := total / float64(len(sg.Servers))
+			total := float64(sg.NumChunks()) * float64(sg.Redundancy())
+			avg := total / float64(sg.NumServers())
 			if known+1 < avg*0.95 {
 				//Local server hass less work than it should
 				//Try to download a random chunk
-				c := int(rand.Int31n(int32(sg.NumChunks)))
+				c := int(rand.Int31n(int32(sg.NumChunks())))
 				if !lh.ChunkStatus(c).Present() {
 					log.Println("Duplicate to rebalance")
 					duplicate(c)
@@ -141,7 +141,7 @@ func StartRebalance(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Ma
 			case <-tick:
 				if len(pq) > 0 {
 					c := heap.Pop(&pq).(*ChunkToReview)
-					if sg.NumHolders(c.id) < sg.Redundancy && !lh.ChunkStatus(c.id).Present() {
+					if sg.NumHolders(c.id) < sg.Redundancy() && !lh.ChunkStatus(c.id).Present() {
 						duplicate(c.id)
 					} else {
 						//log.Println("Chunk duplication aborted: chunk not needed", c.ID, c, c.Holders[sg.localhost])

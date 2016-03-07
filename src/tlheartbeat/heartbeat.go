@@ -32,7 +32,7 @@ func NewStopper() (stop func(), shouldStop func() bool, stopped func()) {
 func Start(sg *tlsg.ServerGroup, chunkUpdateChannel chan int) {
 	//Initial hearbeat
 	l := list.New()
-	for _, s := range sg.Servers {
+	for _, s := range sg.Servers() {
 		l.PushFront(s.Phy)
 		aa, err := tlUDP.Request(s.Phy, heartbeatTimeout)
 		if err == nil {

@@ -9,32 +9,32 @@ import (
 
 //VirtualServer stores generical server info
 type VirtualServer struct {
-	Phy string //Physcal address
+	Phy string //Physical address. READ-ONLY by external packages!!!
 
 	//TODO simplify
 	lastHeartbeat time.Time   //Last time a heartbeat was listened
 	heldChunks    []int       //List of all chunks that this server holds
 	conn          *tlcom.Conn //TCP connection, it may not exists
-	M             sync.RWMutex
+	m             sync.RWMutex
 }
 
 func (s *VirtualServer) needConnection() (err error) {
-	s.M.RLock()
+	s.m.RLock()
 	for i := 0; s.conn == nil; i++ {
-		s.M.RUnlock()
-		s.M.Lock()
+		s.m.RUnlock()
+		s.m.Lock()
 		if s.conn == nil {
 			//log.Println("Creatting conn to", s.Phy)
 			s.conn, err = tlcom.CreateConnection(s.Phy)
 			//log.Println("Creatted conn to", s.Phy, "err:", err)
 			if err != nil {
-				s.M.Unlock()
+				s.m.Unlock()
 				return err
 			}
 			//Connection established
 		}
-		s.M.Unlock()
-		s.M.RLock()
+		s.m.Unlock()
+		s.m.RLock()
 	}
 	return nil
 }
@@ -42,9 +42,9 @@ func (s *VirtualServer) freeConnection(cerr error) {
 	if cerr != nil {
 		//Connection problem, close connetion now
 		log.Println("Connection problem", cerr)
-		s.M.RUnlock()
+		s.m.RUnlock()
 		log.Println("Connection problem try lock")
-		s.M.Lock()
+		s.m.Lock()
 		log.Println("Connection problem locked")
 		if s.conn != nil {
 			log.Println("Connection problem goto close")
@@ -52,24 +52,20 @@ func (s *VirtualServer) freeConnection(cerr error) {
 			log.Println("Connection problem closed")
 			s.conn = nil
 		}
-		s.M.Unlock()
+		s.m.Unlock()
 		log.Println("Connection problem: connection closed", s.Phy)
 		return
 	}
-	s.M.RUnlock()
+	s.m.RUnlock()
 }
 
 func (s *VirtualServer) Timeout() {
-	log.Println("timeout try lock", s.M)
-	s.M.Lock()
-	log.Println("timeout locked")
+	s.m.Lock()
 	if s.conn != nil {
-		log.Println("timeout closing")
 		s.conn.Close()
 		s.conn = nil
 	}
-	s.M.Unlock()
-	log.Println("timeout unlocked")
+	s.m.Unlock()
 }
 
 //Get the value of key
@@ -79,7 +75,7 @@ func (s *VirtualServer) Get(key []byte, timeout time.Duration) chan tlcom.Result
 		return nil
 	}
 	r := s.conn.Get(key, timeout)
-	s.M.RUnlock()
+	s.m.RUnlock()
 	return r
 }
 

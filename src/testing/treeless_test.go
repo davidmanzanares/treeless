@@ -26,7 +26,7 @@ const useProcess = false
 const testingNumChunks = 8
 const benchmarkingNumChunks = 64
 
-const vagrantEnabled = false
+const vagrantEnabled = true
 const vServers = 2
 
 func TestMain(m *testing.M) {
