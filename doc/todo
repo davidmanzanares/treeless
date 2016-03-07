@@ -26,6 +26,9 @@ Test: 5+1
 	-space per chunk tests (hash quality tests)
 
 Others: 1+4+4+4+3+1+1+1
+	-hearbeat replier to hearbeat package
+	-com protocol refactor files
+	-dist operative extract from client
 	-dep graph
 	-stopper
 	-limit to Redundancy+1
@@ -48,4 +51,5 @@ Others: 1+4+4+4+3+1+1+1
 
 Memoria:
 	https://codahale.com/you-cant-sacrifice-partition-tolerance/
+	http://blog.nindalf.com/how-goroutines-work/
 	-security: no by desing: see Redis

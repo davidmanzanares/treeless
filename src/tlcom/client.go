@@ -83,7 +83,7 @@ func broker(c *Conn) {
 						//Timeout'ed
 						w := waits[f.tid]
 						delete(waits, f.tid)
-						w.r <- Result{nil, errors.New("Timeout")}
+						w.r <- Result{nil, errors.New("Timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
 						l.Remove(el)
 					} else {
 						break
@@ -91,8 +91,13 @@ func broker(c *Conn) {
 				}
 			case msg, ok := <-c.responseChannel:
 				if !ok {
-					if l.Len() > 0 {
-						panic("Logic broken")
+					for l.Len() > 0 {
+						el := l.Front()
+						f := el.Value.(timeoutMsg)
+						w := waits[f.tid]
+						delete(waits, f.tid)
+						w.r <- Result{nil, errors.New("Connection closed" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
+						l.Remove(el)
 					}
 					close(writeChannel)
 					return
@@ -192,7 +197,14 @@ func (c *Conn) sendAndReceive(opType tlproto.Operation, key, value []byte,
 
 //Get the value of key
 func (c *Conn) Get(key []byte, timeout time.Duration) chan Result {
-	return c.send(tlproto.OpGet, key, nil, timeout)
+	if timeout <= 0 {
+		panic("get timeout <=0")
+	}
+	x := c.send(tlproto.OpGet, key, nil, timeout)
+	if x == nil {
+		panic("xnil")
+	}
+	return x
 }
 
 //Set a new key/value pair
@@ -220,21 +232,21 @@ func (c *Conn) Transfer(addr string, chunkID int) error {
 
 //GetAccessInfo request DB access info
 func (c *Conn) GetAccessInfo() ([]byte, error) {
-	r := c.sendAndReceive(tlproto.OpGetConf, nil, nil, 500*time.Millisecond)
+	r := c.sendAndReceive(tlproto.OpGetConf, nil, nil, 5000*time.Millisecond)
 	return r.Value, r.Err
 }
 
 //AddServerToGroup request to add this server to the server group
 func (c *Conn) AddServerToGroup(addr string) error {
 	key := []byte(addr)
-	r := c.sendAndReceive(tlproto.OpAddServerToGroup, key, nil, 500*time.Millisecond)
+	r := c.sendAndReceive(tlproto.OpAddServerToGroup, key, nil, 5000*time.Millisecond)
 	return r.Err
 }
 
 func (c *Conn) Protect(chunkID int) error {
 	key := make([]byte, 4) //TODO static array
 	binary.LittleEndian.PutUint32(key, uint32(chunkID))
-	r := c.sendAndReceive(tlproto.OpProtect, key, nil, 500*time.Millisecond)
+	r := c.sendAndReceive(tlproto.OpProtect, key, nil, 5000*time.Millisecond)
 	if r.Err != nil {
 		return r.Err
 	}

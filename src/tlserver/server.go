@@ -38,7 +38,8 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 	//Recover: log and quit
 	defer func() {
 		if r := recover(); r != nil {
-			log.Println("DB panic", r, "STACK:\n", string(debug.Stack()))
+			log.Println("DB panic", r)
+			log.Println("STACK:\n", string(debug.Stack()))
 			panic(r)
 		}
 	}()

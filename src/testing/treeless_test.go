@@ -26,9 +26,8 @@ const useProcess = false
 const testingNumChunks = 8
 const benchmarkingNumChunks = 64
 
-const vagrantEnabled = true
-const vServers = 5
-const vClients = 5
+const vagrantEnabled = false
+const vServers = 2
 
 func TestMain(m *testing.M) {
 	cmd := exec.Command("killall", "-s", "INT", "treeless")
@@ -64,7 +63,7 @@ func exists(path string) bool {
 func waitForServer(addr string) bool {
 	for i := 0; i < 50; i++ {
 		time.Sleep(time.Millisecond * 50)
-		client, err := tlcient.Connect(addr)
+		client, err := tlclient.Connect(addr)
 		if err == nil {
 			client.Close()
 			return true
@@ -131,7 +130,7 @@ func TestSimple(t *testing.T) {
 	addr, stop := LaunchServer("", testingNumChunks)
 	defer stop()
 	//Client set-up
-	client, err := tlcient.Connect(addr)
+	client, err := tlclient.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +167,7 @@ func TestBigMessages(t *testing.T) {
 	addr, stop := LaunchServer("", testingNumChunks)
 	defer stop()
 	//Client set-up
-	client, err := tlcient.Connect(addr)
+	client, err := tlclient.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +190,7 @@ func TestBasicRebalance(t *testing.T) {
 	//Server set-up
 	addr1, stop1 := LaunchServer("", testingNumChunks)
 	//Client set-up
-	client, err := tlcient.Connect(addr1)
+	client, err := tlclient.Connect(addr1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +290,7 @@ func metaTest(t *testing.T, addr string, numOperations, maxKeySize, maxValueSize
 	for core := 0; core < threads; core++ {
 		go func(core int) {
 			//Client set-up
-			c, err := tlcient.Connect(addr)
+			c, err := tlclient.Connect(addr)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -314,7 +313,7 @@ func metaTest(t *testing.T, addr string, numOperations, maxKeySize, maxValueSize
 		fmt.Println("Write phase completed in:", time.Now().Sub(t1))
 	}
 	//Check map is in DB
-	c, err := tlcient.Connect(addr)
+	c, err := tlclient.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -373,7 +372,7 @@ func metaTestConsistency(t *testing.T, serverAddr string, numClients, iterations
 			}
 			mutex.Lock()
 			//Create client and connect it to the fake server
-			c, err := tlcient.Connect(serverAddr)
+			c, err := tlclient.Connect(serverAddr)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -439,7 +438,7 @@ func TestHotRebalance(t *testing.T) {
 	//Server set-up
 	addr, stop := LaunchServer("", testingNumChunks)
 	//Client set-up
-	c, err := tlcient.Connect(addr)
+	c, err := tlclient.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -570,12 +569,12 @@ func TestLatency(t *testing.T) {
 	addr, stop := LaunchServer("", testingNumChunks)
 	defer stop()
 	//Client set-up
-	c, err := tlcient.Connect(addr)
+	c, err := tlclient.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	c2, err2 := tlcient.Connect(addr)
+	c2, err2 := tlclient.Connect(addr)
 	if err2 != nil {
 		t.Fatal(err2)
 	}
@@ -588,34 +587,46 @@ func TestLatency(t *testing.T) {
 
 	maxKeySize := 4
 	maxValueSize := 4
-	numOperations := 20000
+	numOperations := 200000
 	initOps := 10000
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	var w sync.WaitGroup
 	ch := make(chan lat)
 	w.Add(2)
-	k := float64(10)
+	c.SetTimeout = 0
+	var k atomic.Value
+	k.Store(1.0)
 	go func() {
 		rNext := randKVOpGenerator(maxKeySize, maxValueSize, 0, 64, 0)
 		for i := -initOps; i < numOperations; i++ {
 			_, key, value := rNext()
 			t := time.Now()
 			c.Set(key, value)
-			time.Sleep(time.Duration(k) * time.Microsecond)
+			time.Sleep(time.Duration(k.Load().(float64)) * time.Microsecond)
 			if i >= 0 {
 				ch <- lat{string(key), t}
+				runtime.Gosched()
 			}
 		}
 		close(ch)
 		w.Done()
 	}()
-	oks := 0
+	oks := 0.
+	errors := 0.
+	P := 0.999
+	lk := 1.0
 	go func() {
 		for l := range ch {
 			v, _ := c2.Get([]byte(l.key))
 			if v == nil {
-				k = k * 1.05
-				oks = 0
+				errors++
+				if oks/(oks+errors) < P {
+					lk = lk * 1.05
+					k.Store(lk)
+					oks = 0
+					errors = 0.
+					//fmt.Println(lk)
+				}
 			} else {
 				oks++
 			}
@@ -623,7 +634,7 @@ func TestLatency(t *testing.T) {
 		w.Done()
 	}()
 	w.Wait()
-	fmt.Println("Latency", time.Duration(k)*time.Microsecond, "Error:", 1.0/float64(oks)*100.0, "%")
+	fmt.Println("Latency", time.Duration(lk*float64(time.Microsecond)), "at percentile:", oks/(oks+errors)*100.0, "% with", oks+errors, " operations")
 }
 
 //TestClock tests records timestamps synchronization
@@ -632,7 +643,7 @@ func TestClock(t *testing.T) {
 	addr, stop := LaunchServer("", testingNumChunks)
 	defer stop()
 	//Client set-up
-	c, err := tlcient.Connect(addr)
+	c, err := tlclient.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -691,7 +702,146 @@ func TestClock(t *testing.T) {
 	fmt.Println("Max time difference: ", maxDiff, "\nAverage time difference:", avgDiff)
 }
 
-//TODO parrallel up
+func testSequential(addr string, t *testing.T) {
+	//Initialize vars
+	var mutex sync.Mutex
+	var w sync.WaitGroup
+	goMap := make(map[string][]byte)
+
+	//Sequential workload simulation
+	vClients := 10
+	operations := 5000
+	w.Add(vClients)
+	t1 := time.Now()
+	for i := 0; i < vClients; i++ {
+		go func(thread int) {
+			//Create client and connect it to the fake server
+			c, err := tlclient.Connect(addr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var p *tlutils.Progress
+			if thread == vClients-1 {
+				p = tlutils.NewProgress("Operating...", operations)
+			}
+			defer c.Close()
+			for i := 0; i < operations; i++ {
+				//fmt.Println(thread, i)
+				if thread == vClients-1 {
+					p.Set(i)
+				}
+				//Operate
+				op := int(rand.Int31n(int32(3)))
+				key := make([]byte, 1)
+				key[0] = byte(1)
+				value := make([]byte, 4)
+				binary.LittleEndian.PutUint32(value, uint32(rand.Int63()))
+				runtime.Gosched()
+				mutex.Lock()
+				//fmt.Println(op, key, value)
+				switch op {
+				case 0:
+					goMap[string(key)] = value
+					c.Set(key, value)
+					mutex.Unlock()
+				case 1:
+					//delete(goMap, string(key))
+					//c.Del(key)
+					mutex.Unlock()
+				case 2:
+					v2 := goMap[string(key)]
+					v1, _ := c.Get(key)
+					if !bytes.Equal(v1, v2) {
+						fmt.Println("Mismatch, server returned:", v1,
+							"gomap returned:", v2)
+						t.Error("Mismatch, server returned:", v1,
+							"gomap returned:", v2)
+					}
+					mutex.Unlock()
+					//fmt.Println("GET", key, v1, v2)
+				}
+				//Check consistency
+				//Ping servers randomly
+				//Collect stats
+
+			}
+			w.Done()
+		}(i)
+	}
+	w.Wait()
+	t2 := time.Now()
+	//Print stats
+	fmt.Println("\n\nSequential workload simulation - Results")
+	fmt.Println("Operations:", operations*vClients, "Throughput:", float64(operations*vClients)/(t2.Sub(t1).Seconds()), "ops/s\n")
+}
+
+func testParallel(addr string, t *testing.T, oneClient bool) {
+	var w sync.WaitGroup
+	vClients := 256
+	operations := 1000
+	w.Add(vClients)
+	//Create client and connect it to the fake server
+	var c *tlclient.DBClient
+	if oneClient {
+		var err error
+		c, err = tlclient.Connect(addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	t1 := time.Now()
+	for i := 0; i < vClients; i++ {
+		go func(thread int) {
+			if !oneClient {
+				var err error
+				c, err = tlclient.Connect(addr)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			var p *tlutils.Progress
+			if thread == vClients-1 {
+				p = tlutils.NewProgress("Operating...", operations)
+			}
+			defer c.Close()
+			for i := 0; i < operations; i++ {
+				if thread == vClients-1 {
+					p.Set(i)
+				}
+				//Operate
+				op := int(rand.Int31n(int32(3)))
+				key := make([]byte, 1)
+				key[0] = byte(1)
+				value := make([]byte, 4)
+				binary.LittleEndian.PutUint32(value, uint32(rand.Int63()))
+				//fmt.Println(op, key, value)
+				switch op {
+				case 0:
+					c.Set(key, value)
+				case 1:
+					//delete(goMap, string(key))
+					//c.Del(key)
+				case 2:
+					c.Get(key)
+				}
+				//Ping servers randomly
+				//Collect stats
+			}
+			w.Done()
+		}(i)
+	}
+	w.Wait()
+	t2 := time.Now()
+	//Print stats
+	str := "1 client"
+	if !oneClient {
+		str = "N clients"
+	}
+	str += " " + fmt.Sprint(vClients) + " parralel operators"
+	fmt.Println("\nMassive parallel workload simulation " + str + " - Results")
+	fmt.Println("Operations:", operations*vClients, "Throughput:", float64(operations*vClients)/(t2.Sub(t1).Seconds()), "ops/s\n")
+}
+
 func TestVirtual(t *testing.T) {
 	if !vagrantEnabled {
 		fmt.Println("Vagrant tests disabled")
@@ -715,6 +865,9 @@ func TestVirtual(t *testing.T) {
 	}
 	vf := `Vagrant.configure(2) do |config|
 	  config.vm.box = "ubuntu/trusty64"
+	  config.vm.provider "virtualbox" do |v|
+  	   	v.cpus = 1
+      end
 	  config.vm.define "vm0" do |vmN|
 	      vmN.vm.provision :shell, path: "vm0.sh"
 	      vmN.vm.network "private_network", ip: "192.168.2.100"
@@ -777,70 +930,26 @@ func TestVirtual(t *testing.T) {
 		}
 	}
 	fmt.Println("Servers ready")
-	//Initialize vars
-	operations := 10000
-	var mutex sync.Mutex
-	var w sync.WaitGroup
-	w.Add(vClients)
-	goMap := make(map[string][]byte)
 
-	//Start several clients on this process
-	for i := 0; i < vClients; i++ {
-		go func(thread int) {
-			//Create client and connect it to the fake server
-			c, err := tlcient.Connect("192.168.2.100:9876")
-			if err != nil {
-				t.Fatal(err)
-			}
-			var p *tlutils.Progress
-			if thread == vClients-1 {
-				p = tlutils.NewProgress("Operating...", operations)
-			}
-			defer c.Close()
-			for i := 0; i < operations; i++ {
-				if thread == vClients-1 {
-					p.Set(i)
-				}
-				//Operate
-				op := int(rand.Int31n(int32(3)))
-				key := make([]byte, 1)
-				key[0] = byte(1)
-				value := make([]byte, 4)
-				binary.LittleEndian.PutUint32(value, uint32(rand.Int63()))
-				runtime.Gosched()
-				mutex.Lock()
-				//fmt.Println(op, key, value)
-				switch op {
-				case 0:
-					goMap[string(key)] = value
-					c.Set(key, value)
-					mutex.Unlock()
-				case 1:
-					//delete(goMap, string(key))
-					//c.Del(key)
-					mutex.Unlock()
-				case 2:
-					v2 := goMap[string(key)]
-					v1, _ := c.Get(key)
-					if !bytes.Equal(v1, v2) {
-						fmt.Println("Mismatch, server returned:", v1,
-							"gomap returned:", v2)
-						t.Error("Mismatch, server returned:", v1,
-							"gomap returned:", v2)
-					}
-					mutex.Unlock()
-					//fmt.Println("GET", key, v1, v2)
-				}
-				//Check consistency
-				//Ping servers randomly
-				//Collect stats
+	//Test sequential throughtput and consistency
+	testSequential("192.168.2.100:9876", t)
 
-			}
-			w.Done()
-		}(i)
-	}
-	w.Wait()
-	//Print stats
+	//Test throughtputs
+	testParallel("192.168.2.100:9876", t, true)
+	testParallel("192.168.2.100:9876", t, false)
+
+	//Controlled parralel workload - latency benchmark
+
+	//Read-repair test
+	//Perform 1 Set operation A
+	//Simulate net latency problem of 2 seconds on node 2
+	//Perform 1 Set operation on A
+	//Reestablish net
+	//Perform Get operation on A (should read repair the record) and check
+	//Kill all nodes except node 2
+	//Perform get operation on A and check
+
+	//Clean
 	cmd = exec.Command("vagrant", "destroy", "-f")
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
@@ -870,9 +979,9 @@ func metaBenchmarkGetUnpopulated(nservers int, b *testing.B) {
 		time.Sleep(time.Second * 6)
 	}
 	//Clients set-up
-	var clients [8]*tlcient.DBClient
+	var clients [8]*tlclient.DBClient
 	for i := 0; i < 8; i++ {
-		c, err := tlcient.Connect(addr)
+		c, err := tlclient.Connect(addr)
 		if err != nil {
 			b.Fatal(err)
 		}

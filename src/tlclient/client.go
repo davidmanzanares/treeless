@@ -1,7 +1,8 @@
-package tlcient
+package tlclient
 
 import (
 	"encoding/binary"
+	"log"
 	"time"
 	"treeless/src/tlcom"
 	"treeless/src/tlhash"
@@ -27,9 +28,9 @@ func Connect(addr string) (*DBClient, error) {
 	//Start heartbeat listener
 	tlheartbeat.Start(sg, nil)
 
-	c.GetTimeout = time.Millisecond * 100
-	c.SetTimeout = time.Millisecond * 100
-	c.DelTimeout = time.Millisecond * 100
+	c.GetTimeout = time.Millisecond * 500
+	c.SetTimeout = time.Millisecond * 500
+	c.DelTimeout = time.Millisecond * 500
 	return c, nil
 }
 
@@ -54,10 +55,17 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 		chs++
 	}
 	for i := 0; i < chs; i++ {
+		//log.Println("get rec")
+		if charray[i] == nil {
+			panic("charray[i]==nil")
+		}
 		r := <-charray[i]
-		vsarray[i].RUnlock()
+		//log.Println("get rec compl")
+		//log.Println("get rec unlock")
 		if r.Err != nil {
+			log.Println("get rec timeout")
 			vsarray[i].Timeout() //TODO value, err, cerr
+			log.Println("get rec timeout com")
 			continue
 		}
 		v := r.Value

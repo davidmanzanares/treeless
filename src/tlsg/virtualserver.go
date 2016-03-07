@@ -15,24 +15,26 @@ type VirtualServer struct {
 	lastHeartbeat time.Time   //Last time a heartbeat was listened
 	heldChunks    []int       //List of all chunks that this server holds
 	conn          *tlcom.Conn //TCP connection, it may not exists
-	sync.RWMutex
+	M             sync.RWMutex
 }
 
 func (s *VirtualServer) needConnection() (err error) {
-	s.RLock()
-	for s.conn == nil {
-		s.RUnlock()
-		s.Lock()
+	s.M.RLock()
+	for i := 0; s.conn == nil; i++ {
+		s.M.RUnlock()
+		s.M.Lock()
 		if s.conn == nil {
+			//log.Println("Creatting conn to", s.Phy)
 			s.conn, err = tlcom.CreateConnection(s.Phy)
+			//log.Println("Creatted conn to", s.Phy, "err:", err)
 			if err != nil {
-				s.Unlock()
+				s.M.Unlock()
 				return err
 			}
 			//Connection established
 		}
-		s.Unlock()
-		s.RLock()
+		s.M.Unlock()
+		s.M.RLock()
 	}
 	return nil
 }
@@ -40,25 +42,34 @@ func (s *VirtualServer) freeConnection(cerr error) {
 	if cerr != nil {
 		//Connection problem, close connetion now
 		log.Println("Connection problem", cerr)
-		s.RUnlock()
-		s.Lock()
+		s.M.RUnlock()
+		log.Println("Connection problem try lock")
+		s.M.Lock()
+		log.Println("Connection problem locked")
 		if s.conn != nil {
+			log.Println("Connection problem goto close")
 			s.conn.Close()
+			log.Println("Connection problem closed")
 			s.conn = nil
 		}
-		s.Unlock()
+		s.M.Unlock()
+		log.Println("Connection problem: connection closed", s.Phy)
 		return
 	}
-	s.RUnlock()
+	s.M.RUnlock()
 }
 
 func (s *VirtualServer) Timeout() {
-	s.Lock()
+	log.Println("timeout try lock", s.M)
+	s.M.Lock()
+	log.Println("timeout locked")
 	if s.conn != nil {
+		log.Println("timeout closing")
 		s.conn.Close()
 		s.conn = nil
 	}
-	s.Unlock()
+	s.M.Unlock()
+	log.Println("timeout unlocked")
 }
 
 //Get the value of key
@@ -68,6 +79,7 @@ func (s *VirtualServer) Get(key []byte, timeout time.Duration) chan tlcom.Result
 		return nil
 	}
 	r := s.conn.Get(key, timeout)
+	s.M.RUnlock()
 	return r
 }
 

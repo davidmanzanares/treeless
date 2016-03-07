@@ -28,9 +28,6 @@ func Reply(callback ReplyCallback, udpPort int) net.Conn {
 			_, addr, err := conn.ReadFromUDP(nil)
 			if err != nil {
 				conn.Close()
-				log.Println("ATTENTION UDP REPLIER CLOSED!!!!1")
-				log.Println(err)
-				log.Println("ATTENTION UDP REPLIER CLOSED!!!!2")
 				return
 			}
 			aa := callback()
@@ -46,10 +43,10 @@ func Reply(callback ReplyCallback, udpPort int) net.Conn {
 //Request sends a UDP request to ip with a timeout, it waits until the timeout for a response
 func Request(addr string, timeout time.Duration) (response *AmAlive, err error) {
 	conn, err := net.ListenUDP("udp", nil)
-	defer conn.Close()
 	if err != nil {
 		return nil, err
 	}
+	defer conn.Close()
 	destAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
 		return nil, err
