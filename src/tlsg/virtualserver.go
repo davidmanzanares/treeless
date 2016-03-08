@@ -1,7 +1,6 @@
 package tlsg
 
 import (
-	"log"
 	"sync"
 	"time"
 	"treeless/src/tlcom"
@@ -38,28 +37,8 @@ func (s *VirtualServer) needConnection() (err error) {
 	}
 	return nil
 }
-func (s *VirtualServer) freeConnection(cerr error) {
-	if cerr != nil {
-		//Connection problem, close connetion now
-		log.Println("Connection problem", cerr)
-		s.m.RUnlock()
-		log.Println("Connection problem try lock")
-		s.m.Lock()
-		log.Println("Connection problem locked")
-		if s.conn != nil {
-			log.Println("Connection problem goto close")
-			s.conn.Close()
-			log.Println("Connection problem closed")
-			s.conn = nil
-		}
-		s.m.Unlock()
-		log.Println("Connection problem: connection closed", s.Phy)
-		return
-	}
-	s.m.RUnlock()
-}
-
-func (s *VirtualServer) Timeout() {
+func (s *VirtualServer) freeConn() {
+	//Close connetion now
 	s.m.Lock()
 	if s.conn != nil {
 		s.conn.Close()
@@ -85,7 +64,7 @@ func (s *VirtualServer) Set(key, value []byte, timeout time.Duration) error {
 		return nil
 	}
 	cerr := s.conn.Set(key, value, timeout)
-	s.freeConnection(cerr)
+	s.m.RUnlock()
 	return cerr
 }
 
@@ -95,7 +74,7 @@ func (s *VirtualServer) Del(key []byte, timeout time.Duration) error {
 		return nil
 	}
 	cerr := s.conn.Del(key, timeout)
-	s.freeConnection(cerr)
+	s.m.RUnlock()
 	return cerr
 }
 
@@ -104,7 +83,7 @@ func (s *VirtualServer) Transfer(addr string, chunkID int) error {
 		return nil
 	}
 	cerr := s.conn.Transfer(addr, chunkID)
-	s.freeConnection(cerr)
+	s.m.RUnlock()
 	return cerr
 }
 
@@ -113,8 +92,8 @@ func (s *VirtualServer) GetAccessInfo() []byte {
 	if err := s.needConnection(); err != nil {
 		return nil
 	}
-	v, cerr := s.conn.GetAccessInfo()
-	s.freeConnection(cerr)
+	v, _ := s.conn.GetAccessInfo()
+	s.m.RUnlock()
 	return v
 }
 
@@ -124,7 +103,7 @@ func (s *VirtualServer) AddServerToGroup(addr string) error {
 		return nil
 	}
 	cerr := s.conn.AddServerToGroup(addr)
-	s.freeConnection(cerr)
+	s.m.RUnlock()
 	return cerr
 }
 
@@ -133,7 +112,7 @@ func (s *VirtualServer) Protect(chunkID int) (ok bool) {
 		return false
 	}
 	cerr := s.conn.Protect(chunkID)
-	s.freeConnection(cerr)
+	s.m.RUnlock()
 	return cerr == nil
 }
 
@@ -142,7 +121,7 @@ func (s *VirtualServer) GetChunkInfo(chunkID int) (size uint64) {
 	if err := s.needConnection(); err != nil {
 		return 0
 	}
-	v, cerr := s.conn.GetChunkInfo(chunkID)
-	s.freeConnection(cerr)
+	v, _ := s.conn.GetChunkInfo(chunkID)
+	s.m.RUnlock()
 	return v
 }

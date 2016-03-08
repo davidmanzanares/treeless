@@ -27,6 +27,8 @@ type DBServer struct {
 	sg *tlsg.ServerGroup
 	//Status
 	lh *tllocals.LHStatus
+	//Stop
+	hbStop func()
 }
 
 const serverWorkers = 4
@@ -92,7 +94,7 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 	chunkUpdateChannel := tlrebalance.StartRebalance(s.sg, s.lh, s.m, func() bool { return false })
 
 	//Heartbeat start
-	tlheartbeat.Start(s.sg, chunkUpdateChannel)
+	s.hbStop = tlheartbeat.Start(s.sg, chunkUpdateChannel)
 
 	//Init server
 	readChannel := make(chan tlproto.Message, 1024)
@@ -107,6 +109,7 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 //Stop the server, close all TCP/UDP connections
 func (s *DBServer) Stop() {
 	//LH stop
+	s.hbStop()
 	s.s.Stop()
 	s.m.Close()
 }
@@ -121,6 +124,7 @@ func udpCreateReplier(sg *tlsg.ServerGroup, lh *tllocals.LHStatus) tlcom.UDPCall
 		var r tlUDP.AmAlive
 		r.KnownChunks = lh.KnownChunksList()
 		r.KnownServers = sg.KnownServers()
+		//log.Println("UDP AA", r)
 		return r
 	}
 }

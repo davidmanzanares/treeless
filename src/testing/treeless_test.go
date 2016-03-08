@@ -489,7 +489,7 @@ func TestHotRebalance(t *testing.T) {
 					//Second server set-up
 					_, stop2 = LaunchServer(addr, testingNumChunks)
 					//Wait for rebalance
-					time.Sleep(time.Second * 9)
+					time.Sleep(time.Second * 7)
 					//First server shut down
 					fmt.Println("Server 1 shut down")
 					stop()

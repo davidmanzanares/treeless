@@ -226,27 +226,27 @@ func (c *Conn) Transfer(addr string, chunkID int) error {
 		panic(err)
 	}
 	value := []byte(addr)
-	r := c.sendAndReceive(tlproto.OpTransfer, key, value, 5*time.Second)
+	r := c.sendAndReceive(tlproto.OpTransfer, key, value, 500*time.Millisecond)
 	return r.Err
 }
 
 //GetAccessInfo request DB access info
 func (c *Conn) GetAccessInfo() ([]byte, error) {
-	r := c.sendAndReceive(tlproto.OpGetConf, nil, nil, 5000*time.Millisecond)
+	r := c.sendAndReceive(tlproto.OpGetConf, nil, nil, 500*time.Millisecond)
 	return r.Value, r.Err
 }
 
 //AddServerToGroup request to add this server to the server group
 func (c *Conn) AddServerToGroup(addr string) error {
 	key := []byte(addr)
-	r := c.sendAndReceive(tlproto.OpAddServerToGroup, key, nil, 5000*time.Millisecond)
+	r := c.sendAndReceive(tlproto.OpAddServerToGroup, key, nil, 500*time.Millisecond)
 	return r.Err
 }
 
 func (c *Conn) Protect(chunkID int) error {
 	key := make([]byte, 4) //TODO static array
 	binary.LittleEndian.PutUint32(key, uint32(chunkID))
-	r := c.sendAndReceive(tlproto.OpProtect, key, nil, 5000*time.Millisecond)
+	r := c.sendAndReceive(tlproto.OpProtect, key, nil, 500*time.Millisecond)
 	if r.Err != nil {
 		return r.Err
 	}

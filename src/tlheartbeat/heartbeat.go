@@ -1,82 +1,73 @@
 package tlheartbeat
 
 import (
-	"container/list"
-	"sync"
+	"log"
 	"sync/atomic"
 	"time"
 	"treeless/src/tlcom/udp"
 	"treeless/src/tlsg"
 )
 
-var heartbeatTickDuration = time.Millisecond * 200
-var heartbeatTimeout = time.Millisecond * 200
+var heartbeatTimeout = time.Millisecond * 500
+var heartbeatSleep = time.Millisecond * 1000
+var heartbeatSleepOnFail = time.Millisecond * 500
 
-func NewStopper() (stop func(), shouldStop func() bool, stopped func()) {
-	s := new(int32)
-	w := new(sync.WaitGroup)
-	w.Add(1)
-	stop = func() {
-		atomic.StoreInt32(s, 1)
-		w.Wait()
+func watchdog(sg *tlsg.ServerGroup, addr string, chunkUpdateChannel chan int, stop *int32) {
+	timeouts := 0
+	for atomic.LoadInt32(stop) == 0 {
+		aa, err := tlUDP.Request(addr, heartbeatTimeout)
+		if err == nil {
+			timeouts = 0
+			//Detect added servers
+			for _, s := range aa.KnownServers {
+				err := sg.AddServerToGroup(s)
+				if err == nil {
+					go watchdog(sg, s, chunkUpdateChannel, stop)
+				}
+			}
+			changes := sg.SetServerChunks(addr, aa.KnownChunks)
+			for i := 0; chunkUpdateChannel != nil && i < len(changes); i++ {
+				chunkUpdateChannel <- changes[i]
+			}
+			time.Sleep(heartbeatSleep)
+		} else {
+			//log.Println("Server timeouted:", addr)
+			timeouts++
+			if timeouts == 5 {
+				//Server is dead
+				log.Println("Server is dead:", addr)
+				sg.RemoveServer(addr)
+				return
+			}
+			time.Sleep(heartbeatSleepOnFail)
+		}
 	}
-	shouldStop = func() bool {
-		return atomic.LoadInt32(s) != 0
-	}
-	stopped = func() {
-		w.Done()
-	}
-	return stop, shouldStop, stopped
 }
 
-func Start(sg *tlsg.ServerGroup, chunkUpdateChannel chan int) {
-	//Initial hearbeat
-	l := list.New()
+func Start(sg *tlsg.ServerGroup, chunkUpdateChannel chan int) (stop func()) {
+	var shouldStop int32
+	shouldStop = 0
+	stop = func() {
+		atomic.StoreInt32(&shouldStop, 1)
+	}
+	//Init
 	for _, s := range sg.Servers() {
-		l.PushFront(s.Phy)
-		aa, err := tlUDP.Request(s.Phy, heartbeatTimeout)
+		addr := s.Phy
+		aa, err := tlUDP.Request(addr, heartbeatTimeout)
 		if err == nil {
 			//Detect added servers
 			for _, s := range aa.KnownServers {
 				err := sg.AddServerToGroup(s)
 				if err == nil {
-					l.PushFront(s)
+					go watchdog(sg, s, chunkUpdateChannel, &shouldStop)
 				}
 			}
-			changes := sg.SetServerChunks(s.Phy, aa.KnownChunks)
+			changes := sg.SetServerChunks(addr, aa.KnownChunks)
 			for i := 0; chunkUpdateChannel != nil && i < len(changes); i++ {
 				chunkUpdateChannel <- changes[i]
 			}
 		}
+		go watchdog(sg, s.Phy, chunkUpdateChannel, &shouldStop)
 	}
-	go func() {
-		for { //TODO
-			time.Sleep(heartbeatTickDuration)
-			if l.Len() == 0 {
-				continue
-			}
-			addr := l.Front().Value.(string)
-			//Request known chunks list
-			aa, err := tlUDP.Request(addr, heartbeatTimeout)
-			if err == nil {
-				//Detect added servers
-				for _, s := range aa.KnownServers {
-					err := sg.AddServerToGroup(s)
-					if err == nil {
-						l.PushFront(s)
-					}
-				}
-				changes := sg.SetServerChunks(addr, aa.KnownChunks)
-				for i := 0; chunkUpdateChannel != nil && i < len(changes); i++ {
-					chunkUpdateChannel <- changes[i]
-				}
-			} else {
-				//log.Println("UDP request timeout. Server", s.Phy, "UDP error:", err)
-			}
-			//if sg.localhost == nil {
-			//	fmt.Println(sg)
-			//}
-			l.MoveToBack(l.Front())
-		}
-	}()
+	return stop
 }

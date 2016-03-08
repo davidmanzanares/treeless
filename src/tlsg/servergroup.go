@@ -247,3 +247,16 @@ func (sg *ServerGroup) AddServerToGroup(addr string) error {
 	}
 	return errors.New("Server already known")
 }
+
+func (sg *ServerGroup) RemoveServer(addr string) error {
+	sg.mutex.Lock()
+	s, ok := sg.servers[addr]
+	if !ok {
+		sg.mutex.Unlock()
+		return errors.New("Server not known")
+	}
+	delete(sg.servers, addr)
+	sg.mutex.Unlock()
+	s.freeConn()
+	return nil
+}

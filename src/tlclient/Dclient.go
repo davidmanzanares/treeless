@@ -2,7 +2,6 @@ package tlclient
 
 import (
 	"encoding/binary"
-	"log"
 	"time"
 	"treeless/src/tlcom"
 	"treeless/src/tlhash"
@@ -15,6 +14,7 @@ type DBClient struct {
 	GetTimeout time.Duration
 	SetTimeout time.Duration
 	DelTimeout time.Duration
+	hbStop     func()
 }
 
 func Connect(addr string) (*DBClient, error) {
@@ -26,7 +26,7 @@ func Connect(addr string) (*DBClient, error) {
 	c.sg = sg
 
 	//Start heartbeat listener
-	tlheartbeat.Start(sg, nil)
+	c.hbStop = tlheartbeat.Start(sg, nil)
 
 	c.GetTimeout = time.Millisecond * 500
 	c.SetTimeout = time.Millisecond * 500
@@ -39,7 +39,6 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks())
 	servers := c.sg.GetChunkHolders(chunkID)
 	var charray [8]chan tlcom.Result
-	var vsarray [8]*tlsg.VirtualServer
 	chs := 0
 
 	for _, s := range servers {
@@ -51,7 +50,6 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 			continue
 		}
 		charray[chs] = ch
-		vsarray[chs] = s
 		chs++
 	}
 	for i := 0; i < chs; i++ {
@@ -63,9 +61,6 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 		//log.Println("get rec compl")
 		//log.Println("get rec unlock")
 		if r.Err != nil {
-			log.Println("get rec timeout")
-			vsarray[i].Timeout() //TODO value, err, cerr
-			log.Println("get rec timeout com")
 			continue
 		}
 		v := r.Value
@@ -118,6 +113,6 @@ func (c *DBClient) Del(key []byte) (errs error) {
 
 func (c *DBClient) Close() {
 	//Stop hearbeat
-
+	c.hbStop()
 	//Stop sockets
 }
