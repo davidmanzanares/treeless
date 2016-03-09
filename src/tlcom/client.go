@@ -1,7 +1,6 @@
 package tlcom
 
 import (
-	"container/list"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -61,8 +60,7 @@ type timeoutMsg struct {
 	tid uint32
 }
 type waiter struct {
-	r  chan<- Result
-	el *list.Element
+	r chan<- Result
 }
 
 func broker(c *Conn) {
@@ -70,34 +68,34 @@ func broker(c *Conn) {
 	writeChannel := tlproto.NewBufferedConn(c.conn, readChannel)
 	waits := make(map[uint32]waiter)
 	tid := uint32(0)
-	l := list.New() //TODO use array
+	pq := make([]timeoutMsg, 0, 64)
 	ticker := time.NewTicker(time.Millisecond * 10)
 	go func() {
 		for {
 			select {
 			case now := <-ticker.C:
-				for l.Len() > 0 {
-					el := l.Front()
-					f := el.Value.(timeoutMsg)
+				for len(pq) > 0 {
+					f := pq[0]
 					if now.After(f.t) {
 						//Timeout'ed
-						w := waits[f.tid]
-						delete(waits, f.tid)
-						w.r <- Result{nil, errors.New("Timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
-						l.Remove(el)
+						w, ok := waits[f.tid]
+						if ok {
+							delete(waits, f.tid)
+							w.r <- Result{nil, errors.New("Timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
+						}
+						pq = pq[1:]
 					} else {
 						break
 					}
 				}
 			case msg, ok := <-c.responseChannel:
 				if !ok {
-					for l.Len() > 0 {
-						el := l.Front()
-						f := el.Value.(timeoutMsg)
+					for len(pq) > 0 {
+						f := pq[0]
 						w := waits[f.tid]
 						delete(waits, f.tid)
 						w.r <- Result{nil, errors.New("Connection closed" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
-						l.Remove(el)
+						pq = pq[1:]
 					}
 					close(writeChannel)
 					return
@@ -106,19 +104,24 @@ func broker(c *Conn) {
 				if msg.timeout > 0 {
 					//Send and *Recieve*
 					tm := timeoutMsg{t: time.Now().Add(msg.timeout), tid: tid}
-					var inserted *list.Element
-					for el := l.Back(); el != l.Front(); el = el.Prev() {
-						t := el.Value.(timeoutMsg).t
+
+					inserted := false
+					for i := len(pq) - 1; i >= 0; i-- {
+						t := pq[i].t
 						if t.Before(tm.t) {
-							inserted = l.InsertAfter(tm, el)
+							pq = append(pq, tm)
+							copy(pq[i+2:], pq[i+1:])
+							pq[i+1] = tm
+							inserted = true
 							break
 						}
 					}
-					if inserted == nil {
-						inserted = l.PushFront(tm)
+					if inserted == false {
+						pq = append(pq, tm)
+						copy(pq[0:], pq[1:])
+						pq[0] = tm
 					}
-
-					waits[tid] = waiter{r: msg.rch, el: inserted}
+					waits[tid] = waiter{r: msg.rch}
 				}
 				tid++
 				writeChannel <- msg.mess
@@ -130,7 +133,7 @@ func broker(c *Conn) {
 				}
 				ch := w.r
 				delete(waits, m.ID)
-				l.Remove(w.el)
+				//l.Remove(w.el)
 				switch m.Type {
 				case tlproto.OpGetResponse:
 					ch <- Result{m.Value, nil}
