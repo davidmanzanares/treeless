@@ -1,2 +1,2 @@
 #!/bin/sh
-wc *.go */*.go */*/*.go
+wc *.go */*.go */*/*.go |sort -n

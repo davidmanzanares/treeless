@@ -47,27 +47,28 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 		}
 	}()
 	var s DBServer
-	//Launch core
 	var err error
-	s.m = tlcore.NewMap(dbpath, numChunks)
-	if err != nil {
-		panic(err)
-	}
-
-	s.lh = tllocals.NewLHStatus(numChunks, localIP+":"+fmt.Sprint(localport))
-	if addr == "" {
-		for i := 0; i < numChunks; i++ {
-			s.lh.ChunkSetStatus(i, tllocals.ChunkSynched)
-		}
-	}
 
 	//Servergroup initialization
 	if addr == "" {
-		//New DB group
-		for i := 0; i < numChunks; i++ {
-			s.m.ChunkEnable(i)
+		//Launch core
+		s.m = tlcore.NewMap(dbpath, numChunks)
+		if err != nil {
+			panic(err)
 		}
-		s.sg = tlsg.CreateServerGroup(len(s.m.Chunks), redundancy)
+		if addr == "" {
+			for i := 0; i < numChunks; i++ {
+				s.m.ChunkEnable(i)
+			}
+		}
+
+		s.lh = tllocals.NewLHStatus(numChunks, localIP+":"+fmt.Sprint(localport))
+		for i := 0; i < numChunks; i++ {
+			s.lh.ChunkSetStatus(i, tllocals.ChunkSynched)
+		}
+
+		//New DB group
+		s.sg = tlsg.CreateServerGroup(numChunks, redundancy)
 		s.sg.AddServerToGroup(localIP + ":" + fmt.Sprint(localport))
 		list := make([]int, numChunks)
 		for i := 0; i < numChunks; i++ {
@@ -80,6 +81,22 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 		if err != nil {
 			panic(err)
 		}
+
+		numChunks = s.sg.NumChunks()
+
+		//Launch core
+		s.m = tlcore.NewMap(dbpath, numChunks)
+		if err != nil {
+			panic(err)
+		}
+		if addr == "" {
+			for i := 0; i < numChunks; i++ {
+				s.m.ChunkEnable(i)
+			}
+		}
+
+		s.lh = tllocals.NewLHStatus(numChunks, localIP+":"+fmt.Sprint(localport))
+
 		//Add to external servergroup instances
 		//For each other server: add localhost
 		for _, s2 := range s.sg.Servers() {
@@ -110,9 +127,9 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 
 //Stop the server, close all TCP/UDP connections
 func (s *DBServer) Stop() {
-	//LH stop
 	s.hb.Stop()
 	s.s.Stop()
+	s.sg.Stop()
 	s.m.Close()
 }
 

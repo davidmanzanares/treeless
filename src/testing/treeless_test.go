@@ -11,17 +11,15 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 	"treeless/src/tlclient"
 	"treeless/src/tlhash"
-	"treeless/src/tlserver"
 	"treeless/src/tlutils"
 )
-
-const useProcess = false
 
 const testingNumChunks = 8
 const benchmarkingNumChunks = 64
@@ -29,7 +27,11 @@ const benchmarkingNumChunks = 64
 const vagrantEnabled = true
 const vServers = 5
 
+//var cluster = gorStartCluster(2)
+var cluster = procStartCluster(2)
+
 func TestMain(m *testing.M) {
+	debug.SetTraceback("all")
 	cmd := exec.Command("killall", "-s", "INT", "treeless")
 	cmd.Run()
 	os.Chdir("..")
@@ -47,88 +49,11 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-var id = 0
-
-func exists(path string) bool {
-	_, err := os.Stat(path)
-	if err == nil {
-		return true
-	}
-	if os.IsNotExist(err) {
-		return false
-	}
-	return true
-}
-
-func waitForServer(addr string) bool {
-	for i := 0; i < 50; i++ {
-		time.Sleep(time.Millisecond * 50)
-		client, err := tlclient.Connect(addr)
-		if err == nil {
-			client.Close()
-			return true
-		}
-	}
-	return false
-}
-
-func LaunchServer(assoc string, numChunks int) (addr string, stop func()) {
-	dbTestFolder := ""
-	if exists("/mnt/dbs/") {
-		dbTestFolder = "/mnt/dbs/"
-	}
-	dbpath := dbTestFolder + "testDB" + fmt.Sprint(id)
-	var cmd *exec.Cmd
-	var s *tlserver.DBServer
-	if assoc == "" {
-		id = 0
-		dbpath = "testDB" + fmt.Sprint(id)
-		if useProcess {
-			cmd = exec.Command("./treeless", "-create", "-port",
-				fmt.Sprint(10000+id), "-dbpath", dbpath, "-localip", "127.0.0.1") //, "-cpuprofile"
-		} else {
-			s = tlserver.Start("", "127.0.0.1", 10000+id, numChunks, 2, dbpath)
-		}
-	} else {
-		if useProcess {
-			cmd = exec.Command("./treeless", "-assoc", assoc, "-port", fmt.Sprint(10000+id), "-dbpath", dbpath, "-localip", "127.0.0.1")
-		} else {
-			s = tlserver.Start(assoc, "127.0.0.1", 10000+id, numChunks, 2, dbpath)
-		}
-	}
-	if useProcess && testing.Verbose() {
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-	}
-	id++
-	if useProcess {
-		err := cmd.Start()
-		if err != nil {
-			panic(err)
-		}
-	}
-	newAddr := string("127.0.0.1" + ":" + fmt.Sprint(10000+id-1))
-	waitForServer(newAddr)
-
-	return newAddr,
-		func() {
-			if useProcess {
-				fmt.Println("KILL")
-				cmd.Process.Signal(os.Interrupt)
-			} else {
-				s.Stop()
-			}
-			time.Sleep(time.Millisecond * 10)
-			os.RemoveAll(dbpath)
-			//fmt.Println(cmd.Path + cmd.Args[1] + cmd.Args[2] + cmd.Args[3] + cmd.Args[4] + " killed")
-		}
-}
-
 //Test just a few hard-coded operations with one server - one client
 func TestSimple(t *testing.T) {
 	//Server set-up
-	addr, stop := LaunchServer("", testingNumChunks)
-	defer stop()
+	addr := cluster[0].create(testingNumChunks, 2)
+	defer cluster[0].kill()
 	//Client set-up
 	client, err := tlclient.Connect(addr)
 	if err != nil {
@@ -164,8 +89,8 @@ func TestSimple(t *testing.T) {
 //TestBigMessages, send 8KB GET, SET messages
 func TestBigMessages(t *testing.T) {
 	//Server set-up
-	addr, stop := LaunchServer("", testingNumChunks)
-	defer stop()
+	addr := cluster[0].create(testingNumChunks, 2)
+	defer cluster[0].kill()
 	//Client set-up
 	client, err := tlclient.Connect(addr)
 	if err != nil {
@@ -188,7 +113,7 @@ func TestBigMessages(t *testing.T) {
 
 func TestBasicRebalance(t *testing.T) {
 	//Server set-up
-	addr1, stop1 := LaunchServer("", testingNumChunks)
+	addr1 := cluster[0].create(testingNumChunks, 2)
 	//Client set-up
 	client, err := tlclient.Connect(addr1)
 	if err != nil {
@@ -201,13 +126,13 @@ func TestBasicRebalance(t *testing.T) {
 		t.Fatal(err)
 	}
 	//Second server set-up
-	_, stop2 := LaunchServer(addr1, testingNumChunks)
-	defer stop2()
+	cluster[1].assoc(addr1)
+	defer cluster[1].kill()
 	//Wait for rebalance
 	time.Sleep(time.Second * 3)
 	//First server shut down
 	fmt.Println("Server 1 shut down")
-	stop1()
+	cluster[0].kill()
 	time.Sleep(time.Second)
 	//Get operation
 	value, _ := client.Get([]byte("hola"))
@@ -227,19 +152,9 @@ func TestBasicRebalance(t *testing.T) {
 //Test lots of operations made by a single client against a single DB server
 func TestCmplx1_1(t *testing.T) {
 	//Server set-up
-	addr, stop := LaunchServer("", testingNumChunks)
-	defer stop()
+	addr := cluster[0].create(testingNumChunks, 2)
+	defer cluster[0].kill()
 	metaTest(t, addr, 10*1000, 4, 8, 10, 1024)
-}
-
-//Test lots of operations made by multiple clients against a single DB server
-func TestCmplxN_1(t *testing.T) {
-	//metaTest(10*1000, 10, 40, 10)
-}
-
-//Test lots of operations made by multiple clients against multiple DB servers
-func TestCmplxN_N(t *testing.T) {
-	//metaTest(10*1000, 10, 40, 10)
 }
 
 func randKVOpGenerator(maxKeySize, maxValueSize, seed, mult, offset int) func() (op int, k, v []byte) {
@@ -351,8 +266,8 @@ func metaTest(t *testing.T, addr string, numOperations, maxKeySize, maxValueSize
 }
 
 func TestConsistency(t *testing.T) {
-	addr, stop := LaunchServer("", testingNumChunks)
-	defer stop()
+	addr := cluster[0].create(testingNumChunks, 2)
+	defer cluster[0].kill()
 	metaTestConsistency(t, addr, 20, 200)
 }
 
@@ -431,7 +346,7 @@ func metaTestConsistency(t *testing.T, serverAddr string, numClients, iterations
 func TestHotRebalance(t *testing.T) {
 	var stop2 func()
 	//Server set-up
-	addr, stop := LaunchServer("", testingNumChunks)
+	addr := cluster[0].create(testingNumChunks, 2)
 	//Client set-up
 	c, err := tlclient.Connect(addr)
 	if err != nil {
@@ -481,12 +396,12 @@ func TestHotRebalance(t *testing.T) {
 				if core == 0 && i == 0 {
 					fmt.Println("Server 2 power up")
 					//Second server set-up
-					_, stop2 = LaunchServer(addr, testingNumChunks)
+					cluster[1].assoc(addr)
 					//Wait for rebalance
 					time.Sleep(time.Second * 7)
 					//First server shut down
 					fmt.Println("Server 1 shut down")
-					stop()
+					cluster[0].kill()
 				}
 				p.Inc()
 				opType, key, value := rNext()
@@ -550,13 +465,14 @@ func TestHotRebalance(t *testing.T) {
 		fmt.Println("Present keys tested:", len(goMap))
 		fmt.Println("Deleted keys tested:", dels)
 	}
+	cluster[1].kill()
 }
 
 //TestLatency tests latency between a SET operation and a GET operaton that sees the the SET written value
 func TestLatency(t *testing.T) {
 	//Server set-up
-	addr, stop := LaunchServer("", testingNumChunks)
-	defer stop()
+	addr := cluster[0].create(testingNumChunks, 2)
+	defer cluster[0].kill()
 	//Client set-up
 	c, err := tlclient.Connect(addr)
 	if err != nil {
@@ -628,15 +544,16 @@ func TestLatency(t *testing.T) {
 
 //TestClock tests records timestamps synchronization
 func TestClock(t *testing.T) {
+	//time.Sleep(time.Second * 10)
+	//panic(111134)
 	//Server set-up
-	addr, stop := LaunchServer("", testingNumChunks)
-	defer stop()
+	addr := cluster[0].create(testingNumChunks, 2)
+	defer cluster[0].kill()
 	//Client set-up
 	c, err := tlclient.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer time.Sleep(time.Second)
 	defer c.Close()
 
 	threads := 63
@@ -674,9 +591,9 @@ func TestClock(t *testing.T) {
 	var maxDiff time.Duration
 	var avgDiff time.Duration
 	for k, goTime := range timestampMap {
-		_, tlTime := c.Get([]byte(k))
-		if err != nil {
-			panic(err)
+		v, tlTime := c.Get([]byte(k))
+		if v == nil {
+			t.Error("Get returned nil value")
 		}
 		diff := tlTime.Sub(goTime)
 		avgDiff += diff
@@ -684,7 +601,7 @@ func TestClock(t *testing.T) {
 			maxDiff = diff
 		}
 		if diff < 0 {
-			fmt.Println("Warning: negative time difference: ", diff)
+			t.Error("Warning: negative time difference: ", diff)
 		}
 	}
 	avgDiff = avgDiff / time.Duration(len(timestampMap))
@@ -947,13 +864,13 @@ func BenchmarkGetUnpopulated2Servers(b *testing.B) {
 func metaBenchmarkGetUnpopulated(nservers int, b *testing.B) {
 	fmt.Println(b.N)
 	//Server set-up
-	addr, stop := LaunchServer("", benchmarkingNumChunks)
-	defer stop()
+	addr := cluster[0].create(benchmarkingNumChunks, 2)
+	defer cluster[0].kill()
 	if nservers > 1 {
 		time.Sleep(time.Second)
 		for i := 1; i < nservers; i++ {
-			_, stop2 := LaunchServer(addr, benchmarkingNumChunks)
-			defer stop2()
+			cluster[i].assoc(addr)
+			defer cluster[i].kill()
 		}
 		time.Sleep(time.Second * 6)
 	}

@@ -5,6 +5,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"sync"
 	"syscall"
 	"time"
 	"treeless/src/tlcore"
@@ -16,6 +17,11 @@ var rebalanceWakeupPeriod = time.Second * 10
 
 const maxRebalanceWaitSeconds = 10
 
+type Rebalancer struct {
+	duplicatorChannel chan int
+	w                 *sync.WaitGroup
+}
+
 //The following priority queue is used to store chunk review candidates
 //Each candidate is formed by a chunk ID and a review timestamp
 //The queue is ordered by these timestamps
@@ -25,6 +31,11 @@ type ChunkToReview struct {
 	id           int
 	timeToReview time.Time
 	index        int
+}
+
+func (r *Rebalancer) Stop() {
+	r.duplicatorChannel <- (-1)
+	r.w.Wait()
 }
 
 // A PriorityQueue implements heap.Interface and holds Items.
@@ -70,7 +81,7 @@ func StartRebalance(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Ma
 
 	//Constantly check for possible duplications to rebalance the servers,
 	//servers should have more or less the same work
-	go func() {
+	go func() { //LoadRebalancer
 		time.Sleep(rebalanceWakeupPeriod)
 		for !ShouldStop() {
 			known := float64(lh.KnownChunks())
@@ -109,7 +120,7 @@ func StartRebalance(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Ma
 	//		if still with low redundancy / noone claimed it:
 	//			Claim it
 	//			transfer it
-	go func() { //Simplify
+	go func() { //Simplify //RedundancyBasedRebalancer
 		pq := make(PriorityQueue, 0)
 		heap.Init(&pq)
 		inQueue := make(map[int]*ChunkToReview)
@@ -130,7 +141,7 @@ func StartRebalance(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Ma
 			case cid := <-chunkUpdateChannel:
 				chunk := inQueue[cid]
 				if chunk == nil {
-					t := time.Now().Add(time.Millisecond * time.Duration(time.Duration(100*rand.Float32()))) //TODO add variable server k
+					t := time.Now().Add(time.Millisecond * time.Duration(time.Duration(100*rand.Float32()))) //TODO del pq
 					chunk = &ChunkToReview{id: cid, timeToReview: t}
 					heap.Push(&pq, chunk)
 					inQueue[cid] = chunk
@@ -161,50 +172,6 @@ func getFreeDiskSpace() uint64 {
 	// Available blocks * size per block = available space in bytes
 	return stat.Bavail * uint64(stat.Bsize)
 }
-
-/*
-func releaser(sg *tlsg.ServerGroup, core *tlcore.Map) (release func(c *VirtualChunk)) {
-	releaseChannel := make(chan *VirtualChunk, 1024)
-
-	release = func(c *VirtualChunk) {
-		releaseChannel <- c
-	}
-	go func() {
-		sg.Lock()
-		for !sg.stopped {
-			sg.Unlock()
-			c := <-releaseChannel
-			sg.Lock()
-			//Request chunk protection?
-			//Release repair
-
-			//Request chunk protection
-			protected := true
-			for s := range c.Holders {
-				if s == sg.localhost {
-					continue
-				}
-				sg.Unlock()
-				ok := s.Protect(c.ID)
-				sg.Lock()
-				if !ok {
-					protected = false
-					break
-				}
-			}
-			if !protected {
-				continue
-			}
-			//Release
-			sg.chunkStatus[c.ID] = 0
-			log.Println("Disabling chunk...", c.ID)
-			core.ChunkDisable(c.ID)
-		}
-		sg.Unlock()
-	}()
-
-	return release
-}*/
 
 //The duplicator recieves chunkIDs and tries to download a copy from an external server
 //It returns a function that should be called upon these IDs
@@ -283,3 +250,47 @@ func duplicator(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map,
 
 	return duplicate
 }
+
+/*
+func releaser(sg *tlsg.ServerGroup, core *tlcore.Map) (release func(c *VirtualChunk)) {
+	releaseChannel := make(chan *VirtualChunk, 1024)
+
+	release = func(c *VirtualChunk) {
+		releaseChannel <- c
+	}
+	go func() {
+		sg.Lock()
+		for !sg.stopped {
+			sg.Unlock()
+			c := <-releaseChannel
+			sg.Lock()
+			//Request chunk protection?
+			//Release repair
+
+			//Request chunk protection
+			protected := true
+			for s := range c.Holders {
+				if s == sg.localhost {
+					continue
+				}
+				sg.Unlock()
+				ok := s.Protect(c.ID)
+				sg.Lock()
+				if !ok {
+					protected = false
+					break
+				}
+			}
+			if !protected {
+				continue
+			}
+			//Release
+			sg.chunkStatus[c.ID] = 0
+			log.Println("Disabling chunk...", c.ID)
+			core.ChunkDisable(c.ID)
+		}
+		sg.Unlock()
+	}()
+
+	return release
+}*/

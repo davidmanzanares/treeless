@@ -40,7 +40,6 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 	servers := c.sg.GetChunkHolders(chunkID)
 	var charray [8]tlcom.GetOperation
 	chs := 0
-
 	for _, s := range servers {
 		if s == nil {
 			continue
@@ -53,10 +52,7 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 		chs++
 	}
 	for i := 0; i < chs; i++ {
-		//log.Println("get rec")
 		r := charray[i].Wait()
-		//log.Println("get rec compl")
-		//log.Println("get rec unlock")
 		if r.Err != nil {
 			continue
 		}

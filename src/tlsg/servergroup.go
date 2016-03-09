@@ -34,6 +34,13 @@ type ServerGroup struct {
 	ServerGroup utils
 */
 
+func (sg *ServerGroup) Stop() {
+	sg.mutex.Lock()
+	sg.servers = make(map[string]*VirtualServer)
+	sg.chunks = make([]VirtualChunk, sg.numChunks)
+	sg.mutex.Unlock()
+}
+
 //CreateServerGroup creates a new DB server group, without connecting to an existing group
 func CreateServerGroup(numChunks int, redundancy int) *ServerGroup {
 	sg := new(ServerGroup)
