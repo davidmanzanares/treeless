@@ -1,19 +1,19 @@
 package tllocals
 
-import "sync/atomic"
+import "sync"
 
 type LHStatus struct {
-	LocalhostIPPort string
+	LocalhostIPPort string        //TODO private
 	chunkStatus     []ChunkStatus //Array of all DB chunks status
-	known           int64
+	known           int
+	mutex           sync.RWMutex
 }
 
 type ChunkStatus int64
 
 const (
-	chunkNotPresent ChunkStatus = 0
-	chunkPresent    ChunkStatus = 1 << iota
-	chunkSynched
+	ChunkPresent ChunkStatus = 1 + iota
+	ChunkSynched
 )
 
 /*
@@ -31,35 +31,40 @@ func NewLHStatus(numChunks int, LocalhostIPPort string) *LHStatus {
 	Getters
 */
 func (lh *LHStatus) KnownChunks() int {
-	return int(atomic.LoadInt64((*int64)(&lh.known)))
+	lh.mutex.RLock()
+	n := lh.known
+	lh.mutex.RUnlock()
+	return n
 }
 func (lh *LHStatus) KnownChunksList() []int {
-	list := make([]int, 0, lh.KnownChunks())
+	lh.mutex.RLock()
+	list := make([]int, 0, lh.known)
 	for i := 0; i < len(lh.chunkStatus); i++ {
-		if lh.ChunkStatus(i).Present() {
+		if lh.chunkStatus[i] != 0 {
 			list = append(list, i)
 		}
 	}
+	lh.mutex.RUnlock()
 	return list
 }
 func (lh *LHStatus) ChunkStatus(id int) ChunkStatus {
-	return ChunkStatus(atomic.LoadInt64((*int64)(&lh.chunkStatus[id])))
-}
-
-func (cs ChunkStatus) Present() bool {
-	return (cs & chunkPresent) != 0
-}
-func (cs ChunkStatus) Synched() bool {
-	return (cs & chunkSynched) != 0
+	lh.mutex.RLock()
+	s := lh.chunkStatus[id]
+	lh.mutex.RUnlock()
+	return s
 }
 
 /*
 	Setters
 */
 
-func (lh *LHStatus) ChunkSetPresent(cid int) {
-	atomic.StoreInt64((*int64)(&lh.chunkStatus[cid]), int64(chunkPresent))
-}
-func (lh *LHStatus) ChunkSetSynched(cid int) {
-	atomic.StoreInt64((*int64)(&lh.chunkStatus[cid]), int64(chunkPresent|chunkSynched))
+func (lh *LHStatus) ChunkSetStatus(cid int, st ChunkStatus) {
+	lh.mutex.Lock()
+	if lh.chunkStatus[cid] == 0 && st != 0 {
+		lh.known++
+	} else if lh.chunkStatus[cid] != 0 && st == 0 {
+		lh.known--
+	}
+	lh.chunkStatus[cid] = st
+	lh.mutex.Unlock()
 }

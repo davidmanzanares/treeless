@@ -27,11 +27,12 @@ type DBServer struct {
 	sg *tlsg.ServerGroup
 	//Status
 	lh *tllocals.LHStatus
-	//Stop
-	hbStop func()
+	//Heartbeat
+	hb *tlheartbeat.Heartbeater
 }
 
 const serverWorkers = 4
+const channelUpdateBufferSize = 1024
 
 //Start a Treeless server
 func Start(addr string, localIP string, localport int, numChunks, redundancy int, dbpath string) *DBServer {
@@ -56,7 +57,7 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 	s.lh = tllocals.NewLHStatus(numChunks, localIP+":"+fmt.Sprint(localport))
 	if addr == "" {
 		for i := 0; i < numChunks; i++ {
-			s.lh.ChunkSetSynched(i)
+			s.lh.ChunkSetStatus(i, tllocals.ChunkSynched)
 		}
 	}
 
@@ -90,11 +91,12 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 		s.sg.AddServerToGroup(localIP + ":" + fmt.Sprint(localport))
 	}
 
-	//Rebalancer start
-	chunkUpdateChannel := tlrebalance.StartRebalance(s.sg, s.lh, s.m, func() bool { return false })
-
+	//We need a channel to get informed about chunk updates
+	chunkUpdateChannel := make(chan int, channelUpdateBufferSize)
 	//Heartbeat start
-	s.hbStop = tlheartbeat.Start(s.sg, chunkUpdateChannel)
+	s.hb = tlheartbeat.Start(s.sg, chunkUpdateChannel)
+	//Rebalancer start
+	tlrebalance.StartRebalance(s.sg, s.lh, s.m, func() bool { return false }, chunkUpdateChannel)
 
 	//Init server
 	readChannel := make(chan tlproto.Message, 1024)
@@ -109,7 +111,7 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 //Stop the server, close all TCP/UDP connections
 func (s *DBServer) Stop() {
 	//LH stop
-	s.hbStop()
+	s.hb.Stop()
 	s.s.Stop()
 	s.m.Close()
 }
@@ -186,7 +188,7 @@ func createWorker(s *DBServer, readChannel <-chan tlproto.Message) {
 					response.Type = tlproto.OpErr
 					responseChannel <- response
 				}
-				if s.lh.ChunkStatus(chunkID).Synched() {
+				if s.lh.ChunkStatus(chunkID) == tllocals.ChunkSynched {
 					//New goroutine will put every key value pair into destination, it will manage the OpTransferOK response
 					addr := string(message.Value)
 					c, err := tlcom.CreateConnection(addr)

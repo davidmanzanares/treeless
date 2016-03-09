@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"sort"
 	"sync"
 	"time"
 	"treeless/src/tlcom"
@@ -87,15 +88,32 @@ func UnmarhalServerGroup(serialization []byte) (*ServerGroup, error) {
 func (sg *ServerGroup) String() string {
 	str := fmt.Sprint(len(sg.servers)) + " servers:\n"
 	t := time.Now()
-	for _, s := range sg.servers {
+
+	var addrs []string
+	for k := range sg.servers {
+		addrs = append(addrs, k)
+	}
+	sort.Strings(addrs)
+	for _, addr := range addrs {
+		s := sg.servers[addr]
 		str += "\t Address: " + s.Phy +
 			"\n\t\tKnown chunks: " + fmt.Sprint(s.heldChunks) + " Last heartbeat: " + (t.Sub(s.lastHeartbeat)).String() + "\n"
 	}
+
 	str += fmt.Sprint(sg.numChunks) + " chunks:\n"
 	for i := range sg.chunks {
-		srv := ""
+		srv := "\n\t"
+		column := 0
+		var holders []string
 		for k := range sg.chunks[i].holders {
-			srv += "\n\t\t" + k.Phy
+			holders = append(holders, k.Phy)
+		}
+		for _, phy := range holders {
+			if column == 3 {
+				srv = srv + "\n\t"
+			}
+			srv += "\t" + phy
+			column++
 		}
 		str += "\tChunk " + fmt.Sprint(i) + srv + "\n"
 	}
@@ -234,6 +252,14 @@ func (sg *ServerGroup) SetServerChunks(addr string, cids []int) []int {
 	return changes
 }
 
+func (sg *ServerGroup) IsServerOnGroup(addr string) bool {
+	sg.mutex.RLock()
+	_, ok := sg.servers[addr]
+	sg.mutex.RUnlock()
+	return ok
+
+}
+
 func (sg *ServerGroup) AddServerToGroup(addr string) error {
 	sg.mutex.Lock()
 	defer sg.mutex.Unlock()
@@ -256,6 +282,9 @@ func (sg *ServerGroup) RemoveServer(addr string) error {
 		return errors.New("Server not known")
 	}
 	delete(sg.servers, addr)
+	for _, i := range s.heldChunks {
+		delete(sg.chunks[i].holders, s)
+	}
 	sg.mutex.Unlock()
 	s.freeConn()
 	return nil

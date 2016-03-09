@@ -8,21 +8,37 @@ import (
 	"treeless/src/tlsg"
 )
 
-var heartbeatTimeout = time.Millisecond * 500
+var heartbeatTimeout = time.Millisecond * 1000
 var heartbeatSleep = time.Millisecond * 1000
 var heartbeatSleepOnFail = time.Millisecond * 500
+var timeoutRetries = 5
 
-func watchdog(sg *tlsg.ServerGroup, addr string, chunkUpdateChannel chan int, stop *int32) {
+type Heartbeater struct {
+	Sleep          time.Duration
+	SleepOnFail    time.Duration
+	Timeout        time.Duration
+	TimeoutRetries time.Duration
+	stop           int32
+}
+
+func watchdog(h *Heartbeater, sg *tlsg.ServerGroup, addr string, chunkUpdateChannel chan int) {
 	timeouts := 0
-	for atomic.LoadInt32(stop) == 0 {
+	for atomic.LoadInt32(&h.stop) == 0 {
 		aa, err := tlUDP.Request(addr, heartbeatTimeout)
 		if err == nil {
 			timeouts = 0
 			//Detect added servers
 			for _, s := range aa.KnownServers {
-				err := sg.AddServerToGroup(s)
-				if err == nil {
-					go watchdog(sg, s, chunkUpdateChannel, stop)
+				if !sg.IsServerOnGroup(s) {
+					go func(s string) {
+						_, err := tlUDP.Request(s, heartbeatTimeout)
+						if err == nil {
+							err := sg.AddServerToGroup(s)
+							if err == nil {
+								go watchdog(h, sg, s, chunkUpdateChannel)
+							}
+						}
+					}(s)
 				}
 			}
 			changes := sg.SetServerChunks(addr, aa.KnownChunks)
@@ -33,7 +49,7 @@ func watchdog(sg *tlsg.ServerGroup, addr string, chunkUpdateChannel chan int, st
 		} else {
 			//log.Println("Server timeouted:", addr)
 			timeouts++
-			if timeouts == 5 {
+			if timeouts == timeoutRetries {
 				//Server is dead
 				log.Println("Server is dead:", addr)
 				sg.RemoveServer(addr)
@@ -44,12 +60,12 @@ func watchdog(sg *tlsg.ServerGroup, addr string, chunkUpdateChannel chan int, st
 	}
 }
 
-func Start(sg *tlsg.ServerGroup, chunkUpdateChannel chan int) (stop func()) {
-	var shouldStop int32
-	shouldStop = 0
-	stop = func() {
-		atomic.StoreInt32(&shouldStop, 1)
-	}
+func (h *Heartbeater) Stop() {
+	atomic.StoreInt32(&h.stop, 1)
+}
+
+func Start(sg *tlsg.ServerGroup, chunkUpdateChannel chan int) *Heartbeater {
+	h := new(Heartbeater)
 	//Init
 	for _, s := range sg.Servers() {
 		addr := s.Phy
@@ -59,7 +75,7 @@ func Start(sg *tlsg.ServerGroup, chunkUpdateChannel chan int) (stop func()) {
 			for _, s := range aa.KnownServers {
 				err := sg.AddServerToGroup(s)
 				if err == nil {
-					go watchdog(sg, s, chunkUpdateChannel, &shouldStop)
+					go watchdog(h, sg, s, chunkUpdateChannel)
 				}
 			}
 			changes := sg.SetServerChunks(addr, aa.KnownChunks)
@@ -67,7 +83,7 @@ func Start(sg *tlsg.ServerGroup, chunkUpdateChannel chan int) (stop func()) {
 				chunkUpdateChannel <- changes[i]
 			}
 		}
-		go watchdog(sg, s.Phy, chunkUpdateChannel, &shouldStop)
+		go watchdog(h, sg, s.Phy, chunkUpdateChannel)
 	}
-	return stop
+	return h
 }

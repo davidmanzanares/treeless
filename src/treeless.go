@@ -11,7 +11,9 @@ import (
 	"runtime/pprof"
 	"time"
 	"treeless/src/tlcom"
+	"treeless/src/tlheartbeat"
 	"treeless/src/tlserver"
+	"treeless/src/tlsg"
 )
 
 func main() {
@@ -54,6 +56,23 @@ func main() {
 	}
 
 	if *monitor != "" {
+		sg, err := tlsg.Assoc(*monitor)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		//Start heartbeat listener
+		hb := tlheartbeat.Start(sg, nil)
+		go func() {
+			for {
+				fmt.Println("\033[H\033[2J" + sg.String())
+				time.Sleep(time.Millisecond * 100)
+			}
+		}()
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt)
+		<-c
+		hb.Stop()
 		/*s, err := tlsgOLD.ConnectAsClient(*monitor)
 		if err != nil {
 			fmt.Println("Access couldn't be established")

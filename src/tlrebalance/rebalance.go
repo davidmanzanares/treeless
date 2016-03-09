@@ -12,10 +12,9 @@ import (
 	"treeless/src/tlsg"
 )
 
-const maxRebalanceWaitSeconds = 10
-const channelUpdateBufferSize = 1024
-
 var rebalanceWakeupPeriod = time.Second * 10
+
+const maxRebalanceWaitSeconds = 10
 
 //The following priority queue is used to store chunk review candidates
 //Each candidate is formed by a chunk ID and a review timestamp
@@ -65,9 +64,7 @@ func (pq *PriorityQueue) update(c *ChunkToReview, t time.Time) {
 	heap.Fix(pq, c.index)
 }
 
-func StartRebalance(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map, ShouldStop func() bool) (chunkUpdateChannel chan int) {
-	//We need a channel to get informed about chunk updates
-	chunkUpdateChannel = make(chan int, channelUpdateBufferSize)
+func StartRebalance(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map, ShouldStop func() bool, chunkUpdateChannel chan int) {
 	//Delegate chunk downloads to the duplicator
 	duplicate := duplicator(sg, lh, core, ShouldStop)
 
@@ -83,8 +80,8 @@ func StartRebalance(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Ma
 				//Local server hass less work than it should
 				//Try to download a random chunk
 				c := int(rand.Int31n(int32(sg.NumChunks())))
-				if !lh.ChunkStatus(c).Present() {
-					log.Println("Duplicate to rebalance")
+				if lh.ChunkStatus(c) == 0 && sg.NumHolders(c) <= sg.Redundancy() {
+					log.Println("Duplicate to rebalance. Reason:", known, avg)
 					duplicate(c)
 				}
 			} else if known-1 > avg*1.05 {
@@ -141,17 +138,17 @@ func StartRebalance(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Ma
 			case <-tick:
 				if len(pq) > 0 {
 					c := heap.Pop(&pq).(*ChunkToReview)
-					if sg.NumHolders(c.id) < sg.Redundancy() && !lh.ChunkStatus(c.id).Present() {
+					if sg.NumHolders(c.id) < sg.Redundancy() && lh.ChunkStatus(c.id) == 0 {
+						log.Println("Duplicate to mantain redundancy. Reason:", sg.NumHolders(c.id), sg.Redundancy())
 						duplicate(c.id)
 					} else {
-						//log.Println("Chunk duplication aborted: chunk not needed", c.ID, c, c.Holders[sg.localhost])
+						//log.Println("Chunk duplication aborted: chunk not needed", c.id, sg.NumHolders(c.id))
 					}
 					delete(inQueue, c.id)
 				}
 			}
 		}
 	}()
-	return chunkUpdateChannel
 }
 
 func getFreeDiskSpace() uint64 {
@@ -243,7 +240,7 @@ func duplicator(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map,
 			return
 		}
 		core.ChunkEnable(cid)
-		lh.ChunkSetPresent(cid)
+		lh.ChunkSetStatus(cid, tllocals.ChunkPresent)
 		go func() {
 			time.Sleep(time.Second * 2)
 			duplicateChannel <- cid
@@ -271,7 +268,7 @@ func duplicator(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map,
 					continue
 				} else {
 					//Set chunk as ready
-					lh.ChunkSetSynched(cid)
+					lh.ChunkSetStatus(cid, tllocals.ChunkSynched)
 					log.Println("Chunk duplication completed", cid)
 					transferred = true
 					break

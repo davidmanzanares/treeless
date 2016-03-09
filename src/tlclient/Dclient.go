@@ -11,10 +11,10 @@ import (
 
 type DBClient struct {
 	sg         *tlsg.ServerGroup
+	hb         *tlheartbeat.Heartbeater
 	GetTimeout time.Duration
 	SetTimeout time.Duration
 	DelTimeout time.Duration
-	hbStop     func()
 }
 
 func Connect(addr string) (*DBClient, error) {
@@ -26,7 +26,7 @@ func Connect(addr string) (*DBClient, error) {
 	c.sg = sg
 
 	//Start heartbeat listener
-	c.hbStop = tlheartbeat.Start(sg, nil)
+	c.hb = tlheartbeat.Start(sg, nil)
 
 	c.GetTimeout = time.Millisecond * 500
 	c.SetTimeout = time.Millisecond * 500
@@ -113,6 +113,6 @@ func (c *DBClient) Del(key []byte) (errs error) {
 
 func (c *DBClient) Close() {
 	//Stop hearbeat
-	c.hbStop()
+	c.hb.Stop()
 	//Stop sockets
 }
