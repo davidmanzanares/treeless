@@ -10,30 +10,32 @@ type Progress struct {
 	index            int
 	total            int
 	lastPrintedIndex int
-	sync.Mutex
+	m                sync.Mutex
 }
 
-//TODO multithread
 func NewProgress(reason string, total int) *Progress {
 	p := &Progress{reason: reason, total: total}
-	p.print()
+	p.print(0)
 	return p
 }
 
-func (p *Progress) Set(index int) {
-	p.Lock()
-	p.index = index
+func (p *Progress) Inc() {
+	p.m.Lock()
+	p.index++
 	if p.index-p.lastPrintedIndex > p.total/1000 {
-		p.print()
+		p.lastPrintedIndex = p.index
+		index := p.index
+		p.m.Unlock()
+		p.print(index)
+		return
 	}
-	p.Unlock()
+	p.m.Unlock()
 }
 
-func (p *Progress) print() {
-	p.lastPrintedIndex = p.index
-	if p.index == p.total-1 {
+func (p *Progress) print(index int) {
+	if index == p.total {
 		fmt.Printf("\r%s %.2f%%\t\t\n", p.reason, 100.0)
 	} else {
-		fmt.Printf("\r%s %.2f%%\t\t", p.reason, 100.0*float64(p.index)/float64(p.total))
+		fmt.Printf("\r%s %.2f%%\t\t", p.reason, 100.0*float64(index)/float64(p.total))
 	}
 }

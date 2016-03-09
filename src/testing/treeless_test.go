@@ -27,7 +27,7 @@ const testingNumChunks = 8
 const benchmarkingNumChunks = 64
 
 const vagrantEnabled = true
-const vServers = 6
+const vServers = 5
 
 func TestMain(m *testing.M) {
 	cmd := exec.Command("killall", "-s", "INT", "treeless")
@@ -364,12 +364,9 @@ func metaTestConsistency(t *testing.T, serverAddr string, numClients, iterations
 	var mutex sync.Mutex
 	goMap := make(map[string][]byte)
 	quitASAP := false
+	p := tlutils.NewProgress("Operating...", iterations*numClients)
 	for i := 0; i < numClients; i++ {
 		go func(thread int) {
-			var p *tlutils.Progress
-			if thread == numClients-1 {
-				p = tlutils.NewProgress("Operating...", iterations)
-			}
 			mutex.Lock()
 			//Create client and connect it to the fake server
 			c, err := tlclient.Connect(serverAddr)
@@ -381,9 +378,7 @@ func metaTestConsistency(t *testing.T, serverAddr string, numClients, iterations
 			mutex.Unlock()
 
 			for i := 0; i < iterations; i++ {
-				if thread == numClients-1 {
-					p.Set(i)
-				}
+				p.Inc()
 				op := int(rand.Int31n(int32(3)))
 				key := make([]byte, 1)
 				key[0] = byte(1)
@@ -477,8 +472,7 @@ func TestHotRebalance(t *testing.T) {
 			stop2()
 		}
 	}()
-	p := tlutils.NewProgress("Writting", numOperations*2-1)
-	progress := uint64(0)
+	p := tlutils.NewProgress("Writting", numOperations*threads)
 	for core := 0; core < threads; core++ {
 		go func(core int) {
 			rNext := randKVOpGenerator(maxKeySize, maxValueSize, core, 64, core)
@@ -493,13 +487,8 @@ func TestHotRebalance(t *testing.T) {
 					//First server shut down
 					fmt.Println("Server 1 shut down")
 					stop()
-				} else if core == 1 {
-					atomic.AddUint64(&progress, 1)
-					p.Set(int(atomic.LoadUint64(&progress)))
-				} else if core == 0 {
-					atomic.AddUint64(&progress, 1)
-					p.Set(int(atomic.LoadUint64(&progress)))
 				}
+				p.Inc()
 				opType, key, value := rNext()
 				switch opType {
 				case 0:
@@ -528,7 +517,7 @@ func TestHotRebalance(t *testing.T) {
 	//Check map is in DB
 	i := 0
 	for key, value := range goMap {
-		p.Set(i)
+		p.Inc()
 		i++
 		if len(value) > 128 {
 			fmt.Println(123)
@@ -545,7 +534,7 @@ func TestHotRebalance(t *testing.T) {
 	//Check deleteds aren't in DB
 	dels := 0
 	for i := 0; i < len(goDeletes); i++ {
-		p.Set(i + len(goMap))
+		p.Inc()
 		key := goDeletes[i]
 		_, ok := goMap[string(key)]
 		if ok {
@@ -713,6 +702,7 @@ func testSequential(addr string, t *testing.T) {
 	operations := 5000
 	w.Add(vClients)
 	t1 := time.Now()
+	p := tlutils.NewProgress("Operating...", operations*vClients)
 	for i := 0; i < vClients; i++ {
 		go func(thread int) {
 			//Create client and connect it to the fake server
@@ -720,16 +710,10 @@ func testSequential(addr string, t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var p *tlutils.Progress
-			if thread == vClients-1 {
-				p = tlutils.NewProgress("Operating...", operations)
-			}
 			defer c.Close()
 			for i := 0; i < operations; i++ {
 				//fmt.Println(thread, i)
-				if thread == vClients-1 {
-					p.Set(i)
-				}
+				p.Inc()
 				//Operate
 				op := int(rand.Int31n(int32(3)))
 				key := make([]byte, 1)
@@ -790,6 +774,7 @@ func testParallel(addr string, t *testing.T, oneClient bool) {
 		}
 	}
 	t1 := time.Now()
+	p := tlutils.NewProgress("Operating...", operations*vClients)
 	for i := 0; i < vClients; i++ {
 		go func(thread int) {
 			if !oneClient {
@@ -799,15 +784,9 @@ func testParallel(addr string, t *testing.T, oneClient bool) {
 					t.Fatal(err)
 				}
 			}
-			var p *tlutils.Progress
-			if thread == vClients-1 {
-				p = tlutils.NewProgress("Operating...", operations)
-			}
 			defer c.Close()
 			for i := 0; i < operations; i++ {
-				if thread == vClients-1 {
-					p.Set(i)
-				}
+				p.Inc()
 				//Operate
 				op := int(rand.Int31n(int32(3)))
 				key := make([]byte, 1)

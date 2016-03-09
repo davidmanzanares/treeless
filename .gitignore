@@ -8,3 +8,4 @@ treeless
 .vagrant
 *~
 *.zip
+*.test
