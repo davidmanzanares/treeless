@@ -6,9 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 	"time"
 	"treeless/src/tlcom/tlproto"
 )
+
+var brokerTick = time.Millisecond * 30
 
 //Stores a DB operation result
 type Result struct {
@@ -16,14 +19,11 @@ type Result struct {
 	Err   error
 }
 
-const tickerReserveSize = 32
-
 //Conn is a DB TCP client connection
 type Conn struct {
 	conn            *net.TCPConn
-	tickerReserve   [tickerReserveSize]*time.Ticker
-	reservedTickers int
 	responseChannel chan ResponserMsg
+	rchPool         sync.Pool
 }
 
 type ResponserMsg struct {
@@ -49,7 +49,9 @@ func CreateConnection(addr string) (*Conn, error) {
 	c.conn = tcpconn
 
 	c.responseChannel = make(chan ResponserMsg, 1024)
-
+	c.rchPool = sync.Pool{New: func() interface{} {
+		return make(chan Result, 1)
+	}}
 	go broker(&c)
 
 	return &c, nil
@@ -59,17 +61,15 @@ type timeoutMsg struct {
 	t   time.Time
 	tid uint32
 }
-type waiter struct {
-	r chan<- Result
-}
 
 func broker(c *Conn) {
 	readChannel := make(chan tlproto.Message, 1024)
 	writeChannel := tlproto.NewBufferedConn(c.conn, readChannel)
-	waits := make(map[uint32]waiter)
+	waits := make(map[uint32]chan<- Result)
 	tid := uint32(0)
 	pq := make([]timeoutMsg, 0, 64)
-	ticker := time.NewTicker(time.Millisecond * 10)
+	ticker := time.NewTicker(time.Hour)
+	tickerActivated := false
 	go func() {
 		for {
 			select {
@@ -81,12 +81,16 @@ func broker(c *Conn) {
 						w, ok := waits[f.tid]
 						if ok {
 							delete(waits, f.tid)
-							w.r <- Result{nil, errors.New("Timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
+							w <- Result{nil, errors.New("Timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
 						}
 						pq = pq[1:]
 					} else {
 						break
 					}
+				}
+				if len(pq) == 0 && tickerActivated {
+					ticker.Stop()
+					ticker = time.NewTicker(time.Hour)
 				}
 			case msg, ok := <-c.responseChannel:
 				if !ok {
@@ -94,7 +98,7 @@ func broker(c *Conn) {
 						f := pq[0]
 						w := waits[f.tid]
 						delete(waits, f.tid)
-						w.r <- Result{nil, errors.New("Connection closed" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
+						w <- Result{nil, errors.New("Connection closed" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
 						pq = pq[1:]
 					}
 					close(writeChannel)
@@ -103,6 +107,11 @@ func broker(c *Conn) {
 				msg.mess.ID = tid
 				if msg.timeout > 0 {
 					//Send and *Recieve*
+					if len(pq) == 0 && !tickerActivated {
+						ticker.Stop()
+						ticker = time.NewTicker(brokerTick)
+					}
+
 					tm := timeoutMsg{t: time.Now().Add(msg.timeout), tid: tid}
 
 					inserted := false
@@ -121,7 +130,7 @@ func broker(c *Conn) {
 						copy(pq[0:], pq[1:])
 						pq[0] = tm
 					}
-					waits[tid] = waiter{r: msg.rch}
+					waits[tid] = msg.rch
 				}
 				tid++
 				writeChannel <- msg.mess
@@ -131,7 +140,7 @@ func broker(c *Conn) {
 					//Was timeout'ed
 					continue
 				}
-				ch := w.r
+				ch := w
 				delete(waits, m.ID)
 				//l.Remove(w.el)
 				switch m.Type {
@@ -184,7 +193,7 @@ func (c *Conn) send(opType tlproto.Operation, key, value []byte,
 	m.mess.Key = key
 	m.mess.Value = value
 	m.timeout = timeout
-	m.rch = make(chan Result, 1)
+	m.rch = c.rchPool.Get().(chan Result)
 	c.responseChannel <- m
 	return m.rch
 }
@@ -198,16 +207,31 @@ func (c *Conn) sendAndReceive(opType tlproto.Operation, key, value []byte,
 	return <-rch
 }
 
+type GetOperation struct {
+	rch chan Result
+	c   *Conn
+}
+
+func (g *GetOperation) Wait() Result {
+	if g.rch == nil {
+		return Result{nil, errors.New("Already returned")}
+	}
+	r := <-g.rch
+	g.c.rchPool.Put(g.rch)
+	g.rch = nil
+	return r
+}
+
 //Get the value of key
-func (c *Conn) Get(key []byte, timeout time.Duration) chan Result {
+func (c *Conn) Get(key []byte, timeout time.Duration) GetOperation {
 	if timeout <= 0 {
 		panic("get timeout <=0")
 	}
-	x := c.send(tlproto.OpGet, key, nil, timeout)
-	if x == nil {
+	ch := c.send(tlproto.OpGet, key, nil, timeout)
+	if ch == nil {
 		panic("xnil")
 	}
-	return x
+	return GetOperation{rch: ch, c: c}
 }
 
 //Set a new key/value pair

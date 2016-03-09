@@ -267,7 +267,6 @@ func bufferedReader(conn *net.TCPConn, readChannel chan<- Message, writeChannel 
 		readChannel <- msg
 
 		//Buffer ping-pong
-		//TODO opt: dont need to copy everytime, be smart
 		copy(slices[(slot+1)%2], buffer[messageSize:index])
 		slot = (slot + 1) % 2
 		index = index - messageSize

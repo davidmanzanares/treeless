@@ -108,6 +108,7 @@ func (sg *ServerGroup) String() string {
 		for k := range sg.chunks[i].holders {
 			holders = append(holders, k.Phy)
 		}
+		sort.Strings(holders)
 		for _, phy := range holders {
 			if column == 3 {
 				srv = srv + "\n\t"

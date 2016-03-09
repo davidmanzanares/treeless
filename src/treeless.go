@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
@@ -15,6 +16,7 @@ import (
 	"treeless/src/tlserver"
 	"treeless/src/tlsg"
 )
+import _ "net/http/pprof"
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
@@ -28,6 +30,7 @@ func main() {
 	redundancy := flag.Int("redundancy", 2, "Redundancy of the new DB server group")
 	dbpath := flag.String("dbpath", "tmp_DB", "Filesystem path to store DB info")
 	cpuprofile := flag.Bool("cpuprofile", false, "write cpu profile to file")
+	webprofile := flag.Bool("webprofile", false, "webprofile")
 	localIP := flag.String("localip", tlcom.GetLocalIP(), "set local IP")
 	logToFile := flag.Bool("logtofile", false, "set logging to file")
 
@@ -52,6 +55,11 @@ func main() {
 			}
 			time.Sleep(time.Second * 10)
 			pprof.StartCPUProfile(f)
+		}()
+	}
+	if *webprofile {
+		go func() {
+			fmt.Println(http.ListenAndServe("localhost:6060", nil))
 		}()
 	}
 

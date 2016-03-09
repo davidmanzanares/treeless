@@ -38,26 +38,23 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 	//Last write wins policy
 	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks())
 	servers := c.sg.GetChunkHolders(chunkID)
-	var charray [8]chan tlcom.Result
+	var charray [8]tlcom.GetOperation
 	chs := 0
 
 	for _, s := range servers {
 		if s == nil {
 			continue
 		}
-		ch := s.Get(key, c.GetTimeout)
-		if ch == nil {
+		c, err := s.Get(key, c.GetTimeout)
+		if err != nil {
 			continue
 		}
-		charray[chs] = ch
+		charray[chs] = c
 		chs++
 	}
 	for i := 0; i < chs; i++ {
 		//log.Println("get rec")
-		if charray[i] == nil {
-			panic("charray[i]==nil")
-		}
-		r := <-charray[i]
+		r := charray[i].Wait()
 		//log.Println("get rec compl")
 		//log.Println("get rec unlock")
 		if r.Err != nil {

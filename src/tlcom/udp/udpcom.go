@@ -64,6 +64,7 @@ func Request(addr string, timeout time.Duration) (response *AmAlive, err error) 
 	}
 }
 
+//TODO del json
 func (aa *AmAlive) marshal() []byte {
 	s, err := json.Marshal(aa)
 	if err != nil {

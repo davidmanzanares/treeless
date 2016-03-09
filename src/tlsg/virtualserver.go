@@ -49,13 +49,13 @@ func (s *VirtualServer) freeConn() {
 
 //Get the value of key
 //Caller must issue a s.RUnlock() after using the channel
-func (s *VirtualServer) Get(key []byte, timeout time.Duration) chan tlcom.Result {
+func (s *VirtualServer) Get(key []byte, timeout time.Duration) (tlcom.GetOperation, error) {
 	if err := s.needConnection(); err != nil {
-		return nil
+		return tlcom.GetOperation{}, err
 	}
 	r := s.conn.Get(key, timeout)
 	s.m.RUnlock()
-	return r
+	return r, nil
 }
 
 //Set a new key/value pair

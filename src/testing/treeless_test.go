@@ -26,8 +26,8 @@ const useProcess = false
 const testingNumChunks = 8
 const benchmarkingNumChunks = 64
 
-const vagrantEnabled = false
-const vServers = 5
+const vagrantEnabled = true
+const vServers = 6
 
 func TestMain(m *testing.M) {
 	cmd := exec.Command("killall", "-s", "INT", "treeless")
