@@ -2,6 +2,7 @@ package tlheartbeat
 
 import (
 	"log"
+	"math/rand"
 	"sync/atomic"
 	"time"
 	"treeless/src/tlcom/udp"
@@ -23,6 +24,7 @@ type Heartbeater struct {
 
 func watchdog(h *Heartbeater, sg *tlsg.ServerGroup, addr string, chunkUpdateChannel chan int) {
 	timeouts := 0
+	time.Sleep(time.Duration(rand.Int63n(int64(heartbeatSleep))))
 	for atomic.LoadInt32(&h.stop) == 0 {
 		aa, err := tlUDP.Request(addr, heartbeatTimeout)
 		if err == nil {

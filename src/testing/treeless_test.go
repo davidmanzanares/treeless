@@ -676,16 +676,16 @@ func testSequential(addr string, t *testing.T) {
 	fmt.Println("Operations:", operations*vClients, "Throughput:", float64(operations*vClients)/(t2.Sub(t1).Seconds()), "ops/s\n")
 }
 
-func testParallel(addr string, t *testing.T, oneClient bool) {
+func testParallel(addr string, t *testing.T, oneClient bool, pGet, pSet, pDel float64) {
 	var w sync.WaitGroup
 	vClients := 256
 	operations := 1000
 	w.Add(vClients)
 	//Create client and connect it to the fake server
-	var c *tlclient.DBClient
+	var oneC *tlclient.DBClient
 	if oneClient {
 		var err error
-		c, err = tlclient.Connect(addr)
+		oneC, err = tlclient.Connect(addr)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -694,31 +694,34 @@ func testParallel(addr string, t *testing.T, oneClient bool) {
 	p := tlutils.NewProgress("Operating...", operations*vClients)
 	for i := 0; i < vClients; i++ {
 		go func(thread int) {
+			var c *tlclient.DBClient
 			if !oneClient {
 				var err error
 				c, err = tlclient.Connect(addr)
 				if err != nil {
 					t.Fatal(err)
 				}
+				defer c.Close()
+			} else {
+				c = oneC
 			}
-			defer c.Close()
 			for i := 0; i < operations; i++ {
 				p.Inc()
 				//Operate
-				op := int(rand.Int31n(int32(3)))
+				op := rand.Float64()
 				key := make([]byte, 1)
 				key[0] = byte(1)
 				value := make([]byte, 4)
 				binary.LittleEndian.PutUint32(value, uint32(rand.Int63()))
 				//fmt.Println(op, key, value)
-				switch op {
-				case 0:
+				switch {
+				case op < pGet:
+					c.Get(key)
+				case op < pGet+pSet:
 					c.Set(key, value)
-				case 1:
+				default:
 					//delete(goMap, string(key))
 					//c.Del(key)
-				case 2:
-					c.Get(key)
 				}
 				//Ping servers randomly
 				//Collect stats
@@ -734,7 +737,7 @@ func testParallel(addr string, t *testing.T, oneClient bool) {
 		str = "N clients"
 	}
 	str += " " + fmt.Sprint(vClients) + " parralel operators"
-	fmt.Println("\nMassive parallel workload simulation " + str + " - Results")
+	fmt.Println("\nMassive parallel workload simulation "+str, "Get/Set/Del", pGet, pSet, pDel, "- Results")
 	fmt.Println("Operations:", operations*vClients, "Throughput:", float64(operations*vClients)/(t2.Sub(t1).Seconds()), "ops/s\n")
 }
 
@@ -777,10 +780,11 @@ func TestVirtual(t *testing.T) {
 
 	//Provision bash scripts
 	//First VM provision script
+	//http://stackoverflow.com/questions/8251933/how-can-i-log-the-stdout-of-a-process-started-by-start-stop-daemon
 	sh0 := `echo Starting up VM0...
-	cd /mnt
-	start-stop-daemon -b -S --exec /vagrant/treeless -- -create -localip 192.168.2.100 -port 9876 -dbpath /home/vagrant -logtofile
-	sleep 1
+	sysctl -w fs.file-max=100000
+	mkdir /home/vagrant/db
+	start-stop-daemon -S -b --make-pidfile --pidfile /home/vagrant/treeless.pid --startas /bin/bash -- -c "exec /vagrant/treeless -create -localip 192.168.2.100 -port 9876 -dbpath /home/vagrant/db > /home/vagrant/treeless.log 2>&1"
 	echo VM0 is online`
 	err = ioutil.WriteFile("vm0.sh", []byte(sh0), 0777)
 	defer os.Remove("vm0.sh")
@@ -792,8 +796,7 @@ func TestVirtual(t *testing.T) {
 	for i := 1; i < vServers; i++ {
 		sh := `echo Starting up VM` + fmt.Sprint(i) + `...
 		cd /mnt
-		start-stop-daemon -b -S --exec /vagrant/treeless -- -assoc 192.168.2.100:9876 -localip 192.168.2.` + fmt.Sprint(100+i) + ` -port 9876 -dbpath /home/vagrant -logtofile
-		sleep 1
+		start-stop-daemon -S -b --make-pidfile --pidfile /home/vagrant/treeless.pid --startas /bin/bash -- -c "exec /vagrant/treeless -assoc 192.168.2.100:9876 -localip 192.168.2.` + fmt.Sprint(100+i) + ` -port 9876 -dbpath /home/vagrant/db > /home/vagrant/treeless.log 2>&1"
 		echo VM` + fmt.Sprint(i) + ` is online`
 		err = ioutil.WriteFile("vm"+fmt.Sprint(i)+".sh", []byte(sh), 0777)
 		defer os.Remove("vm" + fmt.Sprint(i) + ".sh")
@@ -831,8 +834,11 @@ func TestVirtual(t *testing.T) {
 	testSequential("192.168.2.100:9876", t)
 
 	//Test throughtputs
-	testParallel("192.168.2.100:9876", t, true)
-	testParallel("192.168.2.100:9876", t, false)
+	testParallel("192.168.2.100:9876", t, true, 0.9, 0.1, 0.0)
+	testParallel("192.168.2.100:9876", t, false, 0.9, 0.1, 0.0)
+
+	testParallel("192.168.2.100:9876", t, true, 0.1, 0.9, 0.0)
+	testParallel("192.168.2.100:9876", t, false, 0.1, 0.9, 0.0)
 
 	//Controlled parralel workload - latency benchmark
 

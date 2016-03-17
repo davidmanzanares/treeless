@@ -36,8 +36,9 @@ type ServerGroup struct {
 
 func (sg *ServerGroup) Stop() {
 	sg.mutex.Lock()
-	sg.servers = make(map[string]*VirtualServer)
-	sg.chunks = make([]VirtualChunk, sg.numChunks)
+	for _, s := range sg.servers {
+		s.freeConn()
+	}
 	sg.mutex.Unlock()
 }
 
@@ -231,7 +232,11 @@ func (sg *ServerGroup) SetServerChunks(addr string, cids []int) []int {
 	defer sg.mutex.Unlock()
 
 	var changes []int
-	s := sg.servers[addr]
+	s, ok := sg.servers[addr]
+
+	if !ok {
+		return nil
+	}
 
 	for c := range s.heldChunks {
 		i := 0

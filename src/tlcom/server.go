@@ -67,6 +67,7 @@ func listenConnections(s *Server, port int, worker chan<- tlproto.Message) {
 		var tcpConnections []*net.TCPConn
 		for i := 0; ; i++ {
 			conn, err := s.tcpListener.AcceptTCP()
+			//log.Println("TCP Accept", conn, "ASD", conn.LocalAddr(), conn.RemoteAddr())
 			if err != nil {
 				for i := 0; i < len(tcpConnections); i++ {
 					tcpConnections[i].Close()

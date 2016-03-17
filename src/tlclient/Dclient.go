@@ -108,4 +108,5 @@ func (c *DBClient) Close() {
 	//Stop hearbeat
 	c.hb.Stop()
 	//Stop sockets
+	c.sg.Stop()
 }

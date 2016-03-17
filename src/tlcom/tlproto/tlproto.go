@@ -10,7 +10,7 @@ import (
 const bufferSize = 1450
 
 //High values favours throughput, low values favours low Latency
-const windowTimeDuration = time.Microsecond * 10
+const windowTimeDuration = time.Microsecond * 1000
 
 /*
 	TCP treeless protocol
@@ -227,6 +227,7 @@ func bufferedReader(conn *net.TCPConn, readChannel chan<- Message, writeChannel 
 			//Not enought bytes read to form a message, read more
 			n, err := conn.Read(buffer[index:])
 			if err != nil {
+				conn.Close()
 				return err
 			}
 			index = index + n
@@ -242,6 +243,7 @@ func bufferedReader(conn *net.TCPConn, readChannel chan<- Message, writeChannel 
 			for index < messageSize {
 				n, err := conn.Read(bigBuffer[index:])
 				if err != nil {
+					conn.Close()
 					return err
 				}
 				index = index + n
@@ -256,6 +258,7 @@ func bufferedReader(conn *net.TCPConn, readChannel chan<- Message, writeChannel 
 			//Not enought bytes read to form *this* message, read more
 			n, err := conn.Read(buffer[index:])
 			if err != nil {
+				conn.Close()
 				return err
 			}
 			index = index + n
