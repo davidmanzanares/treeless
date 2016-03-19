@@ -49,7 +49,7 @@ func TestMain(m *testing.M) {
 		log.SetOutput(ioutil.Discard)
 	}
 	//CLUSTER INITIALIZATION
-	cluster = vagrantStartCluster(2)
+	cluster = procStartCluster(2)
 	os.Exit(m.Run())
 	/*for _, s := range cluster {
 		s.kill()
@@ -119,6 +119,45 @@ func TestBigMessages(t *testing.T) {
 	if string(value) != string(bytes.Repeat([]byte("X"), 8*1024)) {
 		t.Fatal("Get failed, returned string: ", string(value))
 	}
+}
+
+//Test just a few hard-coded operations with one server - one client
+func TestTimeout(t *testing.T) {
+	//Server set-up
+	addr := cluster[0].create(testingNumChunks, 2)
+	defer cluster[0].kill()
+	waitForServer(addr)
+	//Client set-up
+	client, err := tlclient.Connect(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	//Set operation
+	_, err = client.Set([]byte("hola"), []byte("mundo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	//Get operation
+	value, _ := client.Get([]byte("hola"))
+	if string(value) != "mundo" {
+		t.Fatal("Get failed, returned string: ", string(value))
+	}
+
+	cluster[0].kill()
+
+	time.Sleep(time.Millisecond * 250)
+
+	//Get operation
+	tb := time.Now()
+	client.GetTimeout = time.Millisecond * 100
+	value, _ = client.Get([]byte("hola"))
+	if value != nil {
+		t.Fatal("???")
+	}
+	log.Println("Timeout:", time.Now().Sub(tb))
 }
 
 func TestBasicRebalance(t *testing.T) {
