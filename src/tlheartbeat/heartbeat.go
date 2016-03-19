@@ -22,6 +22,8 @@ type Heartbeater struct {
 	stop           int32
 }
 
+var sharedTicker = time.NewTicker(heartbeatSleep)
+
 func watchdog(h *Heartbeater, sg *tlsg.ServerGroup, addr string, chunkUpdateChannel chan int) {
 	timeouts := 0
 	time.Sleep(time.Duration(rand.Int63n(int64(heartbeatSleep))))

@@ -35,18 +35,19 @@ type ResponserMsg struct {
 //CreateConnection returns a new DB connection
 func CreateConnection(addr string) (*Conn, error) {
 	//log.Println("Dialing for new connection", taddr)
-	taddr, errp := net.ResolveTCPAddr("tcp", addr)
+	/*taddr, errp := net.ResolveTCPAddr("tcp", addr)
 	if errp != nil {
 		return nil, errp
-	}
+	}*/
 
-	tcpconn, err := net.DialTCP("tcp", nil, taddr)
+	d := &net.Dialer{Timeout: 3 * time.Second}
+	tcpconn, err := d.Dial("tcp", addr)
 	if err != nil {
 		return nil, err
 	}
 
 	var c Conn
-	c.conn = tcpconn
+	c.conn = tcpconn.(*net.TCPConn)
 
 	c.responseChannel = make(chan ResponserMsg, 1024)
 	c.rchPool = sync.Pool{New: func() interface{} {

@@ -28,14 +28,14 @@ func main() {
 	//Options
 	port := flag.Int("port", 9876, "Use this port as the localhost server port")
 	redundancy := flag.Int("redundancy", 2, "Redundancy of the new DB server group")
+	chunks := flag.Int("chunks", 2, "Number of chunks")
 	dbpath := flag.String("dbpath", "tmp_DB", "Filesystem path to store DB info")
-	cpuprofile := flag.Bool("cpuprofile", false, "write cpu profile to file")
+	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
 	webprofile := flag.Bool("webprofile", false, "webprofile")
 	localIP := flag.String("localip", tlcom.GetLocalIP(), "set local IP")
 	logToFile := flag.Bool("logtofile", false, "set logging to file")
 
 	flag.Parse()
-
 	if *logToFile {
 		f, err := os.OpenFile("/mnt/treeless.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 		if err != nil {
@@ -45,15 +45,17 @@ func main() {
 		defer f.Close()
 		log.SetOutput(f)
 	}
+	log.Println("Args:", *chunks)
 
 	var f *os.File
-	if *cpuprofile {
+	if *cpuprofile != "" {
 		go func() {
-			f, err := os.Create("cpu.prof")
+			f, err := os.Create(*cpuprofile)
 			if err != nil {
 				log.Fatal(err)
 			}
-			time.Sleep(time.Second * 10)
+			time.Sleep(time.Second * 400)
+			log.Println("CPU profile started")
 			pprof.StartCPUProfile(f)
 		}()
 	}
@@ -89,13 +91,13 @@ func main() {
 		fmt.Println(s)*/
 	} else if *create {
 		//TODO 8 parametrizar
-		s := tlserver.Start("", *localIP, *port, 8, *redundancy, *dbpath)
+		s := tlserver.Start("", *localIP, *port, *chunks, *redundancy, *dbpath)
 		go func() {
 			c := make(chan os.Signal, 1)
 			signal.Notify(c, os.Interrupt)
 			<-c
 			log.Println("Interrupt signal recieved")
-			if *cpuprofile {
+			if *cpuprofile != "" {
 				pprof.StopCPUProfile()
 				f.Close()
 				fmt.Println("Profiling output generated")
@@ -108,13 +110,13 @@ func main() {
 		}()
 		select {}
 	} else if *assoc != "" {
-		s := tlserver.Start(*assoc, *localIP, *port, 8, *redundancy, *dbpath)
+		s := tlserver.Start(*assoc, *localIP, *port, *chunks, *redundancy, *dbpath)
 		go func() {
 			c := make(chan os.Signal, 1)
 			signal.Notify(c, os.Interrupt)
 			<-c
 			log.Println("Interrupt signal recieved")
-			if *cpuprofile {
+			if *cpuprofile != "" {
 				pprof.StopCPUProfile()
 				f.Close()
 				fmt.Println("Profiling output generated")

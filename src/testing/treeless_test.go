@@ -24,11 +24,10 @@ import (
 const testingNumChunks = 8
 const benchmarkingNumChunks = 64
 
-const vagrantEnabled = true
+const vagrantEnabled = false
 const vServers = 5
 
-//var cluster = gorStartCluster(2)
-var cluster = procStartCluster(2)
+var cluster []testServer
 
 func TestMain(m *testing.M) {
 	debug.SetTraceback("all")
@@ -39,6 +38,9 @@ func TestMain(m *testing.M) {
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	err := cmd.Run()
+	cmd = exec.Command("cp", "treeless", "testing/") //"-race"
+	cmd.Run()
+	os.Chdir("testing")
 	if err != nil {
 		panic("Errors building the program, testing aborted.")
 	}
@@ -46,7 +48,12 @@ func TestMain(m *testing.M) {
 	if !testing.Verbose() {
 		log.SetOutput(ioutil.Discard)
 	}
+	//CLUSTER INITIALIZATION
+	cluster = vagrantStartCluster(5)
 	os.Exit(m.Run())
+	for _, s := range cluster {
+		s.kill()
+	}
 }
 
 //Test just a few hard-coded operations with one server - one client
@@ -54,6 +61,7 @@ func TestSimple(t *testing.T) {
 	//Server set-up
 	addr := cluster[0].create(testingNumChunks, 2)
 	defer cluster[0].kill()
+	waitForServer(addr)
 	//Client set-up
 	client, err := tlclient.Connect(addr)
 	if err != nil {
@@ -91,6 +99,8 @@ func TestBigMessages(t *testing.T) {
 	//Server set-up
 	addr := cluster[0].create(testingNumChunks, 2)
 	defer cluster[0].kill()
+	waitForServer(addr)
+
 	//Client set-up
 	client, err := tlclient.Connect(addr)
 	if err != nil {
@@ -114,6 +124,8 @@ func TestBigMessages(t *testing.T) {
 func TestBasicRebalance(t *testing.T) {
 	//Server set-up
 	addr1 := cluster[0].create(testingNumChunks, 2)
+	waitForServer(addr1)
+
 	//Client set-up
 	client, err := tlclient.Connect(addr1)
 	if err != nil {
@@ -154,6 +166,7 @@ func TestCmplx1_1(t *testing.T) {
 	//Server set-up
 	addr := cluster[0].create(testingNumChunks, 2)
 	defer cluster[0].kill()
+	waitForServer(addr)
 	metaTest(t, addr, 10*1000, 4, 8, 10, 1024)
 }
 
@@ -268,6 +281,7 @@ func metaTest(t *testing.T, addr string, numOperations, maxKeySize, maxValueSize
 func TestConsistency(t *testing.T) {
 	addr := cluster[0].create(testingNumChunks, 2)
 	defer cluster[0].kill()
+	waitForServer(addr)
 	metaTestConsistency(t, addr, 20, 200)
 }
 
@@ -337,7 +351,7 @@ func metaTestConsistency(t *testing.T, serverAddr string, numClients, iterations
 				}
 			}
 			w.Done()
-			w.Wait() //THIS IS CRITICAL: WAIT FOR PENDING WRITE OPERATIONS TO COMPLETE
+			w.Wait() //CRITICAL: WAIT FOR PENDING WRITE OPERATIONS TO COMPLETE
 		}(i)
 	}
 	w.Wait()
@@ -347,6 +361,7 @@ func TestHotRebalance(t *testing.T) {
 	var stop2 func()
 	//Server set-up
 	addr := cluster[0].create(testingNumChunks, 2)
+	waitForServer(addr)
 	//Client set-up
 	c, err := tlclient.Connect(addr)
 	if err != nil {
@@ -372,8 +387,8 @@ func TestHotRebalance(t *testing.T) {
 				goMap[string(key)] = value
 			case 1:
 				//Delete
-				delete(goMap, string(key))
-				goDeletes = append(goDeletes, key)
+				//delete(goMap, string(key))
+				//goDeletes = append(goDeletes, key)
 			}
 		}
 	}
@@ -398,7 +413,7 @@ func TestHotRebalance(t *testing.T) {
 					//Second server set-up
 					cluster[1].assoc(addr)
 					//Wait for rebalance
-					time.Sleep(time.Second * 7)
+					time.Sleep(time.Second * 8)
 					//First server shut down
 					fmt.Println("Server 1 shut down")
 					cluster[0].kill()
@@ -418,7 +433,7 @@ func TestHotRebalance(t *testing.T) {
 
 					}
 				case 1:
-					c.Del(key)
+					//c.Del(key)
 				}
 			}
 			w.Done()
@@ -492,8 +507,8 @@ func TestLatency(t *testing.T) {
 
 	maxKeySize := 4
 	maxValueSize := 4
-	numOperations := 200000
-	initOps := 10000
+	numOperations := 20000
+	initOps := 10000 //TODO remove
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	var w sync.WaitGroup
 	ch := make(chan lat)
@@ -608,7 +623,28 @@ func TestClock(t *testing.T) {
 	fmt.Println("Max time difference: ", maxDiff, "\nAverage time difference:", avgDiff)
 }
 
-func testSequential(addr string, t *testing.T) {
+//Test sequential throughtput and consistency
+func TestSequential(t *testing.T) {
+	addr := cluster[0].create(testingNumChunks, 2)
+	for i := 1; i < len(cluster); i++ {
+		cluster[i].assoc(addr)
+	}
+	time.Sleep(time.Second * 4)
+	//Wait for servers
+	/*fmt.Println("Waiting for server 192.168.2.100")
+	ready := waitForServer("192.168.2.100:9876")
+	if !ready {
+		t.Fatal("Servers not ready")
+	}*/
+	/*for i := 1; i < vServers; i++ {
+		fmt.Println("Waiting for server 192.168.2." + fmt.Sprint(100+i))
+		ready = waitForServer("192.168.2." + fmt.Sprint(100+i) + ":9876")
+		if !ready {
+			t.Fatal("Servers not ready")
+		}
+	}*/
+	fmt.Println("Servers ready")
+
 	//Initialize vars
 	var mutex sync.Mutex
 	var w sync.WaitGroup
@@ -676,6 +712,25 @@ func testSequential(addr string, t *testing.T) {
 	fmt.Println("Operations:", operations*vClients, "Throughput:", float64(operations*vClients)/(t2.Sub(t1).Seconds()), "ops/s\n")
 }
 
+func TestParallelEach_G90_S10_D0(t *testing.T) {
+	addr := cluster[0].create(testingNumChunks, 2)
+	for i := 1; i < len(cluster); i++ {
+		cluster[i].assoc(addr)
+	}
+	time.Sleep(time.Second * 5)
+	testParallel(addr, t, false, 0.9, 0.1, 0.0)
+
+}
+func TestParallelShared_G90_S10_D0(t *testing.T) {
+	addr := cluster[0].create(testingNumChunks, 2)
+	for i := 1; i < len(cluster); i++ {
+		cluster[i].assoc(addr)
+	}
+	time.Sleep(time.Second * 4)
+	testParallel(addr, t, true, 0.9, 0.1, 0.0)
+
+}
+
 func testParallel(addr string, t *testing.T, oneClient bool, pGet, pSet, pDel float64) {
 	var w sync.WaitGroup
 	vClients := 256
@@ -699,7 +754,9 @@ func testParallel(addr string, t *testing.T, oneClient bool, pGet, pSet, pDel fl
 				var err error
 				c, err = tlclient.Connect(addr)
 				if err != nil {
-					t.Fatal(err)
+					log.Println(err)
+					w.Done()
+					return
 				}
 				defer c.Close()
 			} else {
@@ -741,145 +798,19 @@ func testParallel(addr string, t *testing.T, oneClient bool, pGet, pSet, pDel fl
 	fmt.Println("Operations:", operations*vClients, "Throughput:", float64(operations*vClients)/(t2.Sub(t1).Seconds()), "ops/s\n")
 }
 
-func TestVirtual(t *testing.T) {
-	if !vagrantEnabled {
-		fmt.Println("Vagrant tests disabled")
-		return
-	}
-	exec.Command("cp", "treeless", "testing/").Run()
-	os.Chdir("testing")
-	defer exec.Command("rm", "treeless").Run()
-	defer os.Chdir("..")
-	runtime.GOMAXPROCS(4)
-
-	//Initialize Vagrant auxiliary files
-	//Vagrantfile
-	middle := ""
-	for i := 1; i < vServers; i++ {
-		middle = middle + `config.vm.define "vm` + fmt.Sprint(i) + `" do |vmN|
-			vmN.vm.provision :shell, path: "vm` + fmt.Sprint(i) + `.sh"
-			vmN.vm.network "private_network", ip: "192.168.2.` + fmt.Sprint(100+i) + `"
-		end
-		`
-	}
-	vf := `Vagrant.configure(2) do |config|
-	  config.vm.box = "ubuntu/trusty64"
-	  config.vm.provider "virtualbox" do |v|
-  	   	v.cpus = 1
-      end
-	  config.vm.define "vm0" do |vmN|
-	      vmN.vm.provision :shell, path: "vm0.sh"
-	      vmN.vm.network "private_network", ip: "192.168.2.100"
-	  end
-	  ` + middle + `
-	end`
-	err := ioutil.WriteFile("Vagrantfile", []byte(vf), 0777)
-	if err != nil {
-		panic(err)
-	}
-
-	//Provision bash scripts
-	//First VM provision script
-	//http://stackoverflow.com/questions/8251933/how-can-i-log-the-stdout-of-a-process-started-by-start-stop-daemon
-	sh0 := `echo Starting up VM0...
-	sysctl -w fs.file-max=100000
-	mkdir /home/vagrant/db
-	start-stop-daemon -S -b --make-pidfile --pidfile /home/vagrant/treeless.pid --startas /bin/bash -- -c "exec /vagrant/treeless -create -localip 192.168.2.100 -port 9876 -dbpath /home/vagrant/db > /home/vagrant/treeless.log 2>&1"
-	echo VM0 is online`
-	err = ioutil.WriteFile("vm0.sh", []byte(sh0), 0777)
-	defer os.Remove("vm0.sh")
-	if err != nil {
-		panic(err)
-	}
-
-	//Rest of VM provision script
-	for i := 1; i < vServers; i++ {
-		sh := `echo Starting up VM` + fmt.Sprint(i) + `...
-		cd /mnt
-		start-stop-daemon -S -b --make-pidfile --pidfile /home/vagrant/treeless.pid --startas /bin/bash -- -c "exec /vagrant/treeless -assoc 192.168.2.100:9876 -localip 192.168.2.` + fmt.Sprint(100+i) + ` -port 9876 -dbpath /home/vagrant/db > /home/vagrant/treeless.log 2>&1"
-		echo VM` + fmt.Sprint(i) + ` is online`
-		err = ioutil.WriteFile("vm"+fmt.Sprint(i)+".sh", []byte(sh), 0777)
-		defer os.Remove("vm" + fmt.Sprint(i) + ".sh")
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	//Start VMs and treeless instances
-	cmd := exec.Command("vagrant", "destroy", "-f")
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-	cmd.Run()
-	cmd = exec.Command("vagrant", "up", "--parallel")
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-	cmd.Run()
-
-	//Wait for servers
-	fmt.Println("Waiting for server 192.168.2.100")
-	ready := waitForServer("192.168.2.100:9876")
-	if !ready {
-		t.Fatal("Servers not ready")
-	}
-	for i := 1; i < vServers; i++ {
-		fmt.Println("Waiting for server 192.168.2." + fmt.Sprint(100+i))
-		ready = waitForServer("192.168.2." + fmt.Sprint(100+i) + ":9876")
-		if !ready {
-			t.Fatal("Servers not ready")
-		}
-	}
-	fmt.Println("Servers ready")
-
-	//Test sequential throughtput and consistency
-	testSequential("192.168.2.100:9876", t)
-
-	//Test throughtputs
-	testParallel("192.168.2.100:9876", t, true, 0.9, 0.1, 0.0)
-	testParallel("192.168.2.100:9876", t, false, 0.9, 0.1, 0.0)
-
-	testParallel("192.168.2.100:9876", t, true, 0.1, 0.9, 0.0)
-	testParallel("192.168.2.100:9876", t, false, 0.1, 0.9, 0.0)
-
-	//Controlled parralel workload - latency benchmark
-
-	//Read-repair test
-	//Perform 1 Set operation A
-	//Simulate net latency problem of 2 seconds on node 2
-	//Perform 1 Set operation on A
-	//Reestablish net
-	//Perform Get operation on A (should read repair the record) and check
-	//Kill all nodes except node 2
-	//Perform get operation on A and check
-
-	//Clean
-	cmd = exec.Command("vagrant", "destroy", "-f")
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-	cmd.Run()
-	os.Remove("Vagrantfile")
-}
-
 //Benchmark GET operations by issuing lots of GET operations from different goroutines.
 //The DB is clean, all operations will return a "Key not present" error
 func BenchmarkGetUnpopulated1Server(b *testing.B) {
-	metaBenchmarkGetUnpopulated(1, b)
-}
-func BenchmarkGetUnpopulated2Servers(b *testing.B) {
-	metaBenchmarkGetUnpopulated(2, b)
-}
-func metaBenchmarkGetUnpopulated(nservers int, b *testing.B) {
 	fmt.Println(b.N)
 	//Server set-up
 	addr := cluster[0].create(benchmarkingNumChunks, 2)
 	defer cluster[0].kill()
-	if nservers > 1 {
-		time.Sleep(time.Second)
-		for i := 1; i < nservers; i++ {
-			cluster[i].assoc(addr)
-			defer cluster[i].kill()
-		}
-		time.Sleep(time.Second * 6)
+	for i := 1; i < len(cluster); i++ {
+		//cluster[i].assoc(addr)
+		//defer cluster[i].kill()
 	}
+	time.Sleep(time.Second * 5)
+
 	//Clients set-up
 	var clients [8]*tlclient.DBClient
 	for i := 0; i < 8; i++ {

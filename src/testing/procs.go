@@ -40,6 +40,7 @@ func (ps *procServer) addr() string {
 }
 
 func (ps *procServer) create(numChunks, redundancy int) string {
+	exec.Command("killall", "-q", "treeless").Run()
 	dbTestFolder := ""
 	if exists("/mnt/dbs/") {
 		dbTestFolder = "/mnt/dbs/"
@@ -47,7 +48,8 @@ func (ps *procServer) create(numChunks, redundancy int) string {
 	ps.dbpath = dbTestFolder + "testDB" + fmt.Sprint(procID)
 	ps.dbpath = "testDB" + fmt.Sprint(procID)
 	ps.cmd = exec.Command("./treeless", "-create", "-port",
-		fmt.Sprint(10000+procID), "-dbpath", ps.dbpath, "-localip", "127.0.0.1") //, "-cpuprofile"
+		fmt.Sprint(10000+procID), "-dbpath", ps.dbpath, "-localip", "127.0.0.1",
+		"-redundancy", fmt.Sprint(redundancy), "-chunks", fmt.Sprint(numChunks))
 	if true {
 		ps.cmd.Stdout = os.Stdout
 		ps.cmd.Stderr = os.Stderr
@@ -100,6 +102,7 @@ func (ps *procServer) disconnect() {
 func (ps *procServer) reconnect() {
 	panic("Not implemented!")
 }
+
 func (ps *procServer) testCapability(c capability) bool {
 	return c == capKill
 }

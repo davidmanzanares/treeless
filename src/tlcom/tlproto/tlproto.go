@@ -11,6 +11,7 @@ const bufferSize = 1450
 
 //High values favours throughput, low values favours low Latency
 const windowTimeDuration = time.Microsecond * 1000
+const windowFastModeEnable = time.Microsecond * 10
 
 /*
 	TCP treeless protocol
@@ -102,15 +103,16 @@ func read(src []byte) (m Message) {
 	return m
 }
 
-func tcpWrite(conn *net.TCPConn, buffer []byte) {
+func tcpWrite(conn *net.TCPConn, buffer []byte) error {
 	for len(buffer) > 0 {
 		n, err := conn.Write(buffer)
 		if err != nil {
 			conn.Close()
-			return
+			return err
 		}
 		buffer = buffer[n:]
 	}
+	return nil
 }
 
 //bufferedWriter will write to conn messages recieved by the channel
@@ -130,6 +132,9 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
 	lastTime := time.Now()
 	sents := 0
 	for {
+		/*if rand.Float32() > 0.99 {
+			fmt.Println(ticker)
+		}*/
 		if ticker == nil {
 			//Slow path
 			m, ok := <-msgChannel
@@ -141,8 +146,11 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
 			msgSize, tooLong := m.write(buffer[index:])
 			sents++
 			if !tooLong {
-				tcpWrite(conn, buffer[0:msgSize])
-				if fastModeEnable && time.Now().Sub(lastTime) < windowTimeDuration {
+				err := tcpWrite(conn, buffer[0:msgSize])
+				if err != nil {
+					return
+				}
+				if fastModeEnable && time.Now().Sub(lastTime) < windowFastModeEnable {
 					//Activate fast mode
 					ticker = time.NewTicker(windowTimeDuration)
 				} else {
@@ -151,20 +159,29 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
 			} else {
 				bigMsg := make([]byte, msgSize)
 				m.write(bigMsg)
-				tcpWrite(conn, bigMsg)
+				err := tcpWrite(conn, bigMsg)
+				if err != nil {
+					return
+				}
 			}
 		} else {
 			select {
 			case <-ticker.C:
 				if index > 0 && !dirty {
-					tcpWrite(conn, buffer[0:index])
+					err := tcpWrite(conn, buffer[0:index])
+					if err != nil {
+						return
+					}
 					index = 0
 				}
 				dirty = false
 				fast := sents > 1
 				if !fast && index > 0 {
 					//flush now
-					tcpWrite(conn, buffer[0:index])
+					err := tcpWrite(conn, buffer[0:index])
+					if err != nil {
+						return
+					}
 					index = 0
 				}
 				if !fast {
@@ -185,7 +202,10 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
 					//Message too long for the buffer remaining space
 					if index > 0 {
 						//Send buffer
-						tcpWrite(conn, buffer[:index])
+						err := tcpWrite(conn, buffer[:index])
+						if err != nil {
+							return
+						}
 						index = 0
 					}
 					if msgSize > bufferSize {
@@ -193,7 +213,10 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
 						//Send this message
 						bigMsg := make([]byte, msgSize)
 						m.write(bigMsg)
-						tcpWrite(conn, bigMsg)
+						err := tcpWrite(conn, bigMsg)
+						if err != nil {
+							return
+						}
 					} else {
 						//Add msg to the buffer
 						m.write(buffer)
