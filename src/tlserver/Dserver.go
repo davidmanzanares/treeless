@@ -252,7 +252,7 @@ func createWorker(s *DBServer, readChannel <-chan tlproto.Message) {
 			case tlproto.OpAddServerToGroup:
 				var response tlproto.Message
 				response.ID = message.ID
-				err := s.sg.AddServerToGroup(string(message.Key))
+				_, err := s.sg.AddServerToGroup(string(message.Key))
 				if err != nil {
 					response.Type = tlproto.OpErr
 					response.Value = []byte(err.Error())

@@ -22,6 +22,7 @@ func main() {
 	rand.Seed(time.Now().UnixNano())
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	//Operations
+	log.Println("Treeless args:", os.Args)
 	create := flag.Bool("create", false, "Create a new DB server group")
 	assoc := flag.String("assoc", "", "Associate to an existing DB server group")
 	monitor := flag.String("monitor", "", "Monitor an existing DB")
@@ -45,7 +46,6 @@ func main() {
 		defer f.Close()
 		log.SetOutput(f)
 	}
-	log.Println("Args:", *chunks)
 
 	var f *os.File
 	if *cpuprofile != "" {

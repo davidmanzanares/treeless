@@ -10,7 +10,7 @@ import (
 const bufferSize = 1450
 
 //High values favours throughput, low values favours low Latency
-const windowTimeDuration = time.Microsecond * 1000
+const windowTimeDuration = time.Microsecond * 100
 const windowFastModeEnable = time.Microsecond * 10
 
 /*

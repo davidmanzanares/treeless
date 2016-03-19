@@ -56,6 +56,10 @@ func (ps *procServer) create(numChunks, redundancy int) string {
 	}
 	procID++
 	err := ps.cmd.Start()
+	cmdCopy := ps.cmd
+	go func() {
+		cmdCopy.Wait()
+	}()
 	if err != nil {
 		panic(err)
 	}
@@ -79,6 +83,10 @@ func (ps *procServer) assoc(addr string) string {
 	}
 	procID++
 	err := ps.cmd.Start()
+	cmdCopy := ps.cmd
+	go func() {
+		cmdCopy.Wait()
+	}()
 	if err != nil {
 		panic(err)
 	}

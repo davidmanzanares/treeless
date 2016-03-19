@@ -49,11 +49,11 @@ func TestMain(m *testing.M) {
 		log.SetOutput(ioutil.Discard)
 	}
 	//CLUSTER INITIALIZATION
-	cluster = vagrantStartCluster(5)
+	cluster = vagrantStartCluster(2)
 	os.Exit(m.Run())
-	for _, s := range cluster {
+	/*for _, s := range cluster {
 		s.kill()
-	}
+	}*/
 }
 
 //Test just a few hard-coded operations with one server - one client
@@ -141,6 +141,7 @@ func TestBasicRebalance(t *testing.T) {
 	cluster[1].assoc(addr1)
 	defer cluster[1].kill()
 	//Wait for rebalance
+	fmt.Println("Server 1 shut down soon...")
 	time.Sleep(time.Second * 3)
 	//First server shut down
 	fmt.Println("Server 1 shut down")

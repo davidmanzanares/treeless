@@ -273,7 +273,7 @@ func (sg *ServerGroup) IsServerOnGroup(addr string) bool {
 
 }
 
-func (sg *ServerGroup) AddServerToGroup(addr string) error {
+func (sg *ServerGroup) AddServerToGroup(addr string) (*VirtualServer, error) {
 	sg.mutex.Lock()
 	defer sg.mutex.Unlock()
 	s, ok := sg.servers[addr]
@@ -282,9 +282,9 @@ func (sg *ServerGroup) AddServerToGroup(addr string) error {
 		sg.servers[addr] = s
 		s.Phy = addr
 		log.Println("Server", addr, "added")
-		return nil
+		return s, nil
 	}
-	return errors.New("Server already known")
+	return nil, errors.New("Server already known")
 }
 
 func (sg *ServerGroup) RemoveServer(addr string) error {
