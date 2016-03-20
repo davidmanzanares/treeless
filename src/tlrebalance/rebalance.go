@@ -1,7 +1,6 @@
 package tlrebalance
 
 import (
-	"container/heap"
 	"log"
 	"math/rand"
 	"os"
@@ -13,24 +12,11 @@ import (
 	"treeless/src/tlsg"
 )
 
-var rebalanceWakeupPeriod = time.Second * 10
-
-const maxRebalanceWaitSeconds = 10
+const maxRebalanceWaitSeconds = 3
 
 type Rebalancer struct {
 	duplicatorChannel chan int
 	w                 *sync.WaitGroup
-}
-
-//The following priority queue is used to store chunk review candidates
-//Each candidate is formed by a chunk ID and a review timestamp
-//The queue is ordered by these timestamps
-//Each candidate should be poped when the timestamp points to a a moment in the past
-
-type ChunkToReview struct {
-	id           int
-	timeToReview time.Time
-	index        int
 }
 
 func (r *Rebalancer) Stop() {
@@ -38,56 +24,25 @@ func (r *Rebalancer) Stop() {
 	r.w.Wait()
 }
 
-// A PriorityQueue implements heap.Interface and holds Items.
-type PriorityQueue []*ChunkToReview
-
-func (pq PriorityQueue) Len() int { return len(pq) }
-
-func (pq PriorityQueue) Less(i, j int) bool {
-	return pq[i].timeToReview.Before(pq[j].timeToReview)
-}
-
-func (pq PriorityQueue) Swap(i, j int) {
-	pq[i], pq[j] = pq[j], pq[i]
-	pq[i].index = i
-	pq[j].index = j
-}
-
-func (pq *PriorityQueue) Push(x interface{}) {
-	n := len(*pq)
-	item := x.(*ChunkToReview)
-	item.index = n
-	*pq = append(*pq, item)
-}
-
-func (pq *PriorityQueue) Pop() interface{} {
-	old := *pq
-	n := len(old)
-	item := old[n-1]
-	item.index = -1 // for safety
-	*pq = old[0 : n-1]
-	return item
-}
-
-// update modifies the priority and value of an Item in the queue.
-func (pq *PriorityQueue) update(c *ChunkToReview, t time.Time) {
-	c.timeToReview = t
-	heap.Fix(pq, c.index)
-}
-
-func StartRebalance(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map, ShouldStop func() bool, chunkUpdateChannel chan int) {
+func StartRebalance(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map, ShouldStop func() bool) {
 	//Delegate chunk downloads to the duplicator
 	duplicate := duplicator(sg, lh, core, ShouldStop)
 	release := releaser(sg, lh, core)
 	//Constantly check for possible duplications to rebalance the servers,
 	//servers should have more or less the same work
 	go func() { //LoadRebalancer
-		time.Sleep(rebalanceWakeupPeriod)
 		for !ShouldStop() {
 			known := float64(lh.KnownChunks())
 			total := float64(sg.NumChunks()) * float64(sg.Redundancy())
 			avg := total / float64(sg.NumServers())
-			if known+1 < avg*0.95 {
+			if rand.Float32() > 0.75 { //LR-Duplicate
+				for i := 0; i < sg.NumChunks(); i++ {
+					if sg.NumHolders(i) < sg.Redundancy() && lh.ChunkStatus(i) == 0 {
+						log.Println("Duplicate to mantain redundancy. Reason:", i, sg.NumHolders(i), sg.Redundancy())
+						duplicate(i)
+					}
+				}
+			} else if known+1 < avg*0.95 { //REB-Duplicate
 				//Local server hass less work than it should
 				//Try to download a random chunk
 				c := int(rand.Int31n(int32(sg.NumChunks())))
@@ -95,7 +50,7 @@ func StartRebalance(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Ma
 					log.Println("Duplicate to rebalance. Reason:", known, avg)
 					duplicate(c)
 				}
-			} else if known >= avg {
+			} else if known >= avg { //HR-Release
 				//Local server has more work than it should
 				//Locate a chunk with more redundancy than the required redundancy and *not* protected
 				for _, cid := range lh.KnownChunksList() {
@@ -116,55 +71,6 @@ func StartRebalance(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Ma
 			}
 			//log.Println("Time to wait:", timetowait, "Avg: ", avg, "Known:", known)
 			time.Sleep(time.Duration(float64(time.Second) * timetowait))
-		}
-	}()
-
-	//Rebalance chunks with low redundancy
-	//Rebalance algorithm:
-	//	For each chunk with low redundancy:
-	//		wait a random lapse of time
-	//		check chunk status
-	//		if still with low redundancy / noone claimed it:
-	//			Claim it
-	//			transfer it
-	go func() { //Simplify //RedundancyBasedRebalancer
-		pq := make(PriorityQueue, 0)
-		heap.Init(&pq)
-		inQueue := make(map[int]*ChunkToReview)
-		tick := time.Tick(time.Hour)
-		for !ShouldStop() {
-			if pq.Len() > 0 {
-				//log.Println("time", pq[0].timeToReview)
-				now := time.Now()
-				timeToWait := pq[0].timeToReview.Sub(now)
-				if now.After(pq[0].timeToReview) {
-					timeToWait = time.Microsecond
-				}
-				tick = time.Tick(timeToWait)
-			} else {
-				tick = time.Tick(time.Second * 10)
-			}
-			select {
-			case cid := <-chunkUpdateChannel:
-				chunk := inQueue[cid]
-				if chunk == nil {
-					t := time.Now().Add(time.Millisecond * time.Duration(time.Duration(100*rand.Float32()))) //TODO del pq
-					chunk = &ChunkToReview{id: cid, timeToReview: t}
-					heap.Push(&pq, chunk)
-					inQueue[cid] = chunk
-				}
-			case <-tick:
-				if len(pq) > 0 {
-					c := heap.Pop(&pq).(*ChunkToReview)
-					if sg.NumHolders(c.id) < sg.Redundancy() && lh.ChunkStatus(c.id) == 0 {
-						log.Println("Duplicate to mantain redundancy. Reason:", sg.NumHolders(c.id), sg.Redundancy())
-						duplicate(c.id)
-					} else {
-						//log.Println("Chunk duplication aborted: chunk not needed", c.id, sg.NumHolders(c.id))
-					}
-					delete(inQueue, c.id)
-				}
-			}
 		}
 	}()
 }

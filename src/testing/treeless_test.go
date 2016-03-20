@@ -663,7 +663,7 @@ func TestClock(t *testing.T) {
 
 //Test sequential throughtput and consistency
 func TestSequential(t *testing.T) {
-	addr := cluster[0].create(benchmarkingNumChunks, 2)
+	addr := cluster[0].create(testingNumChunks, 2)
 	for i := 1; i < len(cluster); i++ {
 		cluster[i].assoc(addr)
 	}

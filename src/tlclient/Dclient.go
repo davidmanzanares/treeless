@@ -26,7 +26,7 @@ func Connect(addr string) (*DBClient, error) {
 	c.sg = sg
 
 	//Start heartbeat listener
-	c.hb = tlheartbeat.Start(sg, nil)
+	c.hb = tlheartbeat.Start(sg)
 
 	c.GetTimeout = time.Millisecond * 500
 	c.SetTimeout = time.Millisecond * 500

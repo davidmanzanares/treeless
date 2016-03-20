@@ -227,15 +227,14 @@ func (sg *ServerGroup) KnownServers() []string {
 	ServerGroup setters
 */
 
-func (sg *ServerGroup) SetServerChunks(addr string, cids []int) []int {
+func (sg *ServerGroup) SetServerChunks(addr string, cids []int) {
 	sg.mutex.Lock()
 	defer sg.mutex.Unlock()
 
-	var changes []int
 	s, ok := sg.servers[addr]
 
 	if !ok {
-		return nil
+		return
 	}
 
 	for _, c := range s.heldChunks {
@@ -248,7 +247,6 @@ func (sg *ServerGroup) SetServerChunks(addr string, cids []int) []int {
 		if i == len(cids) {
 			//Forgotten chunk
 			delete(sg.chunks[c].holders, s)
-			changes = append(changes, c)
 		}
 	}
 
@@ -256,13 +254,11 @@ func (sg *ServerGroup) SetServerChunks(addr string, cids []int) []int {
 		if !sg.chunks[cids[i]].holders[s] {
 			//Added chunk
 			sg.chunks[cids[i]].holders[s] = true
-			changes = append(changes, cids[i])
 		}
 	}
 
 	s.heldChunks = cids
 	s.lastHeartbeat = time.Now()
-	return changes
 }
 
 func (sg *ServerGroup) IsServerOnGroup(addr string) bool {

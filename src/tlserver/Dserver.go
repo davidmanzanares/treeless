@@ -108,12 +108,10 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 		s.sg.AddServerToGroup(localIP + ":" + fmt.Sprint(localport))
 	}
 
-	//We need a channel to get informed about chunk updates
-	chunkUpdateChannel := make(chan int, channelUpdateBufferSize)
 	//Heartbeat start
-	s.hb = tlheartbeat.Start(s.sg, chunkUpdateChannel)
+	s.hb = tlheartbeat.Start(s.sg)
 	//Rebalancer start
-	tlrebalance.StartRebalance(s.sg, s.lh, s.m, func() bool { return false }, chunkUpdateChannel)
+	tlrebalance.StartRebalance(s.sg, s.lh, s.m, func() bool { return false })
 
 	//Init server
 	readChannel := make(chan tlproto.Message, 1024)
@@ -275,7 +273,7 @@ func createWorker(s *DBServer, readChannel <-chan tlproto.Message) {
 				var response tlproto.Message
 				response.ID = message.ID
 				chunkID := binary.LittleEndian.Uint32(message.Key)
-				if s.lh.ChunkStatus(int(chunkID)) == tllocals.ChunkSynched {
+				if s.lh.ChunkStatus(int(chunkID)) == tllocals.ChunkSynched && s.sg.NumHolders(int(chunkID)) > s.sg.Redundancy() {
 					response.Type = tlproto.OpProtectOK
 				} else {
 					response.Type = tlproto.OpErr

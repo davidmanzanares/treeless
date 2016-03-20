@@ -72,7 +72,7 @@ func main() {
 			return
 		}
 		//Start heartbeat listener
-		hb := tlheartbeat.Start(sg, nil)
+		hb := tlheartbeat.Start(sg)
 		go func() {
 			for {
 				fmt.Println("\033[H\033[2J" + sg.String())

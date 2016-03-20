@@ -26,7 +26,7 @@ func (h *Heartbeater) Stop() {
 	atomic.StoreInt32(&h.stop, 1)
 }
 
-func Start(sg *tlsg.ServerGroup, chunkUpdateChannel chan int) *Heartbeater {
+func Start(sg *tlsg.ServerGroup) *Heartbeater {
 	//Init
 	h := new(Heartbeater)
 	var w sync.WaitGroup //Wait for the first round
@@ -54,10 +54,7 @@ func Start(sg *tlsg.ServerGroup, chunkUpdateChannel chan int) *Heartbeater {
 							}
 						}
 					}
-					changes := sg.SetServerChunks(addr, aa.KnownChunks)
-					for i := 0; chunkUpdateChannel != nil && i < len(changes); i++ {
-						chunkUpdateChannel <- changes[i]
-					}
+					sg.SetServerChunks(addr, aa.KnownChunks)
 				} else {
 					timeouts[qs.Phy] = timeouts[qs.Phy] + 1
 					if timeouts[qs.Phy] > 3 {
