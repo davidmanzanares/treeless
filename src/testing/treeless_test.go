@@ -24,9 +24,6 @@ import (
 const testingNumChunks = 8
 const benchmarkingNumChunks = 64
 
-const vagrantEnabled = false
-const vServers = 5
-
 var cluster []testServer
 
 func TestMain(m *testing.M) {
@@ -49,11 +46,12 @@ func TestMain(m *testing.M) {
 		log.SetOutput(ioutil.Discard)
 	}
 	//CLUSTER INITIALIZATION
-	cluster = procStartCluster(2)
-	os.Exit(m.Run())
-	/*for _, s := range cluster {
+	cluster = procStartCluster(5)
+	code := m.Run()
+	for _, s := range cluster {
 		s.kill()
-	}*/
+	}
+	os.Exit(code)
 }
 
 //Test just a few hard-coded operations with one server - one client
@@ -665,11 +663,11 @@ func TestClock(t *testing.T) {
 
 //Test sequential throughtput and consistency
 func TestSequential(t *testing.T) {
-	addr := cluster[0].create(testingNumChunks, 2)
+	addr := cluster[0].create(benchmarkingNumChunks, 2)
 	for i := 1; i < len(cluster); i++ {
 		cluster[i].assoc(addr)
 	}
-	time.Sleep(time.Second * 4)
+	//time.Sleep(time.Second * 400)
 	//Wait for servers
 	/*fmt.Println("Waiting for server 192.168.2.100")
 	ready := waitForServer("192.168.2.100:9876")

@@ -238,7 +238,7 @@ func (sg *ServerGroup) SetServerChunks(addr string, cids []int) []int {
 		return nil
 	}
 
-	for c := range s.heldChunks {
+	for _, c := range s.heldChunks {
 		i := 0
 		for ; i < len(cids); i++ {
 			if cids[i] == c {

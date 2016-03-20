@@ -32,12 +32,12 @@ func Start(sg *tlsg.ServerGroup, chunkUpdateChannel chan int) *Heartbeater {
 	var w sync.WaitGroup //Wait for the first round
 	w.Add(1)
 	go func() {
-		queryList := sg.Servers()
 		timeouts := make(map[string]int)
 		ticker := time.NewTicker(heartbeatSleep)
 		defer ticker.Stop()
 		firstRun := true
 		for atomic.LoadInt32(&h.stop) == 0 {
+			queryList := sg.Servers()
 			for i := 0; i < len(queryList); i++ {
 				qs := queryList[i]
 				addr := qs.Phy
@@ -50,10 +50,7 @@ func Start(sg *tlsg.ServerGroup, chunkUpdateChannel chan int) *Heartbeater {
 							_, err := tlUDP.Request(s, heartbeatTimeout)
 							if err == nil {
 								//Add new server to queryList
-								newServer, err := sg.AddServerToGroup(s)
-								if err == nil {
-									queryList = append(queryList, newServer)
-								}
+								sg.AddServerToGroup(s)
 							}
 						}
 					}
@@ -68,8 +65,6 @@ func Start(sg *tlsg.ServerGroup, chunkUpdateChannel chan int) *Heartbeater {
 						log.Println("Server is dead:", qs.Phy)
 						delete(timeouts, qs.Phy)
 						sg.RemoveServer(qs.Phy)
-						queryList[i] = queryList[len(queryList)-1]
-						queryList = queryList[:len(queryList)-1]
 					}
 				}
 				if !firstRun {

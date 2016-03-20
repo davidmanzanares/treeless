@@ -108,7 +108,7 @@ func (vs *vagrantServer) create(numChunks, redundancy int) string {
 	//Stop
 	vs.vagrantSSH("killall -q treeless; rm -f /home/vagrant/treeless.*")
 	//Start and create
-	vs.vagrantSSH(`start-stop-daemon -S -b --make-pidfile --pidfile /home/vagrant/treeless.pid --startas /bin/bash -- -c "exec /vagrant/treeless -create -localip 192.168.2.100 -port 9876 -dbpath /home/vagrant/db > /home/vagrant/treeless.log 2>&1"`)
+	vs.vagrantSSH(`start-stop-daemon -S -b --make-pidfile --pidfile /home/vagrant/treeless.pid --startas /bin/bash -- -c "exec /vagrant/treeless -create -localip 192.168.2.100 -port 9876 -dbpath /home/vagrant/db -redundancy ` + fmt.Sprint(redundancy) + ` -chunks ` + fmt.Sprint(numChunks) + ` > /home/vagrant/treeless.log 2>&1"`)
 	waitForServer(vs.addr())
 	return vs.addr()
 }

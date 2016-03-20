@@ -67,7 +67,8 @@ func (c *Chunk) enable() {
 func (c *Chunk) disable() {
 	c.Lock()
 	defer c.Unlock()
-	c.close()
+	c.stopped = true
+	c.St.close()
 	c.Hm = newHashMap(defaultHashMapInitialLog2Size, defaultHashMapSizeLimit)
 	c.St = newStore(c.path)
 }

@@ -271,6 +271,16 @@ func createWorker(s *DBServer, readChannel <-chan tlproto.Message) {
 				binary.LittleEndian.PutUint64(response.Value, c.St.Length+1)
 				c.Unlock()
 				responseChannel <- response
+			case tlproto.OpProtect:
+				var response tlproto.Message
+				response.ID = message.ID
+				chunkID := binary.LittleEndian.Uint32(message.Key)
+				if s.lh.ChunkStatus(int(chunkID)) == tllocals.ChunkSynched {
+					response.Type = tlproto.OpProtectOK
+				} else {
+					response.Type = tlproto.OpErr
+				}
+				responseChannel <- response
 			default:
 				var response tlproto.Message
 				response.ID = message.ID

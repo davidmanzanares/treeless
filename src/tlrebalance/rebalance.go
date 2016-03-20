@@ -78,7 +78,7 @@ func (pq *PriorityQueue) update(c *ChunkToReview, t time.Time) {
 func StartRebalance(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map, ShouldStop func() bool, chunkUpdateChannel chan int) {
 	//Delegate chunk downloads to the duplicator
 	duplicate := duplicator(sg, lh, core, ShouldStop)
-
+	release := releaser(sg, lh, core)
 	//Constantly check for possible duplications to rebalance the servers,
 	//servers should have more or less the same work
 	go func() { //LoadRebalancer
@@ -95,9 +95,16 @@ func StartRebalance(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Ma
 					log.Println("Duplicate to rebalance. Reason:", known, avg)
 					duplicate(c)
 				}
-			} else if known-1 > avg*1.05 {
+			} else if known >= avg {
 				//Local server has more work than it should
 				//Locate a chunk with more redundancy than the required redundancy and *not* protected
+				for _, cid := range lh.KnownChunksList() {
+					if lh.ChunkStatus(cid) == tllocals.ChunkSynched && sg.NumHolders(cid) > sg.Redundancy() {
+						log.Println("Release to rebalance.", cid, sg.NumHolders(cid), " Reason:", known, avg)
+						release(cid)
+						break
+					}
+				}
 
 			}
 			//We should wait a little
@@ -251,46 +258,51 @@ func duplicator(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map,
 	return duplicate
 }
 
-/*
-func releaser(sg *tlsg.ServerGroup, core *tlcore.Map) (release func(c *VirtualChunk)) {
-	releaseChannel := make(chan *VirtualChunk, 1024)
+func releaser(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map) (release func(cid int)) {
+	releaseChannel := make(chan int, 1024)
 
-	release = func(c *VirtualChunk) {
-		releaseChannel <- c
+	release = func(cid int) {
+		releaseChannel <- cid
 	}
 	go func() {
-		sg.Lock()
-		for !sg.stopped {
-			sg.Unlock()
-			c := <-releaseChannel
-			sg.Lock()
+		for { //TODO wait condition
+			c, ok := <-releaseChannel
+			log.Println("RLCH", c)
+			if !ok {
+				return
+			}
 			//Request chunk protection?
+			if lh.ChunkStatus(c) == tllocals.ChunkProtected {
+				log.Println("Chunk release aborted: chunk already protected on localhost", c)
+				continue
+			}
+
 			//Release repair
 
 			//Request chunk protection
 			protected := true
-			for s := range c.Holders {
-				if s == sg.localhost {
+			for _, s := range sg.GetChunkHolders(c) {
+				if s == nil || s.Phy == lh.LocalhostIPPort {
 					continue
 				}
-				sg.Unlock()
-				ok := s.Protect(c.ID)
-				sg.Lock()
+				ok := s.Protect(c)
 				if !ok {
 					protected = false
 					break
 				}
 			}
 			if !protected {
+				log.Println("Chunk release aborted: protection not stablished", c)
 				continue
 			}
 			//Release
-			sg.chunkStatus[c.ID] = 0
-			log.Println("Disabling chunk...", c.ID)
-			core.ChunkDisable(c.ID)
+			log.Println("Removing chunk...", c)
+			lh.ChunkSetStatus(c, 0)
+			log.Println("Removing chunk 222...", c)
+			core.ChunkDisable(c)
+			log.Println("Remove completed", c)
 		}
-		sg.Unlock()
 	}()
 
 	return release
-}*/
+}
