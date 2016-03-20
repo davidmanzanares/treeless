@@ -33,7 +33,7 @@ type ResponserMsg struct {
 }
 
 //CreateConnection returns a new DB connection
-func CreateConnection(addr string) (*Conn, error) {
+func CreateConnection(addr string, onClose func()) (*Conn, error) {
 	//log.Println("Dialing for new connection", taddr)
 	/*taddr, errp := net.ResolveTCPAddr("tcp", addr)
 	if errp != nil {
@@ -53,7 +53,7 @@ func CreateConnection(addr string) (*Conn, error) {
 	c.rchPool = sync.Pool{New: func() interface{} {
 		return make(chan Result, 1)
 	}}
-	go broker(&c)
+	go broker(&c, onClose)
 
 	return &c, nil
 }
@@ -63,9 +63,9 @@ type timeoutMsg struct {
 	tid uint32
 }
 
-func broker(c *Conn) {
+func broker(c *Conn, onClose func()) {
 	readChannel := make(chan tlproto.Message, 1024)
-	writeChannel := tlproto.NewBufferedConn(c.conn, readChannel)
+	writeChannel := tlproto.NewBufferedConn(c.conn, readChannel, onClose)
 	waits := make(map[uint32]chan<- Result)
 	tid := uint32(0)
 	pq := make([]timeoutMsg, 0, 64)

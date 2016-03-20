@@ -1,6 +1,7 @@
 package tlsg
 
 import (
+	"log"
 	"sync"
 	"time"
 	"treeless/src/tlcom"
@@ -24,7 +25,10 @@ func (s *VirtualServer) needConnection() (err error) {
 		s.m.Lock()
 		if s.conn == nil {
 			//log.Println("Creatting conn to", s.Phy)
-			s.conn, err = tlcom.CreateConnection(s.Phy)
+			s.conn, err = tlcom.CreateConnection(s.Phy, func() {
+				log.Println("Free connection", s.Phy)
+				s.freeConn()
+			})
 			//log.Println("Creatted conn to", s.Phy, "err:", err)
 			if err != nil {
 				s.m.Unlock()

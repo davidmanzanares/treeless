@@ -135,7 +135,6 @@ func duplicator(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map,
 			//Ready to transfer: request chunk transfer, get SYNC params
 			servers := sg.GetChunkHolders(cid)
 
-			log.Println("Chunk duplication began", cid)
 			transferred := false
 			for _, s := range servers {
 				if s == nil || s.Phy == lh.LocalhostIPPort {
@@ -173,7 +172,6 @@ func releaser(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map) (re
 	go func() {
 		for { //TODO wait condition
 			c, ok := <-releaseChannel
-			log.Println("RLCH", c)
 			if !ok {
 				return
 			}
@@ -202,9 +200,7 @@ func releaser(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map) (re
 				continue
 			}
 			//Release
-			log.Println("Removing chunk...", c)
 			lh.ChunkSetStatus(c, 0)
-			log.Println("Removing chunk 222...", c)
 			core.ChunkDisable(c)
 			log.Println("Remove completed", c)
 		}

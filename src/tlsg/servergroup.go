@@ -61,7 +61,7 @@ func CreateServerGroup(numChunks int, redundancy int) *ServerGroup {
 
 func Assoc(addr string) (*ServerGroup, error) {
 	//Connect to the provided address
-	c, err := tlcom.CreateConnection(addr)
+	c, err := tlcom.CreateConnection(addr, func() {})
 	if err != nil {
 		return nil, err
 	}

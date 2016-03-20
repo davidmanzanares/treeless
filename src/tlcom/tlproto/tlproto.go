@@ -2,6 +2,7 @@ package tlproto
 
 import (
 	"encoding/binary"
+	"log"
 	"net"
 	"time"
 )
@@ -66,10 +67,10 @@ type Message struct {
 //It returns a writeChannel, use it to send messages throught conn
 //It recieves a readChannel, inconming messages will be sent to this channel
 //Close it by closing conn and writeChannel
-func NewBufferedConn(conn *net.TCPConn, readChannel chan<- Message) (writeChannel chan<- Message) {
+func NewBufferedConn(conn *net.TCPConn, readChannel chan<- Message, onClose func()) (writeChannel chan<- Message) {
 	writeCh := make(chan Message, 1024)
-	go bufferedWriter(conn, writeCh)
-	go bufferedReader(conn, readChannel, writeCh)
+	go bufferedWriter(conn, writeCh, onClose)
+	go bufferedReader(conn, readChannel, writeCh, onClose)
 	return writeCh
 }
 
@@ -108,6 +109,7 @@ func tcpWrite(conn *net.TCPConn, buffer []byte) error {
 		n, err := conn.Write(buffer)
 		if err != nil {
 			conn.Close()
+			log.Println(err)
 			return err
 		}
 		buffer = buffer[n:]
@@ -124,7 +126,7 @@ func tcpWrite(conn *net.TCPConn, buffer []byte) error {
 //Close the channel to stop the infinite listening loop.
 //
 //This function blocks, typical usage will be "go bufferedWriter(...)""
-func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
+func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message, onClose func()) {
 	var ticker *time.Ticker
 	dirty := false
 	buffer := make([]byte, bufferSize)
@@ -148,7 +150,8 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
 			if !tooLong {
 				err := tcpWrite(conn, buffer[0:msgSize])
 				if err != nil {
-					return
+					onClose()
+					continue
 				}
 				if fastModeEnable && time.Now().Sub(lastTime) < windowFastModeEnable {
 					//Activate fast mode
@@ -161,7 +164,8 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
 				m.write(bigMsg)
 				err := tcpWrite(conn, bigMsg)
 				if err != nil {
-					return
+					onClose()
+					continue
 				}
 			}
 		} else {
@@ -170,7 +174,8 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
 				if index > 0 && !dirty {
 					err := tcpWrite(conn, buffer[0:index])
 					if err != nil {
-						return
+						onClose()
+						continue
 					}
 					index = 0
 				}
@@ -180,7 +185,8 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
 					//flush now
 					err := tcpWrite(conn, buffer[0:index])
 					if err != nil {
-						return
+						onClose()
+						continue
 					}
 					index = 0
 				}
@@ -193,7 +199,8 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
 				if !ok {
 					//Channel closed, stop loop
 					ticker.Stop()
-					return
+					onClose()
+					continue
 				}
 				//Append message to buffer
 				msgSize, tooLong := m.write(buffer[index:])
@@ -204,7 +211,8 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
 						//Send buffer
 						err := tcpWrite(conn, buffer[:index])
 						if err != nil {
-							return
+							onClose()
+							continue
 						}
 						index = 0
 					}
@@ -215,7 +223,8 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
 						m.write(bigMsg)
 						err := tcpWrite(conn, bigMsg)
 						if err != nil {
-							return
+							onClose()
+							continue
 						}
 					} else {
 						//Add msg to the buffer
@@ -236,7 +245,7 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message) {
 //bufferedReader reads messages from conn and sends them to readChannel
 //Close the socket to end the infinite listening loop
 //This function blocks, typical usage: "go bufferedReader(...)"
-func bufferedReader(conn *net.TCPConn, readChannel chan<- Message, writeChannel chan Message) error {
+func bufferedReader(conn *net.TCPConn, readChannel chan<- Message, writeChannel chan Message, onClose func()) error {
 	//Ping-pong between buffers
 	var slices [2][]byte
 	slices[0] = make([]byte, bufferSize)
@@ -251,6 +260,7 @@ func bufferedReader(conn *net.TCPConn, readChannel chan<- Message, writeChannel 
 			n, err := conn.Read(buffer[index:])
 			if err != nil {
 				conn.Close()
+				onClose()
 				return err
 			}
 			index = index + n
@@ -267,6 +277,7 @@ func bufferedReader(conn *net.TCPConn, readChannel chan<- Message, writeChannel 
 				n, err := conn.Read(bigBuffer[index:])
 				if err != nil {
 					conn.Close()
+					onClose()
 					return err
 				}
 				index = index + n
@@ -282,6 +293,7 @@ func bufferedReader(conn *net.TCPConn, readChannel chan<- Message, writeChannel 
 			n, err := conn.Read(buffer[index:])
 			if err != nil {
 				conn.Close()
+				onClose()
 				return err
 			}
 			index = index + n

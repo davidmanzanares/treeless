@@ -47,7 +47,7 @@ func listenRequests(conn *net.TCPConn, id int, worker chan<- tlproto.Message) {
 	//log.Println("New connection accepted. Connection ID:", id)
 	//tcpWriter will buffer TCP writes to send more message in less TCP packets
 	//this technique allows bigger throughtputs, but latency in increased a little
-	tlproto.NewBufferedConn(conn, worker)
+	tlproto.NewBufferedConn(conn, worker, func() {})
 
 	//fmt.Println("Server", conn.LocalAddr(), "listening")
 

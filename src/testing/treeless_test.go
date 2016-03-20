@@ -46,7 +46,7 @@ func TestMain(m *testing.M) {
 		log.SetOutput(ioutil.Discard)
 	}
 	//CLUSTER INITIALIZATION
-	cluster = procStartCluster(5)
+	cluster = vagrantStartCluster(5)
 	code := m.Run()
 	for _, s := range cluster {
 		s.kill()
@@ -748,6 +748,37 @@ func TestSequential(t *testing.T) {
 	//Print stats
 	fmt.Println("\n\nSequential workload simulation - Results")
 	fmt.Println("Operations:", operations*vClients, "Throughput:", float64(operations*vClients)/(t2.Sub(t1).Seconds()), "ops/s\n")
+}
+
+func TestNodeRevival(t *testing.T) {
+	addr := cluster[0].create(testingNumChunks, 2)
+	c, err := tlclient.Connect(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	//Write
+	c.Set([]byte("hello"), []byte("world"))
+
+	addr2 := cluster[1].assoc(addr)
+	time.Sleep(time.Second * 8)
+
+	fmt.Println("Server 0 down")
+	cluster[0].kill()
+
+	cluster[0].assoc(addr2)
+	time.Sleep(time.Second * 8)
+
+	fmt.Println("Server 1 down")
+	cluster[1].kill()
+
+	//Read
+	time.Sleep(time.Second)
+	v, _ := c.Get([]byte("hello"))
+	if string(v) != "world" {
+		t.Fatal("Mismatch:", v)
+	}
 }
 
 func TestParallelEach_G90_S10_D0(t *testing.T) {

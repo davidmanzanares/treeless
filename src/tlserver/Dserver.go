@@ -206,7 +206,7 @@ func createWorker(s *DBServer, readChannel <-chan tlproto.Message) {
 				if s.lh.ChunkStatus(chunkID) == tllocals.ChunkSynched {
 					//New goroutine will put every key value pair into destination, it will manage the OpTransferOK response
 					addr := string(message.Value)
-					c, err := tlcom.CreateConnection(addr)
+					c, err := tlcom.CreateConnection(addr, func() {})
 					if err != nil {
 						log.Println("Transfer failed, error:", err)
 						transferFail()
@@ -250,15 +250,9 @@ func createWorker(s *DBServer, readChannel <-chan tlproto.Message) {
 			case tlproto.OpAddServerToGroup:
 				var response tlproto.Message
 				response.ID = message.ID
-				_, err := s.sg.AddServerToGroup(string(message.Key))
-				if err != nil {
-					response.Type = tlproto.OpErr
-					response.Value = []byte(err.Error())
-					responseChannel <- response
-				} else {
-					response.Type = tlproto.OpAddServerToGroupACK
-					responseChannel <- response
-				}
+				s.sg.AddServerToGroup(string(message.Key))
+				response.Type = tlproto.OpAddServerToGroupACK
+				responseChannel <- response
 			case tlproto.OpGetChunkInfo:
 				var response tlproto.Message
 				response.ID = message.ID
