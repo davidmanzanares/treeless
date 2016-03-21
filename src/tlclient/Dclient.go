@@ -94,11 +94,13 @@ func (c *DBClient) Set(key, value []byte) (written bool, errs error) {
 func (c *DBClient) Del(key []byte) (errs error) {
 	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks())
 	servers := c.sg.GetChunkHolders(chunkID)
+	valueTime := make([]byte, 8)
+	binary.LittleEndian.PutUint64(valueTime, uint64(time.Now().UnixNano()))
 	for _, s := range servers {
 		if s == nil {
 			continue
 		}
-		err := s.Del(key, c.DelTimeout)
+		err := s.Del(key, valueTime, c.DelTimeout)
 		errs = err
 	}
 	return errs

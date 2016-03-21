@@ -242,8 +242,8 @@ func (c *Conn) Set(key, value []byte, timeout time.Duration) error {
 }
 
 //Del deletes a key/value pair
-func (c *Conn) Del(key []byte, timeout time.Duration) error {
-	r := c.sendAndReceive(tlproto.OpDel, key, nil, timeout)
+func (c *Conn) Del(key []byte, value []byte, timeout time.Duration) error {
+	r := c.sendAndReceive(tlproto.OpDel, key, value, timeout)
 	return r.Err
 }
 

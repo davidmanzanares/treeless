@@ -113,11 +113,11 @@ func (m *Map) Set(key, value []byte) error {
 }
 
 //Delete the pair indexed by key
-func (m *Map) Delete(key []byte) error {
+func (m *Map) Delete(key, value []byte) error {
 	h := tlhash.FNV1a64(key)
 	//Opt: use AND operator
 	chunkIndex := int((h >> 32) % uint64(len(m.Chunks)))
-	return m.Chunks[chunkIndex].del(h, key)
+	return m.Chunks[chunkIndex].del(h, key, value)
 }
 
 //Iterate all key-value pairs of a chunk, executing foreach for each key-value pair

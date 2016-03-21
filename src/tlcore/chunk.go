@@ -170,7 +170,6 @@ func (c *Chunk) set(h64 uint64, key, value []byte) error {
 					c.Unlock()
 					return nil
 				}
-				//fmt.Println("Set", key, value, t)
 				c.St.del(stIndex)
 				storeIndex, err := c.St.put(key, value)
 				if err != nil {
@@ -187,7 +186,7 @@ func (c *Chunk) set(h64 uint64, key, value []byte) error {
 	}
 }
 
-func (c *Chunk) del(h64 uint64, key []byte) error {
+func (c *Chunk) del(h64 uint64, key, value []byte) error {
 	//TODO last writer wins
 	c.Lock()
 	defer c.Unlock()
@@ -213,6 +212,15 @@ func (c *Chunk) del(h64 uint64, key []byte) error {
 			storedKey := c.St.key(uint64(stIndex))
 			if bytes.Equal(storedKey, key) {
 				//Full match, the key was in the map
+
+				//Last write wins
+				v := c.St.val(uint64(stIndex))
+				oldT := time.Unix(0, int64(binary.LittleEndian.Uint64(v[:8])))
+				t := time.Unix(0, int64(binary.LittleEndian.Uint64(value[:8])))
+				if t.Before(oldT) {
+					//Stored pair is newer than the provided pair
+					return nil
+				}
 				c.St.del(stIndex)
 				c.Hm.setHash(index, deletedBucket)
 				return nil

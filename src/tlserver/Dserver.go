@@ -187,7 +187,7 @@ func createWorker(s *DBServer, readChannel <-chan tlproto.Message) {
 				responseChannel <- response
 			case tlproto.OpDel:
 				var response tlproto.Message
-				s.m.Delete(message.Key)
+				s.m.Delete(message.Key, message.Value)
 				response.ID = message.ID
 				response.Type = tlproto.OpDelOK
 				responseChannel <- response

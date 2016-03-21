@@ -46,7 +46,7 @@ func TestMain(m *testing.M) {
 		log.SetOutput(ioutil.Discard)
 	}
 	//CLUSTER INITIALIZATION
-	cluster = vagrantStartCluster(5)
+	cluster = vagrantStartCluster(2)
 	code := m.Run()
 	for _, s := range cluster {
 		s.kill()
@@ -323,7 +323,14 @@ func TestConsistency(t *testing.T) {
 	metaTestConsistency(t, addr, 20, 200)
 }
 
-func metaTestConsistency(t *testing.T, serverAddr string, numClients, iterations int) {
+func TestConsistencyAsyncSet(t *testing.T) {
+	addr := cluster[0].create(testingNumChunks, 2)
+	defer cluster[0].kill()
+	waitForServer(addr)
+	metaTestConsistencyAsyncSet(t, addr, 20, 200)
+}
+
+func metaTestConsistencyAsyncSet(t *testing.T, serverAddr string, numClients, iterations int) {
 	runtime.GOMAXPROCS(4)
 	var w sync.WaitGroup
 	w.Add(numClients)
@@ -346,7 +353,7 @@ func metaTestConsistency(t *testing.T, serverAddr string, numClients, iterations
 
 			for i := 0; i < iterations; i++ {
 				p.Inc()
-				op := int(rand.Int31n(int32(3)))
+				op := int(rand.Int31n(int32(2)))
 				key := make([]byte, 1)
 				key[0] = byte(1)
 				value := make([]byte, 4)
@@ -364,10 +371,6 @@ func metaTestConsistency(t *testing.T, serverAddr string, numClients, iterations
 					c.Set(key, value)
 					mutex.Unlock()
 				case 1:
-					//delete(goMap, string(key))
-					//c.Del(key)
-					mutex.Unlock()
-				case 2:
 					v2 := goMap[string(key)]
 					var v1 []byte
 					for i := 1; i < 1000; i = i * 2 {
@@ -386,6 +389,68 @@ func metaTestConsistency(t *testing.T, serverAddr string, numClients, iterations
 					}
 					mutex.Unlock()
 					//fmt.Println("GET", key, v1, v2)
+				}
+			}
+			w.Done()
+			w.Wait() //CRITICAL: WAIT FOR PENDING WRITE OPERATIONS TO COMPLETE
+		}(i)
+	}
+	w.Wait()
+}
+
+func metaTestConsistency(t *testing.T, serverAddr string, numClients, iterations int) {
+	runtime.GOMAXPROCS(4)
+	var w sync.WaitGroup
+	w.Add(numClients)
+	//Test
+	var mutex sync.Mutex
+	goMap := make(map[string][]byte)
+	quitASAP := false
+	p := tlutils.NewProgress("Operating...", iterations*numClients)
+	for i := 0; i < numClients; i++ {
+		go func(thread int) {
+			mutex.Lock()
+			//Create client and connect it to the fake server
+			c, err := tlclient.Connect(serverAddr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close()
+			mutex.Unlock()
+
+			for i := 0; i < iterations; i++ {
+				p.Inc()
+				op := int(rand.Int31n(int32(3)))
+				key := make([]byte, 1)
+				key[0] = byte(1)
+				value := make([]byte, 4)
+				binary.LittleEndian.PutUint32(value, uint32(rand.Int63()))
+				runtime.Gosched()
+				mutex.Lock()
+				if quitASAP {
+					mutex.Unlock()
+					break
+				}
+				switch op {
+				case 0:
+					goMap[string(key)] = value
+					c.Set(key, value)
+					mutex.Unlock()
+				case 1:
+					delete(goMap, string(key))
+					c.Del(key)
+					mutex.Unlock()
+				case 2:
+					v2 := goMap[string(key)]
+					v1, _ := c.Get(key)
+					if !bytes.Equal(v1, v2) {
+						fmt.Println("Mismatch, server returned:", v1,
+							"gomap returned:", v2)
+						t.Error("Mismatch, server returned:", v1,
+							"gomap returned:", v2)
+						quitASAP = true
+					}
+					mutex.Unlock()
 				}
 			}
 			w.Done()
@@ -425,8 +490,8 @@ func TestHotRebalance(t *testing.T) {
 				goMap[string(key)] = value
 			case 1:
 				//Delete
-				//delete(goMap, string(key))
-				//goDeletes = append(goDeletes, key)
+				delete(goMap, string(key))
+				goDeletes = append(goDeletes, key)
 			}
 		}
 	}
@@ -471,7 +536,7 @@ func TestHotRebalance(t *testing.T) {
 
 					}
 				case 1:
-					//c.Del(key)
+					c.Del(key)
 				}
 			}
 			w.Done()
@@ -846,8 +911,7 @@ func testParallel(addr string, t *testing.T, oneClient bool, pGet, pSet, pDel fl
 				case op < pGet+pSet:
 					c.Set(key, value)
 				default:
-					//delete(goMap, string(key))
-					//c.Del(key)
+					c.Del(key)
 				}
 				//Ping servers randomly
 				//Collect stats
@@ -893,8 +957,8 @@ func BenchmarkGetUnpopulated1Server(b *testing.B) {
 	maxKeySize := 4
 	maxValueSize := 4
 	gid := uint64(0)
-	b.ResetTimer()
 	b.SetParallelism(256)
+	b.ResetTimer()
 	b.RunParallel(
 		func(pb *testing.PB) {
 			core := int(atomic.AddUint64(&gid, 1))
