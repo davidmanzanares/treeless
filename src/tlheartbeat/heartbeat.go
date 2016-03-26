@@ -9,10 +9,9 @@ import (
 	"treeless/src/tlsg"
 )
 
-var heartbeatTimeout = time.Millisecond * 1000
+var heartbeatTimeout = time.Millisecond * 500
 var heartbeatSleep = time.Millisecond * 500
-var heartbeatSleepOnFail = time.Millisecond * 500
-var timeoutRetries = 5
+var timeoutRetries = 3
 
 type Heartbeater struct {
 	Sleep          time.Duration

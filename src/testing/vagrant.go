@@ -61,6 +61,8 @@ func vagrantStartCluster(numServers int) []testServer {
 	//http://stackoverflow.com/questions/8251933/how-can-i-log-the-stdout-of-a-process-started-by-start-stop-daemon
 	sh0 := `echo Starting up VM0...
 	sysctl -w fs.file-max=100000
+	echo *    soft    nofile  8192 >> /etc/security/limits.conf
+	echo *    hard    nofile  8192 >> /etc/security/limits.conf
 	mkdir /home/vagrant/db
 	chmod -R 0777 /home/vagrant/db
 	echo VM0 is online`
@@ -73,6 +75,8 @@ func vagrantStartCluster(numServers int) []testServer {
 	for i := 1; i < numServers; i++ {
 		sh := `echo Starting up VM` + fmt.Sprint(i) + `...
 		sysctl -w fs.file-max=100000
+		echo *    soft    nofile  8192 >> /etc/security/limits.conf
+		echo *    hard    nofile  8192 >> /etc/security/limits.conf 
 		mkdir /home/vagrant/db
 		chmod -R 0777 /home/vagrant/db
 		echo VM` + fmt.Sprint(i) + ` is online`

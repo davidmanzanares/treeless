@@ -230,7 +230,7 @@ func (c *Chunk) del(h64 uint64, key, value []byte) error {
 	}
 }
 
-func (c *Chunk) iterate(foreach func(key, value []byte)) error {
+func (c *Chunk) iterate(foreach func(key, value []byte) bool) error {
 	c.Lock()
 	if c.stopped {
 		c.Unlock()
@@ -250,7 +250,10 @@ func (c *Chunk) iterate(foreach func(key, value []byte)) error {
 			vc := make([]byte, len(val))
 			copy(kc, key)
 			copy(vc, val)
-			foreach(kc, vc)
+			ok := foreach(kc, vc)
+			if !ok {
+				break
+			}
 		}
 		index += 8 + uint64(c.St.totalLen(index))
 	}

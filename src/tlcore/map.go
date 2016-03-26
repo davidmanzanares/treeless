@@ -121,6 +121,6 @@ func (m *Map) Delete(key, value []byte) error {
 }
 
 //Iterate all key-value pairs of a chunk, executing foreach for each key-value pair
-func (m *Map) Iterate(chunkID int, foreach func(key, value []byte)) error {
+func (m *Map) Iterate(chunkID int, foreach func(key, value []byte) bool) error {
 	return m.Chunks[chunkID].iterate(foreach)
 }

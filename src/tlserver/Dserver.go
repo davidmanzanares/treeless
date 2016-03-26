@@ -213,25 +213,36 @@ func createWorker(s *DBServer, readChannel <-chan tlproto.Message) {
 					} else {
 						go func(c *tlcom.Conn) {
 							i := 0
-							s.m.Iterate(chunkID, func(key, value []byte) {
-								err := c.Set(key, value, time.Millisecond*100)
+							var err error
+							s.m.Iterate(chunkID, func(key, value []byte) bool {
+								err = c.Set(key, value, time.Millisecond*500)
 								if err != nil {
-									//TODO transfer aborted
-									log.Println("Transfer error:", err)
-									panic(err)
+									return false
 								}
 								i++
+								return true
 								/*if i%1024 == 0 {
 									log.Println("Transfered ", i, "keys")
 								}*/
 								//fmt.Println("Transfer operation", key, value)
 							})
-							fmt.Println("Transfer operation completed, pairs:", i)
-							c.Close()
-							var response tlproto.Message
-							response.ID = message.ID
-							response.Type = tlproto.OpTransferCompleted
-							responseChannel <- response
+							if err == nil {
+								fmt.Println("Transfer operation completed, pairs:", i)
+								c.Close()
+								var response tlproto.Message
+								response.ID = message.ID
+								response.Type = tlproto.OpTransferCompleted
+								responseChannel <- response
+							} else {
+								//TODO transfer aborted
+								log.Println("Transfer error:", err)
+								var response tlproto.Message
+								response.ID = message.ID
+								response.Type = tlproto.OpErr
+								response.Value = []byte(err.Error())
+								responseChannel <- response
+								c.Close()
+							}
 						}(c)
 					}
 				} else {
