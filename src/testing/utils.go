@@ -19,7 +19,7 @@ type testServer interface {
 	addr() string
 
 	//For node failure simulation
-	create(numChunks, redundancy int) string
+	create(numChunks, redundancy int, verbose bool) string
 	assoc(addr string) string
 	kill()
 	//For network failure simulation

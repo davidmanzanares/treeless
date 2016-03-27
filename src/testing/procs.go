@@ -51,13 +51,13 @@ func (ps *procServer) addr() string {
 	return ps.phy
 }
 
-func (ps *procServer) create(numChunks, redundancy int) string {
+func (ps *procServer) create(numChunks, redundancy int, verbose bool) string {
 	ps.kill()
 	exec.Command("killall", "-q", "treeless").Run()
 	ps.cmd = exec.Command("./treeless", "-create", "-port",
 		fmt.Sprint(10000+ps.id), "-dbpath", ps.dbpath, "-localip", "127.0.0.1",
 		"-redundancy", fmt.Sprint(redundancy), "-chunks", fmt.Sprint(numChunks))
-	if true {
+	if verbose {
 		ps.cmd.Stdout = os.Stdout
 		ps.cmd.Stderr = os.Stderr
 	}

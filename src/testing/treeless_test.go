@@ -57,7 +57,7 @@ func TestMain(m *testing.M) {
 //Test just a few hard-coded operations with one server - one client
 func TestSimple(t *testing.T) {
 	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2)
+	addr := cluster[0].create(testingNumChunks, 2, true)
 	defer cluster[0].kill()
 	waitForServer(addr)
 	//Client set-up
@@ -95,7 +95,7 @@ func TestSimple(t *testing.T) {
 //TestBigMessages, send 8KB GET, SET messages
 func TestBigMessages(t *testing.T) {
 	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2)
+	addr := cluster[0].create(testingNumChunks, 2, true)
 	defer cluster[0].kill()
 	waitForServer(addr)
 
@@ -122,7 +122,7 @@ func TestBigMessages(t *testing.T) {
 //Test just a few hard-coded operations with one server - one client
 func TestTimeout(t *testing.T) {
 	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2)
+	addr := cluster[0].create(testingNumChunks, 2, true)
 	defer cluster[0].kill()
 	waitForServer(addr)
 	//Client set-up
@@ -160,7 +160,7 @@ func TestTimeout(t *testing.T) {
 
 func TestBasicRebalance(t *testing.T) {
 	//Server set-up
-	addr1 := cluster[0].create(testingNumChunks, 2)
+	addr1 := cluster[0].create(testingNumChunks, 2, true)
 	waitForServer(addr1)
 
 	//Client set-up
@@ -179,7 +179,7 @@ func TestBasicRebalance(t *testing.T) {
 	defer cluster[1].kill()
 	//Wait for rebalance
 	fmt.Println("Server 1 shut down soon...")
-	time.Sleep(time.Second * 4)
+	time.Sleep(time.Second * 5)
 	//First server shut down
 	fmt.Println("Server 1 shut down")
 	cluster[0].kill()
@@ -202,7 +202,7 @@ func TestBasicRebalance(t *testing.T) {
 //Test lots of operations made by a single client against a single DB server
 func TestCmplx1_1(t *testing.T) {
 	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2)
+	addr := cluster[0].create(testingNumChunks, 2, true)
 	defer cluster[0].kill()
 	waitForServer(addr)
 	metaTest(t, addr, 10*1000, 4, 8, 10, 1024)
@@ -317,14 +317,14 @@ func metaTest(t *testing.T, addr string, numOperations, maxKeySize, maxValueSize
 }
 
 func TestConsistency(t *testing.T) {
-	addr := cluster[0].create(testingNumChunks, 2)
+	addr := cluster[0].create(testingNumChunks, 2, true)
 	defer cluster[0].kill()
 	waitForServer(addr)
 	metaTestConsistency(t, addr, 20, 200)
 }
 
 func TestConsistencyAsyncSet(t *testing.T) {
-	addr := cluster[0].create(testingNumChunks, 2)
+	addr := cluster[0].create(testingNumChunks, 2, true)
 	defer cluster[0].kill()
 	waitForServer(addr)
 	metaTestConsistencyAsyncSet(t, addr, 20, 200)
@@ -465,7 +465,7 @@ func metaTestConsistency(t *testing.T, serverAddr string, numClients, iterations
 func TestHotRebalance(t *testing.T) {
 	var stop2 func()
 	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2)
+	addr := cluster[0].create(testingNumChunks, 2, true)
 	waitForServer(addr)
 	//Client set-up
 	c, err := tlclient.Connect(addr)
@@ -590,7 +590,7 @@ func TestHotRebalance(t *testing.T) {
 //TestLatency tests latency between a SET operation and a GET operaton that sees the the SET written value
 func TestLatency(t *testing.T) {
 	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2)
+	addr := cluster[0].create(testingNumChunks, 2, true)
 	defer cluster[0].kill()
 	//Client set-up
 	c, err := tlclient.Connect(addr)
@@ -663,7 +663,7 @@ func TestLatency(t *testing.T) {
 //TestClock tests records timestamps synchronization
 func TestClock(t *testing.T) {
 	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2)
+	addr := cluster[0].create(testingNumChunks, 2, true)
 	defer cluster[0].kill()
 	//Client set-up
 	c, err := tlclient.Connect(addr)
@@ -725,7 +725,7 @@ func TestClock(t *testing.T) {
 }
 
 func TestNodeRevival(t *testing.T) {
-	addr := cluster[0].create(testingNumChunks, 2)
+	addr := cluster[0].create(testingNumChunks, 2, true)
 	c, err := tlclient.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
@@ -736,13 +736,13 @@ func TestNodeRevival(t *testing.T) {
 	c.Set([]byte("hello"), []byte("world"))
 
 	addr2 := cluster[1].assoc(addr)
-	time.Sleep(time.Second * 4)
+	time.Sleep(time.Second * 5)
 
 	fmt.Println("Server 0 down")
 	cluster[0].kill()
 
 	cluster[0].assoc(addr2)
-	time.Sleep(time.Second * 4)
+	time.Sleep(time.Second * 5)
 
 	fmt.Println("Server 1 down")
 	cluster[1].kill()
@@ -755,25 +755,20 @@ func TestNodeRevival(t *testing.T) {
 	}
 }
 
-func TestBenchParallelEach_G90_S10_D0(t *testing.T) {
-	addr := cluster[0].create(benchmarkingNumChunks, 2)
-	for i := 1; i < len(cluster); i++ {
-		cluster[i].assoc(addr)
-	}
-	time.Sleep(time.Second * 3)
-	testParallel(addr, t, false, 0.9, 0.1, 0.0)
+func TestBenchParallelEachS1_G90_S10_D0(t *testing.T) {
+	testBenchParallel(t, false, 0.9, 0.1, 0.0, 1)
 
 }
-func TestBenchParallelShared_G90_S10_D0(t *testing.T) {
-	addr := cluster[0].create(benchmarkingNumChunks, 2)
-	for i := 1; i < len(cluster); i++ {
-		cluster[i].assoc(addr)
-	}
-	testParallel(addr, t, true, 1.0, 0.0, 0.0)
-
+func TestBenchParallelSharedS1_G90_S10_D0(t *testing.T) {
+	testBenchParallel(t, true, 0.9, 0.1, 0.0, 1)
 }
 
-func testParallel(addr string, t *testing.T, oneClient bool, pGet, pSet, pDel float32) {
+func testBenchParallel(t *testing.T, oneClient bool, pGet, pSet, pDel float32, servers int) {
+	addr := cluster[0].create(benchmarkingNumChunks, 2, false)
+	for i := 1; i < servers; i++ {
+		cluster[i].assoc(addr)
+	}
+
 	var w sync.WaitGroup
 	vClients := 1024
 	operations := 1000000
@@ -840,26 +835,16 @@ func testParallel(addr string, t *testing.T, oneClient bool, pGet, pSet, pDel fl
 	fmt.Println("Operations:", operations, "Throughput:", float64(operations)/(t2.Sub(t1).Seconds()), "ops/s\n")
 }
 
+func TestBenchSequentialS1(t *testing.T) {
+	testBenchSequential(t, 1)
+}
+
 //Test sequential throughtput and consistency
-func TestBenchSequential(t *testing.T) {
-	addr := cluster[0].create(benchmarkingNumChunks, 2)
-	for i := 1; i < len(cluster); i++ {
+func testBenchSequential(t *testing.T, servers int) {
+	addr := cluster[0].create(benchmarkingNumChunks, 2, false)
+	for i := 1; i < servers; i++ {
 		cluster[i].assoc(addr)
 	}
-	//time.Sleep(time.Second * 400)
-	//Wait for servers
-	/*fmt.Println("Waiting for server 192.168.2.100")
-	ready := waitForServer("192.168.2.100:9876")
-	if !ready {
-		t.Fatal("Servers not ready")
-	}*/
-	/*for i := 1; i < vServers; i++ {
-		fmt.Println("Waiting for server 192.168.2." + fmt.Sprint(100+i))
-		ready = waitForServer("192.168.2." + fmt.Sprint(100+i) + ":9876")
-		if !ready {
-			t.Fatal("Servers not ready")
-		}
-	}*/
 
 	//Initialize vars
 	goMap := make(map[string][]byte)

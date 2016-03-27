@@ -76,7 +76,7 @@ func vagrantStartCluster(numServers int) []testServer {
 		sh := `echo Starting up VM` + fmt.Sprint(i) + `...
 		sysctl -w fs.file-max=100000
 		echo *    soft    nofile  8192 >> /etc/security/limits.conf
-		echo *    hard    nofile  8192 >> /etc/security/limits.conf 
+		echo *    hard    nofile  8192 >> /etc/security/limits.conf
 		mkdir /home/vagrant/db
 		chmod -R 0777 /home/vagrant/db
 		echo VM` + fmt.Sprint(i) + ` is online`
@@ -108,7 +108,7 @@ func (vs *vagrantServer) vagrantSSH(cmd string) {
 	c.Run()
 }
 
-func (vs *vagrantServer) create(numChunks, redundancy int) string {
+func (vs *vagrantServer) create(numChunks, redundancy int, verbose bool) string {
 	//Stop
 	vs.vagrantSSH("killall -q treeless; rm -f /home/vagrant/treeless.*")
 	//Start and create

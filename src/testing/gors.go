@@ -28,7 +28,7 @@ func (gs *gorServer) addr() string {
 	return gs.phy
 }
 
-func (gs *gorServer) create(numChunks, redundancy int) string {
+func (gs *gorServer) create(numChunks, redundancy int, verbose bool) string {
 	dbTestFolder := ""
 	if exists("/mnt/dbs/") {
 		dbTestFolder = "/mnt/dbs/"
