@@ -22,7 +22,7 @@ func NewProgress(reason string, total int) *Progress {
 func (p *Progress) Inc() {
 	p.m.Lock()
 	p.index++
-	if p.index-p.lastPrintedIndex > p.total/1000 {
+	if p.index-p.lastPrintedIndex > p.total/1000 || p.index == p.total {
 		p.lastPrintedIndex = p.index
 		index := p.index
 		p.m.Unlock()

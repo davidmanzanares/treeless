@@ -122,6 +122,7 @@ func duplicator(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map,
 		core.ChunkEnable(cid)
 		lh.ChunkSetStatus(cid, tllocals.ChunkPresent)
 		go func() {
+			//Heartbeat must be propagated before transfer initialization
 			time.Sleep(time.Second * 2)
 			duplicateChannel <- cid
 		}()

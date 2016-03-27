@@ -2,6 +2,7 @@ package tlclient
 
 import (
 	"encoding/binary"
+	"log"
 	"time"
 	"treeless/src/tlcom"
 	"treeless/src/tlhash"
@@ -38,20 +39,20 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 	//Last write wins policy
 	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks())
 	servers := c.sg.GetChunkHolders(chunkID)
-	var charray [8]tlcom.GetOperation
-	chs := 0
-	for _, s := range servers {
-		if s == nil {
-			continue
+	var charray [8]*tlcom.GetOperation
+	var times [8]time.Time
+	for i, s := range servers {
+		if s != nil {
+			c, err := s.Get(key, c.GetTimeout)
+			if err == nil {
+				charray[i] = &c
+			}
 		}
-		c, err := s.Get(key, c.GetTimeout)
-		if err != nil {
-			continue
-		}
-		charray[chs] = c
-		chs++
 	}
-	for i := 0; i < chs; i++ {
+	for i := 0; i < len(servers); i++ {
+		if charray[i] == nil {
+			continue
+		}
 		r := charray[i].Wait()
 		if r.Err != nil {
 			continue
@@ -59,16 +60,25 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 		v := r.Value
 		if len(v) >= 8 {
 			t := time.Unix(0, int64(binary.LittleEndian.Uint64(v[:8])))
+			times[i] = t
 			if lastTime.Before(t) {
 				lastTime = t
 				value = v
 			}
 		}
 	}
-	if value != nil {
-		return value[8:], lastTime
+	if value == nil {
+		return nil, lastTime
 	}
-	return nil, lastTime
+	//Read-repair
+	for i, s := range servers {
+		if s != nil && lastTime.After(times[i]) {
+			//Repair
+			log.Println("Read reparing", key, value, lastTime, times[i])
+			s.Set(key, value, 0)
+		}
+	}
+	return value[8:], lastTime
 }
 
 func (c *DBClient) Set(key, value []byte) (written bool, errs error) {

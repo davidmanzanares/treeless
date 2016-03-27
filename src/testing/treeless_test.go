@@ -208,12 +208,12 @@ func TestCmplx1_1(t *testing.T) {
 	metaTest(t, addr, 10*1000, 4, 8, 10, 1024)
 }
 
-func randKVOpGenerator(maxKeySize, maxValueSize, seed, mult, offset int) func() (op int, k, v []byte) {
+func randKVOpGenerator(minKeySize, maxKeySize, maxValueSize, seed, mult, offset int) func() (op int, k, v []byte) {
 	r := rand.New(rand.NewSource(int64(seed)))
 	base := make([]byte, 4)
 	base2 := make([]byte, 4)
 	return func() (op int, k, v []byte) {
-		opKeySize := r.Intn(maxKeySize) + 1
+		opKeySize := r.Intn(maxKeySize) + minKeySize
 		opValueSize := r.Intn(maxValueSize) + 1
 		binary.LittleEndian.PutUint32(base, uint32(r.Int31())*uint32(mult)+uint32(offset))
 		binary.LittleEndian.PutUint32(base2, uint32(r.Int31())*uint32(mult)+uint32(offset))
@@ -234,7 +234,7 @@ func metaTest(t *testing.T, addr string, numOperations, maxKeySize, maxValueSize
 	goMap := make(map[string][]byte)
 	var goDeletes []([]byte)
 	for core := 0; core < threads; core++ {
-		rNext := randKVOpGenerator(maxKeySize, maxValueSize, core, 64, core)
+		rNext := randKVOpGenerator(1, maxKeySize, maxValueSize, core, 64, core)
 		for i := 0; i < numOperations; i++ {
 			opType, key, value := rNext()
 			switch opType {
@@ -261,7 +261,7 @@ func metaTest(t *testing.T, addr string, numOperations, maxKeySize, maxValueSize
 				t.Fatal(err)
 			}
 			defer c.Close()
-			rNext := randKVOpGenerator(maxKeySize, maxValueSize, core, 64, core)
+			rNext := randKVOpGenerator(1, maxKeySize, maxValueSize, core, 64, core)
 			for i := 0; i < numOperations; i++ {
 				opType, key, value := rNext()
 				switch opType {
@@ -483,7 +483,7 @@ func TestHotRebalance(t *testing.T) {
 	goMap := make(map[string][]byte)
 	var goDeletes []([]byte)
 	for core := 0; core < threads; core++ {
-		rNext := randKVOpGenerator(maxKeySize, maxValueSize, core, 64, core)
+		rNext := randKVOpGenerator(1, maxKeySize, maxValueSize, core, 64, core)
 		for i := 0; i < numOperations; i++ {
 			opType, key, value := rNext()
 			switch opType {
@@ -510,7 +510,7 @@ func TestHotRebalance(t *testing.T) {
 	p := tlutils.NewProgress("Writting", numOperations*threads)
 	for core := 0; core < threads; core++ {
 		go func(core int) {
-			rNext := randKVOpGenerator(maxKeySize, maxValueSize, core, 64, core)
+			rNext := randKVOpGenerator(1, maxKeySize, maxValueSize, core, 64, core)
 			for i := 0; i < numOperations; i++ {
 				//fmt.Println(core, i)
 				if core == 0 && i == 0 {
@@ -620,7 +620,7 @@ func TestLatency(t *testing.T) {
 	var k atomic.Value
 	k.Store(1.0)
 	go func() {
-		rNext := randKVOpGenerator(maxKeySize, maxValueSize, 0, 64, 0)
+		rNext := randKVOpGenerator(1, maxKeySize, maxValueSize, 0, 64, 0)
 		for i := 0; i < numOperations; i++ {
 			_, key, value := rNext()
 			t := time.Now()
@@ -685,7 +685,7 @@ func TestClock(t *testing.T) {
 	initTime := time.Now()
 	for core := 0; core < threads; core++ {
 		go func(core int) {
-			rNext := randKVOpGenerator(maxKeySize, maxValueSize, core, 64, core)
+			rNext := randKVOpGenerator(1, maxKeySize, maxValueSize, core, 64, core)
 			for i := -initOps; i < numOperations; i++ {
 				_, key, value := rNext()
 				t := time.Now()
@@ -808,7 +808,7 @@ func testParallel(addr string, t *testing.T, oneClient bool, pGet, pSet, pDel fl
 		go func(thread int) {
 			c := clients[thread]
 			value := make([]byte, 4)
-			rNext := randKVOpGenerator(4, 4, thread+1, 64, thread+1)
+			rNext := randKVOpGenerator(4, 4, 4, thread+1, 2048, thread+1)
 			for atomic.AddInt32(&ops, 1) <= int32(operations) {
 				//p.Inc()
 				//Operate
