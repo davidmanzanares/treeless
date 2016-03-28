@@ -42,7 +42,9 @@ func (s *VirtualServer) needConnection() (err error) {
 }
 func (s *VirtualServer) freeConn() {
 	//Close connetion now
+	//log.Println("FREECONN")
 	s.m.Lock()
+	//log.Println("FREECONN", s.conn)
 	if s.conn != nil {
 		s.conn.Close()
 		s.conn = nil
@@ -51,7 +53,6 @@ func (s *VirtualServer) freeConn() {
 }
 
 //Get the value of key
-//Caller must issue a s.RUnlock() after using the channel
 func (s *VirtualServer) Get(key []byte, timeout time.Duration) (tlcom.GetOperation, error) {
 	if err := s.needConnection(); err != nil {
 		return tlcom.GetOperation{}, err
@@ -62,23 +63,23 @@ func (s *VirtualServer) Get(key []byte, timeout time.Duration) (tlcom.GetOperati
 }
 
 //Set a new key/value pair
-func (s *VirtualServer) Set(key, value []byte, timeout time.Duration) error {
+func (s *VirtualServer) Set(key, value []byte, timeout time.Duration) (tlcom.SetOperation, error) {
 	if err := s.needConnection(); err != nil {
-		return nil
+		return tlcom.SetOperation{}, err
 	}
-	cerr := s.conn.Set(key, value, timeout)
+	r := s.conn.Set(key, value, timeout)
 	s.m.RUnlock()
-	return cerr
+	return r, nil
 }
 
 //Del deletes a key/value pair
-func (s *VirtualServer) Del(key []byte, value []byte, timeout time.Duration) error {
+func (s *VirtualServer) Del(key []byte, value []byte, timeout time.Duration) (tlcom.DelOperation, error) {
 	if err := s.needConnection(); err != nil {
-		return nil
+		return tlcom.DelOperation{}, err
 	}
-	cerr := s.conn.Del(key, value, timeout)
+	r := s.conn.Del(key, value, timeout)
 	s.m.RUnlock()
-	return cerr
+	return r, nil
 }
 
 func (s *VirtualServer) Transfer(addr string, chunkID int) error {
@@ -103,7 +104,7 @@ func (s *VirtualServer) GetAccessInfo() []byte {
 //AddServerToGroup request to add this server to the server group
 func (s *VirtualServer) AddServerToGroup(addr string) error {
 	if err := s.needConnection(); err != nil {
-		return nil
+		return err
 	}
 	cerr := s.conn.AddServerToGroup(addr)
 	s.m.RUnlock()

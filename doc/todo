@@ -1,44 +1,32 @@
 Core: 3+3
-	E*-del last write wins
 
 	-size limit to map wide instead of chunk wide
 	-IO error?
 	-MurmurHash
 
 Com: 2+3
-	E*-Two phase operation: parallel com
 
 	-CAS
-	-local ip set by parameter, defaultIP := getLocalIP()
+
 Dist: 8
+
 	-del assurance
-	E*-read repair (con test: tapo A, read repair, tapo B, read and check)
-	-random repair
-	*-rebalanceo: eliminacion de trozos por exceso de redundancia
-	-eliminacion de servidores "muertos"??
-	-fast nul transfer?
+	-backwards repair
+	-gossip
 
 Test: 5+1
 	-real test: test consitency with lots of servers, network problems and server shutdowns:
-    -add benchmarks
 	-divide tests
 
+    -add more benchmarks
 	-space per chunk tests (hash quality tests)
 
 Others: 1+4+4+4+3+1+1+1
-	-hearbeat replier to hearbeat package
-	-com protocol refactor files
-	-dist operative extract from client
-	-dep graph
-	-stopper
-	-limit to Redundancy+1
-	-desacoplar dist
+
+	-stoppers
 	-parametrizar constantes
-	-monitor command: +periodic flush +info
-	-chunk treeless parameter
 	-log treeless parameter
 
-	-start stop
 	-docs: dependencies and constraints
 	-json performance? => use another
 	-stats
@@ -46,8 +34,8 @@ Others: 1+4+4+4+3+1+1+1
 
 	-log rotation: max size
 
-...:
     -procedures: TTL procedure,...
+
 
 Memoria:
 	https://codahale.com/you-cant-sacrifice-partition-tolerance/

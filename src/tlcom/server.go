@@ -22,7 +22,7 @@ type TCPCallback func(write chan<- tlproto.Message, read <-chan tlproto.Message)
 type UDPCallback func() tlUDP.AmAlive
 
 //Start a Treeless server
-func Start(addr string, localIP string, localport int, worker chan<- tlproto.Message, udpc UDPCallback) *Server {
+func Start(addr string, localIP string, localport int, worker func(tlproto.Message) (response tlproto.Message), udpc UDPCallback) *Server {
 	var s Server
 	//Init server
 	s.localIP = localIP
@@ -43,17 +43,33 @@ func (s *Server) Stop() {
 	s.tcpListener.Close()
 }
 
-func listenRequests(conn *net.TCPConn, id int, worker chan<- tlproto.Message) {
+func listenRequests(conn *net.TCPConn, id int, worker func(tlproto.Message) (response tlproto.Message)) {
 	//log.Println("New connection accepted. Connection ID:", id)
 	//tcpWriter will buffer TCP writes to send more message in less TCP packets
 	//this technique allows bigger throughtputs, but latency in increased a little
-	tlproto.NewBufferedConn(conn, worker, func() {})
+	ch := make(chan tlproto.Message, 1024)
+	toWorld := tlproto.NewBufferedConn(conn, ch)
+	go func() {
+		for {
+			m, ok := <-ch
+			if ok {
+				response := worker(m)
+				if response.Type != tlproto.OpNil {
+					toWorld <- response
+				}
+			} else {
+				//log.Println("Server: connection closed", conn.RemoteAddr())
+				close(toWorld)
+				return
+			}
+		}
+	}()
 
 	//fmt.Println("Server", conn.LocalAddr(), "listening")
 
 }
 
-func listenConnections(s *Server, port int, worker chan<- tlproto.Message) {
+func listenConnections(s *Server, port int, worker func(tlproto.Message) (response tlproto.Message)) {
 	taddr, err := net.ResolveTCPAddr("tcp", s.localIP+":"+fmt.Sprint(port))
 	if err != nil {
 		panic(err)

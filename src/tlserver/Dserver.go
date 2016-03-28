@@ -99,11 +99,17 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 
 		//Add to external servergroup instances
 		//For each other server: add localhost
+		addedAtLeastOnce := false
 		for _, s2 := range s.sg.Servers() {
 			err = s2.AddServerToGroup(s.lh.LocalhostIPPort)
 			if err != nil {
-				panic(err)
+				log.Println(err)
+			} else {
+				addedAtLeastOnce = true
 			}
+		}
+		if !addedAtLeastOnce {
+			panic("None add server to group ACK recieved")
 		}
 		s.sg.AddServerToGroup(localIP + ":" + fmt.Sprint(localport))
 	}
@@ -114,11 +120,7 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 	tlrebalance.StartRebalance(s.sg, s.lh, s.m, func() bool { return false })
 
 	//Init server
-	readChannel := make(chan tlproto.Message, 1024)
-	for i := 0; i < serverWorkers; i++ {
-		createWorker(&s, readChannel)
-	}
-	s.s = tlcom.Start(addr, localIP, localport, readChannel, udpCreateReplier(s.sg, s.lh))
+	s.s = tlcom.Start(addr, localIP, localport, worker(&s), udpCreateReplier(s.sg, s.lh))
 	log.Println("Server boot-up completed")
 	return &s
 }
@@ -146,151 +148,141 @@ func udpCreateReplier(sg *tlsg.ServerGroup, lh *tllocals.LHStatus) tlcom.UDPCall
 	}
 }
 
-func createWorker(s *DBServer, readChannel <-chan tlproto.Message) {
-	go func() {
-		for { //TODO refactor make fixed number of workers
-			message, ok := <-readChannel
-			responseChannel := message.ResponseChannel
-			if !ok {
-				close(responseChannel)
-				return
+func worker(s *DBServer) (work func(message tlproto.Message) (response tlproto.Message)) {
+	return func(message tlproto.Message) (response tlproto.Message) {
+		//fmt.Println("Server", "message recieved", string(message.Key), string(message.Value))
+		switch message.Type {
+		case tlproto.OpGet:
+			rval, _ := s.m.Get(message.Key)
+			//cid := tlhash.GetChunkID(message.Key, s.sg.NumChunks)
+			/*if s.sg.ChunkStatus(cid) != ChunkSynched {
+				fmt.Println("ASD")
+			}*/
+			//fmt.Println(s.sg.ChunkStatus(cid), cid)
+			//fmt.Println("Get operation", message.Key, rval, err)
+			response.ID = message.ID
+			response.Type = tlproto.OpGetResponse
+			response.Value = rval
+			return response
+		case tlproto.OpSet:
+			var response tlproto.Message
+			if len(message.Value) < 8 {
+				log.Println("Error: message value len < 8")
+				return response
 			}
-			//fmt.Println("Server", conn.LocalAddr(), "message recieved", string(message.Key), string(message.Value))
-			switch message.Type {
-			case tlproto.OpGet:
-				var response tlproto.Message
-				rval, _ := s.m.Get(message.Key)
-				//cid := tlhash.GetChunkID(message.Key, s.sg.NumChunks)
-				/*if s.sg.ChunkStatus(cid) != ChunkSynched {
-					fmt.Println("ASD")
-				}*/
-				//fmt.Println(s.sg.ChunkStatus(cid), cid)
-				//fmt.Println("Get operation", message.Key, rval, err)
-				response.ID = message.ID
-				response.Type = tlproto.OpGetResponse
-				response.Value = rval
-				responseChannel <- response
-			case tlproto.OpSet:
-				var response tlproto.Message
-				if len(message.Value) < 8 {
-					log.Println("Error: message value len < 8")
-					return
-				}
-				err := s.m.Set(message.Key, message.Value)
-				response.ID = message.ID
-				if err == nil {
-					response.Type = tlproto.OpSetOK
-				} else {
-					response.Type = tlproto.OpErr
-					response.Value = []byte(err.Error())
-				}
-				responseChannel <- response
-			case tlproto.OpDel:
-				var response tlproto.Message
-				s.m.Delete(message.Key, message.Value)
-				response.ID = message.ID
-				response.Type = tlproto.OpDelOK
-				responseChannel <- response
-			case tlproto.OpTransfer:
-				var chunkID int
-				err := json.Unmarshal(message.Key, &chunkID)
-				if err != nil {
-					panic(string(message.Key) + err.Error())
-				}
-				transferFail := func() {
-					var response tlproto.Message
-					response.ID = message.ID
-					response.Type = tlproto.OpErr
-					responseChannel <- response
-				}
-				if s.lh.ChunkStatus(chunkID) == tllocals.ChunkSynched {
-					//New goroutine will put every key value pair into destination, it will manage the OpTransferOK response
-					addr := string(message.Value)
-					c, err := tlcom.CreateConnection(addr, func() {})
-					if err != nil {
-						log.Println("Transfer failed, error:", err)
-						transferFail()
-					} else {
-						go func(c *tlcom.Conn) {
-							i := 0
-							var err error
-							s.m.Iterate(chunkID, func(key, value []byte) bool {
-								err = c.Set(key, value, time.Millisecond*500)
-								if err != nil {
-									return false
-								}
-								i++
-								return true
-								/*if i%1024 == 0 {
-									log.Println("Transfered ", i, "keys")
-								}*/
-								//fmt.Println("Transfer operation", key, value)
-							})
-							if err == nil {
-								fmt.Println("Transfer operation completed, pairs:", i)
-								c.Close()
-								var response tlproto.Message
-								response.ID = message.ID
-								response.Type = tlproto.OpTransferCompleted
-								responseChannel <- response
-							} else {
-								//TODO transfer aborted
-								log.Println("Transfer error:", err)
-								var response tlproto.Message
-								response.ID = message.ID
-								response.Type = tlproto.OpErr
-								response.Value = []byte(err.Error())
-								responseChannel <- response
-								c.Close()
-							}
-						}(c)
-					}
-				} else {
-					transferFail()
-				}
-			case tlproto.OpGetConf:
-				var response tlproto.Message
-				response.ID = message.ID
-				response.Type = tlproto.OpGetConfResponse
-				b, err := s.sg.Marshal()
-				if err != nil {
-					panic(err)
-				}
-				response.Value = b
-				responseChannel <- response
-			case tlproto.OpAddServerToGroup:
-				var response tlproto.Message
-				response.ID = message.ID
-				s.sg.AddServerToGroup(string(message.Key))
-				response.Type = tlproto.OpAddServerToGroupACK
-				responseChannel <- response
-			case tlproto.OpGetChunkInfo:
-				var response tlproto.Message
-				response.ID = message.ID
-				c := s.m.Chunks[binary.LittleEndian.Uint32(message.Key)]
-				response.Type = tlproto.OpGetChunkInfoResponse
-				response.Value = make([]byte, 8)
-				c.Lock()
-				binary.LittleEndian.PutUint64(response.Value, c.St.Length+1)
-				c.Unlock()
-				responseChannel <- response
-			case tlproto.OpProtect:
-				var response tlproto.Message
-				response.ID = message.ID
-				chunkID := binary.LittleEndian.Uint32(message.Key)
-				if s.lh.ChunkStatus(int(chunkID)) == tllocals.ChunkSynched && s.sg.NumHolders(int(chunkID)) > s.sg.Redundancy() {
-					response.Type = tlproto.OpProtectOK
-				} else {
-					response.Type = tlproto.OpErr
-				}
-				responseChannel <- response
-			default:
+			err := s.m.Set(message.Key, message.Value)
+			response.ID = message.ID
+			if err == nil {
+				response.Type = tlproto.OpSetOK
+			} else {
+				response.Type = tlproto.OpErr
+				response.Value = []byte(err.Error())
+			}
+			return response
+		case tlproto.OpDel:
+			var response tlproto.Message
+			s.m.Delete(message.Key, message.Value)
+			response.ID = message.ID
+			response.Type = tlproto.OpDelOK
+			return response
+		case tlproto.OpTransfer:
+			var chunkID int
+			err := json.Unmarshal(message.Key, &chunkID)
+			if err != nil {
+				panic(string(message.Key) + err.Error())
+			}
+			transferFail := func() tlproto.Message {
 				var response tlproto.Message
 				response.ID = message.ID
 				response.Type = tlproto.OpErr
-				response.Value = []byte("Operation not supported")
-				responseChannel <- response
+				return response
 			}
+			if s.lh.ChunkStatus(chunkID) == tllocals.ChunkSynched {
+				//New goroutine will put every key value pair into destination, it will manage the OpTransferOK response
+				addr := string(message.Value)
+				c, err := tlcom.CreateConnection(addr, func() {})
+				if err != nil {
+					log.Println("Transfer failed, error:", err)
+					transferFail()
+				} else {
+					i := 0
+					var err error
+					s.m.Iterate(chunkID, func(key, value []byte) bool {
+						ch := c.Set(key, value, time.Millisecond*500)
+						err = ch.Wait()
+						if err != nil {
+							return false
+						}
+						i++
+						return true
+						/*if i%1024 == 0 {
+							log.Println("Transfered ", i, "keys")
+						}*/
+						//fmt.Println("Transfer operation", key, value)
+					})
+					if err == nil {
+						fmt.Println("Transfer operation completed, pairs:", i)
+						c.Close()
+						var response tlproto.Message
+						response.ID = message.ID
+						response.Type = tlproto.OpTransferCompleted
+						return response
+					}
+					//TODO transfer aborted
+					log.Println("Transfer error:", err)
+					var response tlproto.Message
+					response.ID = message.ID
+					response.Type = tlproto.OpErr
+					response.Value = []byte(err.Error())
+					c.Close()
+					return response
+				}
+			} else {
+				return transferFail()
+			}
+		case tlproto.OpGetConf:
+			var response tlproto.Message
+			response.ID = message.ID
+			response.Type = tlproto.OpGetConfResponse
+			b, err := s.sg.Marshal()
+			if err != nil {
+				panic(err)
+			}
+			response.Value = b
+			return response
+		case tlproto.OpAddServerToGroup:
+			var response tlproto.Message
+			response.ID = message.ID
+			s.sg.AddServerToGroup(string(message.Key))
+			response.Type = tlproto.OpAddServerToGroupACK
+			return response
+		case tlproto.OpGetChunkInfo:
+			var response tlproto.Message
+			response.ID = message.ID
+			c := s.m.Chunks[binary.LittleEndian.Uint32(message.Key)]
+			response.Type = tlproto.OpGetChunkInfoResponse
+			response.Value = make([]byte, 8)
+			c.Lock()
+			binary.LittleEndian.PutUint64(response.Value, c.St.Length+1)
+			c.Unlock()
+			return response
+		case tlproto.OpProtect:
+			var response tlproto.Message
+			response.ID = message.ID
+			chunkID := binary.LittleEndian.Uint32(message.Key)
+			if s.lh.ChunkStatus(int(chunkID)) == tllocals.ChunkSynched && s.sg.NumHolders(int(chunkID)) > s.sg.Redundancy() {
+				response.Type = tlproto.OpProtectOK
+			} else {
+				response.Type = tlproto.OpErr
+			}
+			return response
+		default:
+			var response tlproto.Message
+			response.ID = message.ID
+			response.Type = tlproto.OpErr
+			response.Value = []byte("Operation not supported")
+			return response
 		}
-	}()
+		return response
+	}
 }

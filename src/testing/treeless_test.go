@@ -755,6 +755,23 @@ func TestNodeRevival(t *testing.T) {
 	}
 }
 
+func TestReadRepair(t *testing.T) {
+	//Start A
+	//Start B
+
+	//Disconnect A
+
+	//SET
+
+	//Connect A (A should have the old value)
+
+	//GET (should trigger the read-repairing system)
+
+	//Kill B (A should have the new value)
+
+	//GET and check
+}
+
 func TestBenchParallelEachS1_G90_S10_D0(t *testing.T) {
 	testBenchParallel(t, false, 0.9, 0.1, 0.0, 1)
 
@@ -768,7 +785,6 @@ func testBenchParallel(t *testing.T, oneClient bool, pGet, pSet, pDel float32, s
 	for i := 1; i < servers; i++ {
 		cluster[i].assoc(addr)
 	}
-
 	var w sync.WaitGroup
 	vClients := 1024
 	operations := 1000000

@@ -87,15 +87,28 @@ func (c *DBClient) Set(key, value []byte) (written bool, errs error) {
 	valueWithTime := make([]byte, 8+len(value))
 	binary.LittleEndian.PutUint64(valueWithTime, uint64(time.Now().UnixNano()))
 	copy(valueWithTime[8:], value)
-	for _, s := range servers {
+	var charray [8]*tlcom.SetOperation
+	for i, s := range servers {
 		if s == nil {
 			continue
 		}
-		err := s.Set(key, valueWithTime, c.SetTimeout)
-		if err == nil {
-			written = true
-		} else {
+		c, err := s.Set(key, valueWithTime, c.SetTimeout)
+		if err != nil {
 			errs = err //TODO return only written
+		} else {
+			charray[i] = &c
+		}
+	}
+	if c.SetTimeout > 0 {
+		for i, _ := range servers {
+			if charray[i] != nil {
+				err := charray[i].Wait()
+				if err != nil {
+					errs = err //TODO return only written
+				}
+			} else {
+				written = true
+			}
 		}
 	}
 	return written, errs
@@ -104,14 +117,32 @@ func (c *DBClient) Set(key, value []byte) (written bool, errs error) {
 func (c *DBClient) Del(key []byte) (errs error) {
 	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks())
 	servers := c.sg.GetChunkHolders(chunkID)
-	valueTime := make([]byte, 8)
-	binary.LittleEndian.PutUint64(valueTime, uint64(time.Now().UnixNano()))
-	for _, s := range servers {
+	t := make([]byte, 8)
+	binary.LittleEndian.PutUint64(t, uint64(time.Now().UnixNano()))
+	var charray [8]*tlcom.DelOperation
+	for i, s := range servers {
 		if s == nil {
 			continue
 		}
-		err := s.Del(key, valueTime, c.DelTimeout)
-		errs = err
+		c, err := s.Del(key, t, c.DelTimeout)
+		if err != nil {
+			//log.Println(1, err)
+			errs = err //TODO return only written
+		} else {
+			charray[i] = &c
+		}
+	}
+
+	if c.DelTimeout > 0 {
+		for i, _ := range servers {
+			if charray[i] != nil {
+				err := charray[i].Wait()
+				if err != nil {
+					//log.Println(2, err)
+					errs = err //TODO return only written
+				}
+			}
+		}
 	}
 	return errs
 }

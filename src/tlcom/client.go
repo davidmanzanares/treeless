@@ -64,13 +64,14 @@ type timeoutMsg struct {
 }
 
 func broker(c *Conn, onClose func()) {
-	readChannel := make(chan tlproto.Message, 1024)
-	writeChannel := tlproto.NewBufferedConn(c.conn, readChannel, onClose)
+	fromWorld := make(chan tlproto.Message, 1024)
+	toWorld := tlproto.NewBufferedConn(c.conn, fromWorld)
 	waits := make(map[uint32]chan<- Result)
 	tid := uint32(0)
 	pq := make([]timeoutMsg, 0, 64)
 	ticker := time.NewTicker(time.Hour)
 	tickerActivated := false
+	onCloseCalled := false
 	go func() {
 		for {
 			select {
@@ -97,17 +98,27 @@ func broker(c *Conn, onClose func()) {
 				if !ok {
 					for len(pq) > 0 {
 						f := pq[0]
-						w := waits[f.tid]
-						delete(waits, f.tid)
-						w <- Result{nil, errors.New("Connection closed" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
+						w, ok := waits[f.tid]
+						if ok {
+							if w == nil {
+								panic("w rch == nil")
+							}
+							delete(waits, f.tid)
+							w <- Result{nil, errors.New("Connection closed => fast timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
+						}
 						pq = pq[1:]
 					}
-					close(writeChannel)
+					//log.Println(errors.New(fmt.Sprint("Broker: Connection closed", "Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr())))
+					close(toWorld)
 					return
 				}
 				msg.mess.ID = tid
 				if msg.timeout > 0 {
 					//Send and *Recieve*
+					if msg.rch == nil {
+						panic("msg rch == nil")
+					}
+
 					if len(pq) == 0 && !tickerActivated {
 						ticker.Stop()
 						ticker = time.NewTicker(brokerTick)
@@ -132,10 +143,36 @@ func broker(c *Conn, onClose func()) {
 						pq[0] = tm
 					}
 					waits[tid] = msg.rch
+				} else {
+					if msg.rch != nil {
+						panic("msg rch != nil")
+					}
 				}
 				tid++
-				writeChannel <- msg.mess
-			case m := <-readChannel:
+				toWorld <- msg.mess
+			case m, ok := <-fromWorld:
+				if !ok {
+					//Connection closed
+					for len(pq) > 0 {
+						f := pq[0]
+						w, ok := waits[f.tid]
+						//fmt.Println(w, ok)
+						if ok {
+							if w == nil {
+								panic("w rch == nil")
+							}
+							delete(waits, f.tid)
+							w <- Result{nil, errors.New("Connection closed => fast timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
+						}
+						pq = pq[1:]
+					}
+					if !onCloseCalled {
+						onClose()
+						onCloseCalled = true
+					}
+					time.Sleep(brokerTick)
+					continue
+				}
 				w, ok := waits[m.ID]
 				if !ok {
 					//Was timeout'ed
@@ -174,7 +211,6 @@ func broker(c *Conn, onClose func()) {
 //Close this connection
 func (c *Conn) Close() {
 	close(c.responseChannel)
-	c.conn.Close()
 }
 
 func (c *Conn) send(opType tlproto.Operation, key, value []byte,
@@ -213,6 +249,16 @@ type GetOperation struct {
 	c   *Conn
 }
 
+type SetOperation struct {
+	rch chan Result
+	c   *Conn
+}
+
+type DelOperation struct {
+	rch chan Result
+	c   *Conn
+}
+
 func (g *GetOperation) Wait() Result {
 	if g.rch == nil {
 		return Result{nil, errors.New("Already returned")}
@@ -221,6 +267,26 @@ func (g *GetOperation) Wait() Result {
 	g.c.rchPool.Put(g.rch)
 	g.rch = nil
 	return r
+}
+
+func (g *SetOperation) Wait() error {
+	if g.rch == nil {
+		return errors.New("Already returned")
+	}
+	r := <-g.rch
+	g.c.rchPool.Put(g.rch)
+	g.rch = nil
+	return r.Err
+}
+
+func (g *DelOperation) Wait() error {
+	if g.rch == nil {
+		return errors.New("Already returned")
+	}
+	r := <-g.rch
+	g.c.rchPool.Put(g.rch)
+	g.rch = nil
+	return r.Err
 }
 
 //Get the value of key
@@ -236,15 +302,15 @@ func (c *Conn) Get(key []byte, timeout time.Duration) GetOperation {
 }
 
 //Set a new key/value pair
-func (c *Conn) Set(key, value []byte, timeout time.Duration) error {
-	r := c.sendAndReceive(tlproto.OpSet, key, value, timeout)
-	return r.Err
+func (c *Conn) Set(key []byte, value []byte, timeout time.Duration) SetOperation {
+	ch := c.send(tlproto.OpSet, key, value, timeout)
+	return SetOperation{rch: ch, c: c}
 }
 
 //Del deletes a key/value pair
-func (c *Conn) Del(key []byte, value []byte, timeout time.Duration) error {
-	r := c.sendAndReceive(tlproto.OpDel, key, value, timeout)
-	return r.Err
+func (c *Conn) Del(key []byte, value []byte, timeout time.Duration) DelOperation {
+	ch := c.send(tlproto.OpDel, key, value, timeout)
+	return DelOperation{rch: ch, c: c}
 }
 
 //Transfer a chunk

@@ -36,7 +36,8 @@ type Operation uint8
 
 //These constants represents the different message types
 const (
-	OpGet Operation = iota
+	OpNil Operation = iota
+	OpGet
 	OpSet
 	OpDel
 	OpSetOK
@@ -67,11 +68,11 @@ type Message struct {
 //It returns a writeChannel, use it to send messages throught conn
 //It recieves a readChannel, inconming messages will be sent to this channel
 //Close it by closing conn and writeChannel
-func NewBufferedConn(conn *net.TCPConn, readChannel chan<- Message, onClose func()) (writeChannel chan<- Message) {
-	writeCh := make(chan Message, 1024)
-	go bufferedWriter(conn, writeCh, onClose)
-	go bufferedReader(conn, readChannel, writeCh, onClose)
-	return writeCh
+func NewBufferedConn(conn *net.TCPConn, fromWorld chan<- Message) (toWorldChannel chan<- Message) {
+	toWorld := make(chan Message, 1024)
+	go bufferedWriter(conn, toWorld)
+	go bufferedReader(conn, fromWorld, toWorld)
+	return toWorld
 }
 
 //Write serializes the message on the destination buffer
@@ -126,7 +127,7 @@ func tcpWrite(conn *net.TCPConn, buffer []byte) error {
 //Close the channel to stop the infinite listening loop.
 //
 //This function blocks, typical usage will be "go bufferedWriter(...)""
-func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message, onClose func()) {
+func bufferedWriter(conn *net.TCPConn, toWorld <-chan Message) {
 	var ticker *time.Ticker
 	dirty := false
 	buffer := make([]byte, bufferSize)
@@ -139,9 +140,10 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message, onClose func()
 		}*/
 		if ticker == nil {
 			//Slow path
-			m, ok := <-msgChannel
+			m, ok := <-toWorld
 			if !ok {
 				//Channel closed, stop loop
+				conn.Close()
 				return
 			}
 			//Append message to buffer
@@ -150,7 +152,6 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message, onClose func()
 			if !tooLong {
 				err := tcpWrite(conn, buffer[0:msgSize])
 				if err != nil {
-					onClose()
 					continue
 				}
 				if fastModeEnable && time.Now().Sub(lastTime) < windowFastModeEnable {
@@ -164,7 +165,6 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message, onClose func()
 				m.write(bigMsg)
 				err := tcpWrite(conn, bigMsg)
 				if err != nil {
-					onClose()
 					continue
 				}
 			}
@@ -174,7 +174,6 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message, onClose func()
 				if index > 0 && !dirty {
 					err := tcpWrite(conn, buffer[0:index])
 					if err != nil {
-						onClose()
 						continue
 					}
 					index = 0
@@ -185,7 +184,6 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message, onClose func()
 					//flush now
 					err := tcpWrite(conn, buffer[0:index])
 					if err != nil {
-						onClose()
 						continue
 					}
 					index = 0
@@ -195,12 +193,12 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message, onClose func()
 					ticker = nil
 				}
 				sents = sents / 8
-			case m, ok := <-msgChannel:
+			case m, ok := <-toWorld:
 				if !ok {
 					//Channel closed, stop loop
 					ticker.Stop()
-					onClose()
-					continue
+					conn.Close()
+					return
 				}
 				//Append message to buffer
 				msgSize, tooLong := m.write(buffer[index:])
@@ -211,7 +209,6 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message, onClose func()
 						//Send buffer
 						err := tcpWrite(conn, buffer[:index])
 						if err != nil {
-							onClose()
 							continue
 						}
 						index = 0
@@ -223,7 +220,6 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message, onClose func()
 						m.write(bigMsg)
 						err := tcpWrite(conn, bigMsg)
 						if err != nil {
-							onClose()
 							continue
 						}
 					} else {
@@ -245,7 +241,7 @@ func bufferedWriter(conn *net.TCPConn, msgChannel <-chan Message, onClose func()
 //bufferedReader reads messages from conn and sends them to readChannel
 //Close the socket to end the infinite listening loop
 //This function blocks, typical usage: "go bufferedReader(...)"
-func bufferedReader(conn *net.TCPConn, readChannel chan<- Message, writeChannel chan Message, onClose func()) error {
+func bufferedReader(conn *net.TCPConn, fromWorld chan<- Message, toWorld chan Message) error {
 	//Ping-pong between buffers
 	var slices [2][]byte
 	slices[0] = make([]byte, bufferSize)
@@ -259,8 +255,8 @@ func bufferedReader(conn *net.TCPConn, readChannel chan<- Message, writeChannel 
 			//Not enought bytes read to form a message, read more
 			n, err := conn.Read(buffer[index:])
 			if err != nil {
-				conn.Close()
-				onClose()
+				//conn.Close()
+				close(fromWorld)
 				return err
 			}
 			index = index + n
@@ -276,15 +272,15 @@ func bufferedReader(conn *net.TCPConn, readChannel chan<- Message, writeChannel 
 			for index < messageSize {
 				n, err := conn.Read(bigBuffer[index:])
 				if err != nil {
-					conn.Close()
-					onClose()
+					//conn.Close()
+					close(fromWorld)
 					return err
 				}
 				index = index + n
 			}
 			msg := read(bigBuffer)
-			msg.ResponseChannel = writeChannel
-			readChannel <- msg
+			msg.ResponseChannel = toWorld
+			fromWorld <- msg
 			index = 0
 			continue
 		}
@@ -292,8 +288,8 @@ func bufferedReader(conn *net.TCPConn, readChannel chan<- Message, writeChannel 
 			//Not enought bytes read to form *this* message, read more
 			n, err := conn.Read(buffer[index:])
 			if err != nil {
-				conn.Close()
-				onClose()
+				//conn.Close()
+				close(fromWorld)
 				return err
 			}
 			index = index + n
@@ -301,8 +297,8 @@ func bufferedReader(conn *net.TCPConn, readChannel chan<- Message, writeChannel 
 		}
 
 		msg := read(buffer[:messageSize])
-		msg.ResponseChannel = writeChannel
-		readChannel <- msg
+		msg.ResponseChannel = toWorld
+		fromWorld <- msg
 
 		//Buffer ping-pong
 		copy(slices[(slot+1)%2], buffer[messageSize:index])
