@@ -11,6 +11,7 @@ import (
 	"treeless/src/tlcom/tlproto"
 	"treeless/src/tlcom/udp"
 	"treeless/src/tlcore"
+	"treeless/src/tlhash"
 	"treeless/src/tlheartbeat"
 	"treeless/src/tllocals"
 	"treeless/src/tlrebalance"
@@ -150,7 +151,7 @@ func udpCreateReplier(sg *tlsg.ServerGroup, lh *tllocals.LHStatus) tlcom.UDPCall
 
 func worker(s *DBServer) (work func(message tlproto.Message) (response tlproto.Message)) {
 	return func(message tlproto.Message) (response tlproto.Message) {
-		//fmt.Println("Server", "message recieved", string(message.Key), string(message.Value))
+		//fmt.Println("Server", "message recieved", string(message.Key), string(message.Value), message.Type)
 		switch message.Type {
 		case tlproto.OpGet:
 			rval, _ := s.m.Get(message.Key)
@@ -174,6 +175,32 @@ func worker(s *DBServer) (work func(message tlproto.Message) (response tlproto.M
 			response.ID = message.ID
 			if err == nil {
 				response.Type = tlproto.OpSetOK
+			} else {
+				response.Type = tlproto.OpErr
+				response.Value = []byte(err.Error())
+			}
+			return response
+		case tlproto.OpCAS:
+			var response tlproto.Message
+			if len(message.Value) < 24 {
+				log.Println("Error: CAS value len < 16")
+				return response
+			}
+			h := tlhash.FNV1a64(message.Key)
+			chunkIndex := int((h >> 32) % uint64(s.sg.NumChunks()))
+			if s.lh.ChunkStatus(chunkIndex) != tllocals.ChunkSynched {
+				response.ID = message.ID
+				response.Key = make([]byte, 1)
+				response.Key[0] = 1
+				response.Type = tlproto.OpErr
+				response.Value = []byte("Not Synched")
+				return response
+			}
+			err := s.m.CAS(message.Key, message.Value)
+			response.ID = message.ID
+			response.Key = make([]byte, 1)
+			if err == nil {
+				response.Type = tlproto.OpCASOK
 			} else {
 				response.Type = tlproto.OpErr
 				response.Value = []byte(err.Error())

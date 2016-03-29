@@ -742,7 +742,7 @@ func TestNodeRevival(t *testing.T) {
 	cluster[0].kill()
 
 	cluster[0].assoc(addr2)
-	time.Sleep(time.Second * 5)
+	time.Sleep(time.Second * 8)
 
 	fmt.Println("Server 1 down")
 	cluster[1].kill()
@@ -752,6 +752,81 @@ func TestNodeRevival(t *testing.T) {
 	v, _ := c.Get([]byte("hello"))
 	if string(v) != "world" {
 		t.Fatal("Mismatch:", v)
+	}
+}
+
+func TestCAS(t *testing.T) {
+	runtime.GOMAXPROCS(5)
+	addr := cluster[0].create(testingNumChunks, 2, false)
+	for i := 1; i < len(cluster); i++ {
+		cluster[i].assoc(addr)
+	}
+	time.Sleep(time.Second * 5)
+	c, err := tlclient.Connect(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	//Func Inc
+	tries := uint64(0)
+	inc := func(c *tlclient.DBClient, key []byte) {
+		written := false
+		for !written {
+			oldv, t := c.Get(key)
+			//fmt.Println(oldv, t)
+			x := binary.LittleEndian.Uint32(oldv)
+			//fmt.Println(x)
+			x++
+			value := make([]byte, 8)
+			binary.LittleEndian.PutUint32(value, uint32(x))
+			binary.LittleEndian.PutUint32(value[4:8], uint32(rand.Int63()))
+			written, _ = c.CAS(key, value, t, oldv)
+			atomic.AddUint64(&tries, 1)
+			if !written {
+				//time.Sleep(time.Millisecond)
+			}
+		}
+	}
+
+	key := make([]byte, 1)
+	key[0] = byte(1)
+	value := make([]byte, 4)
+	binary.LittleEndian.PutUint32(value, uint32(0))
+	written, errs := c.CAS(key, value, time.Unix(0, 0), nil)
+	if !written {
+		t.Fatal("Initial CAS failed", errs)
+	}
+	v, _ := c.Get(key)
+	//fmt.Println(oldv, t)
+	n := binary.LittleEndian.Uint32(v)
+	if n != 0 {
+		t.Fatal("Initial CAS failed", n, v)
+	}
+	ops := 100
+	clients := 100
+	var w sync.WaitGroup
+	w.Add(clients)
+	for c := 0; c < clients; c++ {
+		go func() {
+			c, err := tlclient.Connect(addr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close()
+			for i := 0; i < ops; i++ {
+				inc(c, key)
+			}
+			w.Done()
+		}()
+	}
+	w.Wait()
+	//Get & check
+	value, _ = c.Get(key)
+	x := int(binary.LittleEndian.Uint32(value))
+	fmt.Println("Tries:", tries, "Total operations:", ops*clients, "Clients:", clients)
+	if x != ops*clients {
+		t.Fatal("Mismatch:", ops*clients, "!=", x, "Value:", value)
 	}
 }
 

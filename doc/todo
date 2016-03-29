@@ -17,6 +17,8 @@ Dist: 8
 Test: 5+1
 	-real test: test consitency with lots of servers, network problems and server shutdowns:
 	-divide tests
+	-read reapair test
+	-0 servers failure test
 
     -add more benchmarks
 	-space per chunk tests (hash quality tests)

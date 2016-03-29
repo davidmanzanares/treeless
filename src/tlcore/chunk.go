@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"log"
 	"sync"
 	"time"
 	"treeless/src/tlhash"
@@ -164,7 +165,7 @@ func (c *Chunk) set(h64 uint64, key, value []byte) error {
 				v := c.St.val(uint64(stIndex))
 				oldT := time.Unix(0, int64(binary.LittleEndian.Uint64(v[:8])))
 				t := time.Unix(0, int64(binary.LittleEndian.Uint64(value[:8])))
-				if t.Before(oldT) {
+				if oldT.After(t) || oldT.Equal(t) {
 					//Stored pair is newer than the provided pair
 					//fmt.Println("Discarded", key, value, t)
 					c.Unlock()
@@ -172,6 +173,93 @@ func (c *Chunk) set(h64 uint64, key, value []byte) error {
 				}
 				c.St.del(stIndex)
 				storeIndex, err := c.St.put(key, value)
+				if err != nil {
+					c.Unlock()
+					return err
+				}
+				c.Hm.setHash(index, h)
+				c.Hm.setStoreIndex(index, storeIndex)
+				c.Unlock()
+				return nil
+			}
+		}
+		index = (index + 1) & c.Hm.sizeMask
+	}
+}
+
+func (c *Chunk) cas(h64 uint64, key, value []byte) error {
+	//fmt.Println("Set initiated", key, value)
+	c.Lock()
+	if c.stopped {
+		c.Unlock()
+		return errors.New("Chunk closed")
+	}
+	if !c.Enable {
+		c.Unlock()
+		return errors.New("Chunk disabled")
+	}
+
+	//Check for available space
+	if c.Hm.numStoredKeys >= c.Hm.numKeysToExpand {
+		err := c.Hm.expand()
+		if err != nil {
+			c.Unlock()
+			return err
+		}
+	}
+
+	providedTime := time.Unix(0, int64(binary.LittleEndian.Uint64(value[:8])))
+	hv := binary.LittleEndian.Uint64(value[8:16])
+	t := time.Unix(0, int64(binary.LittleEndian.Uint64(value[16:24])))
+	//fmt.Println(t.UnixNano())
+	h := hashReMap(uint32(h64))
+	index := h & c.Hm.sizeMask
+	for {
+		storedHash := c.Hm.getHash(index)
+		if storedHash == emptyBucket {
+			//Empty bucket: put the pair
+			if !providedTime.Equal(time.Unix(0, 0)) && hv != tlhash.FNV1a64(nil) {
+				c.Unlock()
+				return errors.New("CAS failed: empty pair: non-zero timestamp")
+			}
+			storeIndex, err := c.St.put(key, value[16:])
+			if err != nil {
+				c.Unlock()
+				return err
+			}
+			c.Hm.setHash(index, h)
+			c.Hm.setStoreIndex(index, storeIndex)
+			c.Hm.numStoredKeys++
+			c.Unlock()
+			return nil
+		}
+		if h == storedHash {
+			//Same hash: perform full key comparison
+			stIndex := c.Hm.getStoreIndex(index)
+			storedKey := c.St.key(uint64(stIndex))
+			if bytes.Equal(storedKey, key) {
+				//Full match, the key was in the map
+				v := c.St.val(uint64(stIndex))
+				oldT := time.Unix(0, int64(binary.LittleEndian.Uint64(v[:8])))
+				if t.Equal(oldT) {
+					log.Println("Equal times!")
+				}
+				if oldT != providedTime {
+					c.Unlock()
+					return errors.New("CAS failed: timestamp mismatch")
+				}
+				if hv != tlhash.FNV1a64(v[8:]) {
+					c.Unlock()
+					log.Println("hash mismatch!")
+					return errors.New("CAS failed: hash mismatch")
+				}
+				if t.Before(oldT) {
+					c.Unlock()
+					log.Println("time in the past!")
+					return errors.New("CAS failed: time in the past")
+				}
+				c.St.del(stIndex)
+				storeIndex, err := c.St.put(key, value[16:])
 				if err != nil {
 					c.Unlock()
 					return err

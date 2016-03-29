@@ -82,6 +82,16 @@ func (s *VirtualServer) Del(key []byte, value []byte, timeout time.Duration) (tl
 	return r, nil
 }
 
+//Set a new key/value pair
+func (s *VirtualServer) CAS(key, value []byte, timeout time.Duration) (tlcom.CASOperation, error) {
+	if err := s.needConnection(); err != nil {
+		return tlcom.CASOperation{}, err
+	}
+	r := s.conn.CAS(key, value, timeout)
+	s.m.RUnlock()
+	return r, nil
+}
+
 func (s *VirtualServer) Transfer(addr string, chunkID int) error {
 	if err := s.needConnection(); err != nil {
 		return nil

@@ -2,7 +2,7 @@ package tlclient
 
 import (
 	"encoding/binary"
-	"log"
+	"errors"
 	"time"
 	"treeless/src/tlcom"
 	"treeless/src/tlhash"
@@ -16,6 +16,7 @@ type DBClient struct {
 	GetTimeout time.Duration
 	SetTimeout time.Duration
 	DelTimeout time.Duration
+	drift      time.Duration
 }
 
 func Connect(addr string) (*DBClient, error) {
@@ -32,6 +33,7 @@ func Connect(addr string) (*DBClient, error) {
 	c.GetTimeout = time.Millisecond * 500
 	c.SetTimeout = time.Millisecond * 500
 	c.DelTimeout = time.Millisecond * 500
+	//c.drift = time.Duration(time.Nanosecond * time.Duration(rand.Intn(10000*1000)))
 	return c, nil
 }
 
@@ -55,6 +57,7 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 		}
 		r := charray[i].Wait()
 		if r.Err != nil {
+			//fmt.Println(r.Err)
 			continue
 		}
 		v := r.Value
@@ -74,7 +77,7 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 	for i, s := range servers {
 		if s != nil && lastTime.After(times[i]) {
 			//Repair
-			log.Println("Read reparing", key, value, lastTime, times[i])
+			//log.Println("Read reparing", key, value, lastTime, times[i])
 			s.Set(key, value, 0)
 		}
 	}
@@ -112,6 +115,63 @@ func (c *DBClient) Set(key, value []byte) (written bool, errs error) {
 		}
 	}
 	return written, errs
+}
+
+func (c *DBClient) CAS(key, value []byte, timestamp time.Time, oldValue []byte) (written bool, errs error) {
+	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks())
+	servers := c.sg.GetChunkHolders(chunkID)
+	valueWithTime := make([]byte, 24+len(value))
+	casTime := time.Now().Add(c.drift)
+	binary.LittleEndian.PutUint64(valueWithTime[0:8], uint64(timestamp.UnixNano()))
+	binary.LittleEndian.PutUint64(valueWithTime[8:16], tlhash.FNV1a64(oldValue))
+	binary.LittleEndian.PutUint64(valueWithTime[16:24], uint64(casTime.UnixNano()))
+	copy(valueWithTime[24:], value)
+	//Master CAS
+	var rank [8]uint64
+	for i, s := range servers {
+		//Calc rank as hash(key+serverIpPort)
+		if s != nil {
+			b := make([]byte, len(s.Phy)+len(key))
+			copy(b, key)
+			copy(b[len(key):], s.Phy)
+			rank[i] = tlhash.FNV1a64(b)
+			//fmt.Println(s.Phy, rank[i], key)
+		}
+	}
+	master := 0
+	masterRank := uint64(0)
+	//Select master server
+	for i := range servers {
+		if rank[i] > masterRank {
+			master = i
+			masterRank = rank[i]
+		}
+	}
+	//Send CAS
+	if servers[master] == nil {
+		return false, errors.New("No servers")
+	}
+	//fmt.Println(servers[master].Phy)
+	op, err := servers[master].CAS(key, valueWithTime, c.SetTimeout)
+	if err != nil {
+		return false, err
+	}
+	//If CAS won=>set broadcast, else => fail
+	err = op.Wait()
+	if err != nil {
+		return false, err
+	}
+	//Slave SETs
+	for i, s := range servers {
+		if s == nil || i == master {
+			continue
+		}
+		_, err := s.Set(key, valueWithTime[16:], 0)
+		if err != nil {
+			errs = err //TODO return only written
+		}
+	}
+	return true, errs
 }
 
 func (c *DBClient) Del(key []byte) (errs error) {

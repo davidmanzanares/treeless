@@ -40,8 +40,10 @@ const (
 	OpGet
 	OpSet
 	OpDel
+	OpCAS
 	OpSetOK
 	OpDelOK
+	OpCASOK
 	OpGetResponse
 	OpGetConf
 	OpGetConfResponse

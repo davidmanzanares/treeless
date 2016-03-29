@@ -120,6 +120,13 @@ func (m *Map) Delete(key, value []byte) error {
 	return m.Chunks[chunkIndex].del(h, key, value)
 }
 
+func (m *Map) CAS(key, value []byte) error {
+	h := tlhash.FNV1a64(key)
+	//Opt: use AND operator
+	chunkIndex := int((h >> 32) % uint64(len(m.Chunks)))
+	return m.Chunks[chunkIndex].cas(h, key, value)
+}
+
 //Iterate all key-value pairs of a chunk, executing foreach for each key-value pair
 func (m *Map) Iterate(chunkID int, foreach func(key, value []byte) bool) error {
 	return m.Chunks[chunkID].iterate(foreach)

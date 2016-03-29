@@ -83,6 +83,7 @@ func broker(c *Conn, onClose func()) {
 						w, ok := waits[f.tid]
 						if ok {
 							delete(waits, f.tid)
+							fmt.Println("Timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))
 							w <- Result{nil, errors.New("Timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
 						}
 						pq = pq[1:]
@@ -188,6 +189,8 @@ func broker(c *Conn, onClose func()) {
 					ch <- Result{nil, nil}
 				case tlproto.OpDelOK:
 					ch <- Result{nil, nil}
+				case tlproto.OpCASOK:
+					ch <- Result{nil, nil}
 				case tlproto.OpProtectOK:
 					ch <- Result{nil, nil}
 				case tlproto.OpGetConfResponse:
@@ -259,6 +262,11 @@ type DelOperation struct {
 	c   *Conn
 }
 
+type CASOperation struct {
+	rch chan Result
+	c   *Conn
+}
+
 func (g *GetOperation) Wait() Result {
 	if g.rch == nil {
 		return Result{nil, errors.New("Already returned")}
@@ -280,6 +288,16 @@ func (g *SetOperation) Wait() error {
 }
 
 func (g *DelOperation) Wait() error {
+	if g.rch == nil {
+		return errors.New("Already returned")
+	}
+	r := <-g.rch
+	g.c.rchPool.Put(g.rch)
+	g.rch = nil
+	return r.Err
+}
+
+func (g *CASOperation) Wait() error {
 	if g.rch == nil {
 		return errors.New("Already returned")
 	}
@@ -311,6 +329,14 @@ func (c *Conn) Set(key []byte, value []byte, timeout time.Duration) SetOperation
 func (c *Conn) Del(key []byte, value []byte, timeout time.Duration) DelOperation {
 	ch := c.send(tlproto.OpDel, key, value, timeout)
 	return DelOperation{rch: ch, c: c}
+}
+
+func (c *Conn) CAS(key []byte, value []byte, timeout time.Duration) CASOperation {
+	if timeout <= 0 {
+		panic("CAS timeout <=0")
+	}
+	ch := c.send(tlproto.OpCAS, key, value, timeout)
+	return CASOperation{rch: ch, c: c}
 }
 
 //Transfer a chunk
