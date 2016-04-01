@@ -31,11 +31,11 @@ func TestMain(m *testing.M) {
 	cmd := exec.Command("killall", "-s", "INT", "treeless")
 	cmd.Run()
 	os.Chdir("..")
-	cmd = exec.Command("go", "build", "-o", "treeless") //"-race"
+	cmd = exec.Command("go", "build", "-o", "treeless")
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	err := cmd.Run()
-	cmd = exec.Command("cp", "treeless", "testing/") //"-race"
+	cmd = exec.Command("cp", "treeless", "testing/")
 	cmd.Run()
 	os.Chdir("testing")
 	if err != nil {
@@ -153,7 +153,7 @@ func TestTimeout(t *testing.T) {
 	client.GetTimeout = time.Millisecond * 100
 	value, _ = client.Get([]byte("hola"))
 	if value != nil {
-		t.Fatal("???")
+		t.Fatal("???", value)
 	}
 	log.Println("Timeout:", time.Now().Sub(tb))
 }
@@ -864,7 +864,7 @@ func testBenchParallel(t *testing.T, oneClient bool, pGet, pSet, pDel float32, s
 	vClients := 1024
 	operations := 1000000
 	w.Add(vClients)
-	runtime.GOMAXPROCS(4)
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	clients := make([]*tlclient.DBClient, vClients)
 	if oneClient {
 		c, err := tlclient.Connect(addr)

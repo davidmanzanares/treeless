@@ -11,8 +11,8 @@ import (
 const bufferSize = 1450
 
 //High values favours throughput, low values favours low Latency
-const windowTimeDuration = time.Microsecond * 100
-const windowFastModeEnable = time.Microsecond * 10
+const windowTimeDuration = time.Microsecond * 50
+const windowFastModeEnable = time.Microsecond * 50
 
 /*
 	TCP treeless protocol

@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"log"
-	"sync"
 	"time"
 	"treeless/src/tlhash"
 )
@@ -19,27 +18,24 @@ import (
 	Thread contention is determined by the number of fragments in the DB.
 */
 
+const FilePerms = 0700
+
 //Chunk is a DB fragment
 type Chunk struct {
-	Hm      *HashMap //TODO hm
-	St      *Store
-	path    string
-	Enable  bool
-	stopped bool
-	sync.Mutex
+	Hm   *HashMap
+	St   *Store
+	path string
 }
 
-func newChunk(path string) *Chunk {
+func NewChunk(path string, size uint64) *Chunk {
 	c := new(Chunk)
 	c.path = path
 	c.Hm = newHashMap(defaultHashMapInitialLog2Size, defaultHashMapSizeLimit)
-	c.St = newStore(c.path)
+	c.St = newStore(c.path, size)
 	return c
 }
 
-func (c *Chunk) restore(path string) {
-	c.Lock()
-	defer c.Unlock()
+func (c *Chunk) Restore(path string) {
 	c.St.open(path)
 	c.Hm.alloc()
 	for index := uint64(0); index < c.St.Length; {
@@ -53,42 +49,21 @@ func (c *Chunk) restore(path string) {
 	}
 }
 
-func (c *Chunk) close() {
-	c.Lock()
-	defer c.Unlock()
-	c.stopped = true
+func (c *Chunk) Close() {
 	c.St.close()
 }
 
-func (c *Chunk) enable() {
-	c.Lock()
-	defer c.Unlock()
-	c.Enable = true
-}
-func (c *Chunk) disable() {
-	c.Lock()
-	defer c.Unlock()
-	c.stopped = true
+func (c *Chunk) Wipe() {
 	c.St.close()
 	c.Hm = newHashMap(defaultHashMapInitialLog2Size, defaultHashMapSizeLimit)
-	c.St = newStore(c.path)
+	c.St = newStore(c.path, c.St.Size)
 }
 
 /*
 	Primitives
 */
 
-func (c *Chunk) get(h64 uint64, key []byte) ([]byte, error) {
-	c.Lock()
-	if c.stopped { //TODO: pasar a Map
-		c.Unlock()
-		return nil, errors.New("Chunk closed")
-	}
-	if !c.Enable {
-		c.Unlock()
-		return nil, errors.New("Chunk disabled")
-	}
-
+func (c *Chunk) Get(h64 uint64, key []byte) ([]byte, error) {
 	h := hashReMap(uint32(h64))
 
 	//Search for the key by using open adressing with linear probing
@@ -96,7 +71,6 @@ func (c *Chunk) get(h64 uint64, key []byte) ([]byte, error) {
 	for {
 		storedHash := c.Hm.getHash(index)
 		if storedHash == emptyBucket {
-			c.Unlock()
 			return nil, nil
 		} else if h == storedHash {
 			//Same hash: perform full key comparison
@@ -109,7 +83,6 @@ func (c *Chunk) get(h64 uint64, key []byte) ([]byte, error) {
 				//the mutex wont be hold after this function returns
 				vc := make([]byte, len(v))
 				copy(vc, v)
-				c.Unlock()
 				return vc, nil
 			}
 		}
@@ -117,23 +90,11 @@ func (c *Chunk) get(h64 uint64, key []byte) ([]byte, error) {
 	}
 }
 
-func (c *Chunk) set(h64 uint64, key, value []byte) error {
-	//fmt.Println("Set initiated", key, value)
-	c.Lock()
-	if c.stopped {
-		c.Unlock()
-		return errors.New("Chunk closed")
-	}
-	if !c.Enable {
-		c.Unlock()
-		return errors.New("Chunk disabled")
-	}
-
+func (c *Chunk) Set(h64 uint64, key, value []byte) error {
 	//Check for available space
 	if c.Hm.numStoredKeys >= c.Hm.numKeysToExpand {
 		err := c.Hm.expand()
 		if err != nil {
-			c.Unlock()
 			return err
 		}
 	}
@@ -146,13 +107,11 @@ func (c *Chunk) set(h64 uint64, key, value []byte) error {
 			//Empty bucket: put the pair
 			storeIndex, err := c.St.put(key, value)
 			if err != nil {
-				c.Unlock()
 				return err
 			}
 			c.Hm.setHash(index, h)
 			c.Hm.setStoreIndex(index, storeIndex)
 			c.Hm.numStoredKeys++
-			c.Unlock()
 			return nil
 		}
 		if h == storedHash {
@@ -168,18 +127,15 @@ func (c *Chunk) set(h64 uint64, key, value []byte) error {
 				if oldT.After(t) || oldT.Equal(t) {
 					//Stored pair is newer than the provided pair
 					//fmt.Println("Discarded", key, value, t)
-					c.Unlock()
 					return nil
 				}
 				c.St.del(stIndex)
 				storeIndex, err := c.St.put(key, value)
 				if err != nil {
-					c.Unlock()
 					return err
 				}
 				c.Hm.setHash(index, h)
 				c.Hm.setStoreIndex(index, storeIndex)
-				c.Unlock()
 				return nil
 			}
 		}
@@ -187,23 +143,11 @@ func (c *Chunk) set(h64 uint64, key, value []byte) error {
 	}
 }
 
-func (c *Chunk) cas(h64 uint64, key, value []byte) error {
-	//fmt.Println("Set initiated", key, value)
-	c.Lock()
-	if c.stopped {
-		c.Unlock()
-		return errors.New("Chunk closed")
-	}
-	if !c.Enable {
-		c.Unlock()
-		return errors.New("Chunk disabled")
-	}
-
+func (c *Chunk) CAS(h64 uint64, key, value []byte) error {
 	//Check for available space
 	if c.Hm.numStoredKeys >= c.Hm.numKeysToExpand {
 		err := c.Hm.expand()
 		if err != nil {
-			c.Unlock()
 			return err
 		}
 	}
@@ -219,18 +163,15 @@ func (c *Chunk) cas(h64 uint64, key, value []byte) error {
 		if storedHash == emptyBucket {
 			//Empty bucket: put the pair
 			if !providedTime.Equal(time.Unix(0, 0)) && hv != tlhash.FNV1a64(nil) {
-				c.Unlock()
 				return errors.New("CAS failed: empty pair: non-zero timestamp")
 			}
 			storeIndex, err := c.St.put(key, value[16:])
 			if err != nil {
-				c.Unlock()
 				return err
 			}
 			c.Hm.setHash(index, h)
 			c.Hm.setStoreIndex(index, storeIndex)
 			c.Hm.numStoredKeys++
-			c.Unlock()
 			return nil
 		}
 		if h == storedHash {
@@ -245,28 +186,23 @@ func (c *Chunk) cas(h64 uint64, key, value []byte) error {
 					log.Println("Equal times!")
 				}
 				if oldT != providedTime {
-					c.Unlock()
 					return errors.New("CAS failed: timestamp mismatch")
 				}
 				if hv != tlhash.FNV1a64(v[8:]) {
-					c.Unlock()
 					log.Println("hash mismatch!")
 					return errors.New("CAS failed: hash mismatch")
 				}
 				if t.Before(oldT) {
-					c.Unlock()
 					log.Println("time in the past!")
 					return errors.New("CAS failed: time in the past")
 				}
 				c.St.del(stIndex)
 				storeIndex, err := c.St.put(key, value[16:])
 				if err != nil {
-					c.Unlock()
 					return err
 				}
 				c.Hm.setHash(index, h)
 				c.Hm.setStoreIndex(index, storeIndex)
-				c.Unlock()
 				return nil
 			}
 		}
@@ -274,17 +210,7 @@ func (c *Chunk) cas(h64 uint64, key, value []byte) error {
 	}
 }
 
-func (c *Chunk) del(h64 uint64, key, value []byte) error {
-	//TODO last writer wins
-	c.Lock()
-	defer c.Unlock()
-	if c.stopped {
-		return errors.New("Chunk closed")
-	}
-	if !c.Enable {
-		return errors.New("Chunk disabled")
-	}
-
+func (c *Chunk) Del(h64 uint64, key, value []byte) error {
 	h := hashReMap(uint32(h64))
 
 	//Search for the key by using open adressing with linear probing
@@ -318,17 +244,7 @@ func (c *Chunk) del(h64 uint64, key, value []byte) error {
 	}
 }
 
-func (c *Chunk) iterate(foreach func(key, value []byte) bool) error {
-	c.Lock()
-	if c.stopped {
-		c.Unlock()
-		return errors.New("Chunk closed")
-	}
-	if !c.Enable {
-		c.Unlock()
-		return errors.New("Chunk disabled")
-	}
-
+func (c *Chunk) Iterate(foreach func(key, value []byte) bool) error {
 	//TODO: this is a long-running function and it locks the mutex, it should release-retrieve it at some interval
 	for index := uint64(0); index < c.St.Length; {
 		if c.St.isPresent(index) {
@@ -345,7 +261,6 @@ func (c *Chunk) iterate(foreach func(key, value []byte) bool) error {
 		}
 		index += 8 + uint64(c.St.totalLen(index))
 	}
-	c.Unlock()
 	return nil
 }
 

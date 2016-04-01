@@ -18,9 +18,12 @@ import (
 )
 import _ "net/http/pprof"
 
+const DefaultDBSize = 1024 * 1024 * 16
+
 func main() {
 	rand.Seed(time.Now().UnixNano())
 	runtime.GOMAXPROCS(runtime.NumCPU())
+	log.Println("CPUS:", runtime.NumCPU())
 	//Operations
 	log.Println("Treeless args:", os.Args)
 	create := flag.Bool("create", false, "Create a new DB server group")
@@ -30,6 +33,7 @@ func main() {
 	port := flag.Int("port", 9876, "Use this port as the localhost server port")
 	redundancy := flag.Int("redundancy", 2, "Redundancy of the new DB server group")
 	chunks := flag.Int("chunks", 2, "Number of chunks")
+	size := flag.Int64("size", DefaultDBSize, "DB size limit")
 	dbpath := flag.String("dbpath", "", "Filesystem path to store DB info")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
 	webprofile := flag.Bool("webprofile", false, "webprofile")
@@ -54,7 +58,7 @@ func main() {
 			if err != nil {
 				log.Fatal(err)
 			}
-			time.Sleep(time.Second * 400)
+			//time.Sleep(time.Second * 400)
 			log.Println("CPU profile started")
 			pprof.StartCPUProfile(f)
 		}()
@@ -91,7 +95,7 @@ func main() {
 		fmt.Println(s)*/
 	} else if *create {
 		//TODO 8 parametrizar
-		s := tlserver.Start("", *localIP, *port, *chunks, *redundancy, *dbpath)
+		s := tlserver.Start("", *localIP, *port, *chunks, *redundancy, *dbpath, uint64(*size))
 		go func() {
 			c := make(chan os.Signal, 1)
 			signal.Notify(c, os.Interrupt)
@@ -110,7 +114,7 @@ func main() {
 		}()
 		select {}
 	} else if *assoc != "" {
-		s := tlserver.Start(*assoc, *localIP, *port, *chunks, *redundancy, *dbpath)
+		s := tlserver.Start(*assoc, *localIP, *port, *chunks, *redundancy, *dbpath, uint64(*size))
 		go func() {
 			c := make(chan os.Signal, 1)
 			signal.Notify(c, os.Interrupt)

@@ -2,12 +2,12 @@ package tlrebalance
 
 import (
 	"log"
+	"math"
 	"math/rand"
 	"os"
 	"sync"
 	"syscall"
 	"time"
-	"treeless/src/tlcore"
 	"treeless/src/tllocals"
 	"treeless/src/tlsg"
 )
@@ -24,10 +24,10 @@ func (r *Rebalancer) Stop() {
 	r.w.Wait()
 }
 
-func StartRebalance(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map, ShouldStop func() bool) {
+func StartRebalance(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, ShouldStop func() bool) {
 	//Delegate chunk downloads to the duplicator
-	duplicate := duplicator(sg, lh, core, ShouldStop)
-	release := releaser(sg, lh, core)
+	duplicate := duplicator(sg, lh, ShouldStop)
+	release := releaser(sg, lh)
 	//Constantly check for possible duplications to rebalance the servers,
 	//servers should have more or less the same work
 	go func() { //LoadRebalancer
@@ -93,7 +93,7 @@ func getFreeDiskSpace() uint64 {
 //It will download the chunk otherwise
 //However this download will be executed in the background (i.e. in another goroutine).
 //Duplicate will return inmediatly unless the channel buffer is filled
-func duplicator(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map,
+func duplicator(sg *tlsg.ServerGroup, lh *tllocals.LHStatus,
 	ShouldStop func() bool) (duplicate func(cid int)) {
 
 	duplicateChannel := make(chan int, 1024)
@@ -109,23 +109,32 @@ func duplicator(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map,
 		}
 		//TODO: Check free space (OS)
 		//log.Println(getFreeDiskSpace() / 1024 / 1024 / 1024)
-		size := s.GetChunkInfo(cid)
-		if size == 0 {
+		length := s.GetChunkInfo(cid)
+		if length == math.MaxUint64 {
 			log.Println("GetChunkInfo failed, duplication aborted", s.Phy, cid)
 			return
 		}
 		freeSpace := uint64(1000000000)
-		if size > freeSpace {
-			log.Println("Chunk duplication aborted, low free space. Chunk size:", size, "Free space:", freeSpace)
+		if length > freeSpace {
+			log.Println("Chunk duplication aborted, low free space. Chunk size:", length, "Free space:", freeSpace)
 			return
 		}
-		core.ChunkEnable(cid)
+
 		lh.ChunkSetStatus(cid, tllocals.ChunkPresent)
-		go func() {
-			//Heartbeat must be propagated before transfer initialization
-			time.Sleep(time.Second * 2)
-			duplicateChannel <- cid
-		}()
+		if length == 0 {
+			go func() {
+				//Heartbeat must be propagated before transfer initialization
+				time.Sleep(time.Second * 2)
+				log.Println("Duplication completed: 0 sized", s.Phy, cid)
+				lh.ChunkSetStatus(cid, tllocals.ChunkSynched)
+			}()
+		} else {
+			go func() {
+				//Heartbeat must be propagated before transfer initialization
+				time.Sleep(time.Second * 2)
+				duplicateChannel <- cid
+			}()
+		}
 	}
 
 	go func() {
@@ -164,7 +173,7 @@ func duplicator(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map,
 	return duplicate
 }
 
-func releaser(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map) (release func(cid int)) {
+func releaser(sg *tlsg.ServerGroup, lh *tllocals.LHStatus) (release func(cid int)) {
 	releaseChannel := make(chan int, 1024)
 
 	release = func(cid int) {
@@ -202,7 +211,6 @@ func releaser(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, core *tlcore.Map) (re
 			}
 			//Release
 			lh.ChunkSetStatus(c, 0)
-			core.ChunkDisable(c)
 			log.Println("Remove completed", c)
 		}
 	}()

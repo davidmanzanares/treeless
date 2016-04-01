@@ -10,7 +10,6 @@ import (
 	"treeless/src/tlcom"
 	"treeless/src/tlcom/tlproto"
 	"treeless/src/tlcom/udp"
-	"treeless/src/tlcore"
 	"treeless/src/tlhash"
 	"treeless/src/tlheartbeat"
 	"treeless/src/tllocals"
@@ -21,13 +20,11 @@ import (
 //Server listen to TCP & UDP, accepting connections and responding to clients
 type DBServer struct {
 	//Core
-	m *tlcore.Map //todo rename to core
+	lh *tllocals.LHStatus
 	//Com
 	s *tlcom.Server
 	//Distribution
 	sg *tlsg.ServerGroup
-	//Status
-	lh *tllocals.LHStatus
 	//Heartbeat
 	hb *tlheartbeat.Heartbeater
 }
@@ -36,7 +33,7 @@ const serverWorkers = 4
 const channelUpdateBufferSize = 1024
 
 //Start a Treeless server
-func Start(addr string, localIP string, localport int, numChunks, redundancy int, dbpath string) *DBServer {
+func Start(addr string, localIP string, localport int, numChunks, redundancy int, dbpath string, size uint64) *DBServer {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.SetPrefix(localIP + ":" + fmt.Sprint(localport) + " ")
 	//Recover: log and quit
@@ -53,17 +50,7 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 	//Servergroup initialization
 	if addr == "" {
 		//Launch core
-		s.m = tlcore.NewMap(dbpath, numChunks)
-		if err != nil {
-			panic(err)
-		}
-		if addr == "" {
-			for i := 0; i < numChunks; i++ {
-				s.m.ChunkEnable(i)
-			}
-		}
-
-		s.lh = tllocals.NewLHStatus(numChunks, localIP+":"+fmt.Sprint(localport))
+		s.lh = tllocals.NewLHStatus(dbpath, size, numChunks, localIP+":"+fmt.Sprint(localport))
 		for i := 0; i < numChunks; i++ {
 			s.lh.ChunkSetStatus(i, tllocals.ChunkSynched)
 		}
@@ -86,17 +73,7 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 		numChunks = s.sg.NumChunks()
 
 		//Launch core
-		s.m = tlcore.NewMap(dbpath, numChunks)
-		if err != nil {
-			panic(err)
-		}
-		if addr == "" {
-			for i := 0; i < numChunks; i++ {
-				s.m.ChunkEnable(i)
-			}
-		}
-
-		s.lh = tllocals.NewLHStatus(numChunks, localIP+":"+fmt.Sprint(localport))
+		s.lh = tllocals.NewLHStatus(dbpath, size, numChunks, localIP+":"+fmt.Sprint(localport))
 
 		//Add to external servergroup instances
 		//For each other server: add localhost
@@ -118,7 +95,7 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 	//Heartbeat start
 	s.hb = tlheartbeat.Start(s.sg)
 	//Rebalancer start
-	tlrebalance.StartRebalance(s.sg, s.lh, s.m, func() bool { return false })
+	tlrebalance.StartRebalance(s.sg, s.lh, func() bool { return false })
 
 	//Init server
 	s.s = tlcom.Start(addr, localIP, localport, worker(&s), udpCreateReplier(s.sg, s.lh))
@@ -131,7 +108,7 @@ func (s *DBServer) Stop() {
 	s.hb.Stop()
 	s.s.Stop()
 	s.sg.Stop()
-	s.m.Close()
+	s.lh.Close()
 }
 
 func (s *DBServer) LogInfo() {
@@ -154,7 +131,7 @@ func worker(s *DBServer) (work func(message tlproto.Message) (response tlproto.M
 		//fmt.Println("Server", "message recieved", string(message.Key), string(message.Value), message.Type)
 		switch message.Type {
 		case tlproto.OpGet:
-			rval, _ := s.m.Get(message.Key)
+			rval, _ := s.lh.Get(message.Key)
 			//cid := tlhash.GetChunkID(message.Key, s.sg.NumChunks)
 			/*if s.sg.ChunkStatus(cid) != ChunkSynched {
 				fmt.Println("ASD")
@@ -167,11 +144,12 @@ func worker(s *DBServer) (work func(message tlproto.Message) (response tlproto.M
 			return response
 		case tlproto.OpSet:
 			var response tlproto.Message
+
 			if len(message.Value) < 8 {
 				log.Println("Error: message value len < 8")
 				return response
 			}
-			err := s.m.Set(message.Key, message.Value)
+			err := s.lh.Set(message.Key, message.Value)
 			response.ID = message.ID
 			if err == nil {
 				response.Type = tlproto.OpSetOK
@@ -196,7 +174,7 @@ func worker(s *DBServer) (work func(message tlproto.Message) (response tlproto.M
 				response.Value = []byte("Not Synched")
 				return response
 			}
-			err := s.m.CAS(message.Key, message.Value)
+			err := s.lh.CAS(message.Key, message.Value)
 			response.ID = message.ID
 			response.Key = make([]byte, 1)
 			if err == nil {
@@ -208,7 +186,7 @@ func worker(s *DBServer) (work func(message tlproto.Message) (response tlproto.M
 			return response
 		case tlproto.OpDel:
 			var response tlproto.Message
-			s.m.Delete(message.Key, message.Value)
+			s.lh.Delete(message.Key, message.Value)
 			response.ID = message.ID
 			response.Type = tlproto.OpDelOK
 			return response
@@ -234,7 +212,7 @@ func worker(s *DBServer) (work func(message tlproto.Message) (response tlproto.M
 				} else {
 					i := 0
 					var err error
-					s.m.Iterate(chunkID, func(key, value []byte) bool {
+					s.lh.Iterate(chunkID, func(key, value []byte) bool {
 						ch := c.Set(key, value, time.Millisecond*500)
 						err = ch.Wait()
 						if err != nil {
@@ -286,12 +264,11 @@ func worker(s *DBServer) (work func(message tlproto.Message) (response tlproto.M
 		case tlproto.OpGetChunkInfo:
 			var response tlproto.Message
 			response.ID = message.ID
-			c := s.m.Chunks[binary.LittleEndian.Uint32(message.Key)]
+			chunkID := int(binary.LittleEndian.Uint32(message.Key))
 			response.Type = tlproto.OpGetChunkInfoResponse
 			response.Value = make([]byte, 8)
-			c.Lock()
-			binary.LittleEndian.PutUint64(response.Value, c.St.Length+1)
-			c.Unlock()
+			length := s.lh.LengthOfChunk(chunkID)
+			binary.LittleEndian.PutUint64(response.Value, length)
 			return response
 		case tlproto.OpProtect:
 			var response tlproto.Message

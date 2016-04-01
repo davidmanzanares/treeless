@@ -83,7 +83,7 @@ func broker(c *Conn, onClose func()) {
 						w, ok := waits[f.tid]
 						if ok {
 							delete(waits, f.tid)
-							fmt.Println("Timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))
+							//fmt.Println("Timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))
 							w <- Result{nil, errors.New("Timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
 						}
 						pq = pq[1:]

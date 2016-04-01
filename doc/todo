@@ -3,7 +3,7 @@ Core: 3
 	-real delete
 	-size limit to map wide instead of chunk wide
 	-IO error?
-
+	-enable disable to up
 	-MurmurHash
 
 Com:

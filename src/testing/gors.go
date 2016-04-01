@@ -34,7 +34,7 @@ func (gs *gorServer) create(numChunks, redundancy int, verbose bool) string {
 		dbTestFolder = "/mnt/dbs/"
 	}
 	gs.dbpath = dbTestFolder + "testDB" + fmt.Sprint(gorID)
-	gs.server = tlserver.Start("", "127.0.0.1", 10000+gorID, numChunks, redundancy, gs.dbpath)
+	gs.server = tlserver.Start("", "127.0.0.1", 10000+gorID, numChunks, redundancy, gs.dbpath, 1024*1024*16)
 	gorID++
 	gs.phy = string("127.0.0.1" + ":" + fmt.Sprint(10000+gorID-1))
 	waitForServer(gs.phy)
@@ -47,7 +47,7 @@ func (gs *gorServer) assoc(addr string) string {
 		dbTestFolder = "/mnt/dbs/"
 	}
 	gs.dbpath = dbTestFolder + "testDB" + fmt.Sprint(gorID)
-	gs.server = tlserver.Start(addr, "127.0.0.1", 10000+gorID, -1, -1, gs.dbpath)
+	gs.server = tlserver.Start(addr, "127.0.0.1", 10000+gorID, -1, -1, gs.dbpath, 1024*1024*16)
 	gorID++
 	gs.phy = string("127.0.0.1" + ":" + fmt.Sprint(10000+gorID-1))
 	waitForServer(gs.phy)

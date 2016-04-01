@@ -34,12 +34,11 @@ The memory mapped file won't hold anymore information.
 
 //Store stores a list of pairs, in an *unordered* way
 type Store struct {
-	Deleted   uint64      //Deleted number of bytes
-	Length    uint64      //Total length, index of new items
-	Size      uint64      //Allocated size
-	SizeLimit uint64      //Maximum size, the Store wont allocate more than this number of bytes
-	osFile    *os.File    //OS mapped file located at Path
-	file      gommap.MMap //Memory mapped file located at Path
+	Deleted uint64      //Deleted number of bytes
+	Length  uint64      //Total length, index of new items
+	Size    uint64      //Allocated size
+	osFile  *os.File    //OS mapped file located at Path
+	file    gommap.MMap //Memory mapped file located at Path
 }
 
 const (
@@ -52,16 +51,12 @@ const (
 //if it is used to store long (more bytes than the page size) pairs
 var mmapAdviseFlags = gommap.MADV_RANDOM
 
-const defaultStoreSizeLimit = 1024 * 1024 * 16
-const defaultStoreSize = 1024 * 1024 * 16
-
-func newStore(path string) *Store {
+func newStore(path string, size uint64) *Store {
 	var err error
 	st := new(Store)
-	st.Size = defaultStoreSize
-	st.SizeLimit = defaultStoreSizeLimit
+	st.Size = size
 	if path != "" {
-		st.osFile, err = os.OpenFile(path+".dat", os.O_RDWR|os.O_CREATE|os.O_TRUNC, filePerms)
+		st.osFile, err = os.OpenFile(path+".dat", os.O_RDWR|os.O_CREATE|os.O_TRUNC, FilePerms)
 		if err != nil {
 			w, _ := os.Getwd()
 			fmt.Println(w)
@@ -90,7 +85,7 @@ func newStore(path string) *Store {
 
 func (st *Store) open(path string) {
 	var err error
-	st.osFile, err = os.OpenFile(path+".dat", os.O_RDWR, filePerms)
+	st.osFile, err = os.OpenFile(path+".dat", os.O_RDWR, FilePerms)
 	if err != nil {
 		panic(err)
 	}
@@ -118,41 +113,6 @@ func (st *Store) close() {
 			panic(err)
 		}
 	}
-}
-
-//Expand the store instance giving more available space for items
-func (st *Store) expand() (err error) {
-	if st.osFile != nil {
-		if st.Size == st.SizeLimit {
-			//TODO constant error?
-			err := errors.New("Store size limit reached")
-			log.Println(err)
-			return err
-		}
-		st.Size = st.Size * 2
-		if st.Size > st.SizeLimit {
-			st.Size = st.SizeLimit
-		}
-		//TODO: check order speed truncate vs unmap, need set benchmarks
-		st.osFile.Truncate(int64(st.Size))
-	}
-	err = st.file.UnsafeUnmap()
-	if err != nil {
-		panic(err)
-	}
-	if st.osFile != nil {
-		st.file, err = gommap.Map(st.osFile.Fd(), gommap.PROT_READ|gommap.PROT_WRITE, gommap.MAP_SHARED)
-	} else {
-		panic("Anonymous mmap cannot expand")
-	}
-	if err != nil {
-		panic(err)
-	}
-	st.file.Advise(mmapAdviseFlags)
-	if err != nil {
-		panic(err)
-	}
-	return nil
 }
 
 func (st *Store) isPresent(index uint64) bool {
@@ -189,10 +149,8 @@ func (st *Store) put(key, val []byte) (uint32, error) {
 	index := st.Length
 	st.Length += size
 	for st.Length >= st.Size {
-		err := st.expand()
-		if err != nil {
-			return 0, err
-		}
+		log.Println("Store size limit reached: denied put operation")
+		return 0, errors.New("Store size limit reached: denied put operation")
 	}
 	st.setKeyLen(index, uint32(len(key)))
 	st.setValLen(index, uint32(len(val)))
