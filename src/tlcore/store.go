@@ -53,26 +53,33 @@ const (
 var mmapAdviseFlags = gommap.MADV_RANDOM
 
 const defaultStoreSizeLimit = 1024 * 1024 * 16
-const defaultStoreSize = 1024 * 4
+const defaultStoreSize = 1024 * 1024 * 16
 
 func newStore(path string) *Store {
 	var err error
 	st := new(Store)
 	st.Size = defaultStoreSize
 	st.SizeLimit = defaultStoreSizeLimit
-	st.osFile, err = os.OpenFile(path+".dat", os.O_RDWR|os.O_CREATE|os.O_TRUNC, filePerms)
-	if err != nil {
-		w, _ := os.Getwd()
-		fmt.Println(w)
-		panic(err)
-	}
-	err = st.osFile.Truncate(int64(st.Size))
-	if err != nil {
-		panic(err)
-	}
-	st.file, err = gommap.Map(st.osFile.Fd(), gommap.PROT_READ|gommap.PROT_WRITE, gommap.MAP_SHARED)
-	if err != nil {
-		panic(err)
+	if path != "" {
+		st.osFile, err = os.OpenFile(path+".dat", os.O_RDWR|os.O_CREATE|os.O_TRUNC, filePerms)
+		if err != nil {
+			w, _ := os.Getwd()
+			fmt.Println(w)
+			panic(err)
+		}
+		err = st.osFile.Truncate(int64(st.Size))
+		if err != nil {
+			panic(err)
+		}
+		st.file, err = gommap.Map(st.osFile.Fd(), gommap.PROT_READ|gommap.PROT_WRITE, gommap.MAP_SHARED)
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		st.file, err = gommap.MapRegion(0, 0, int64(st.Size), gommap.PROT_READ|gommap.PROT_WRITE, gommap.MAP_SHARED|gommap.MAP_ANONYMOUS)
+		if err != nil {
+			panic(err)
+		}
 	}
 	st.file.Advise(mmapAdviseFlags)
 	if err != nil {
@@ -105,31 +112,39 @@ func (st *Store) close() {
 		panic(err)
 	}
 	st.file = nil
-	err = st.osFile.Close()
-	if err != nil {
-		panic(err)
+	if st.osFile != nil {
+		err = st.osFile.Close()
+		if err != nil {
+			panic(err)
+		}
 	}
 }
 
 //Expand the store instance giving more available space for items
 func (st *Store) expand() (err error) {
-	if st.Size == st.SizeLimit {
-		//TODO constant error?
-		err := errors.New("Store size limit reached")
-		log.Println(err)
-		return err
+	if st.osFile != nil {
+		if st.Size == st.SizeLimit {
+			//TODO constant error?
+			err := errors.New("Store size limit reached")
+			log.Println(err)
+			return err
+		}
+		st.Size = st.Size * 2
+		if st.Size > st.SizeLimit {
+			st.Size = st.SizeLimit
+		}
+		//TODO: check order speed truncate vs unmap, need set benchmarks
+		st.osFile.Truncate(int64(st.Size))
 	}
-	st.Size = st.Size * 2
-	if st.Size > st.SizeLimit {
-		st.Size = st.SizeLimit
-	}
-	//TODO: check order speed truncate vs unmap, need set benchmarks
-	st.osFile.Truncate(int64(st.Size))
 	err = st.file.UnsafeUnmap()
 	if err != nil {
 		panic(err)
 	}
-	st.file, err = gommap.Map(st.osFile.Fd(), gommap.PROT_READ|gommap.PROT_WRITE, gommap.MAP_SHARED)
+	if st.osFile != nil {
+		st.file, err = gommap.Map(st.osFile.Fd(), gommap.PROT_READ|gommap.PROT_WRITE, gommap.MAP_SHARED)
+	} else {
+		panic("Anonymous mmap cannot expand")
+	}
 	if err != nil {
 		panic(err)
 	}

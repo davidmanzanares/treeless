@@ -1,42 +1,42 @@
-Core: 3+3
-
+Core: 3
+	-size server param
+	-real delete
 	-size limit to map wide instead of chunk wide
 	-IO error?
+
 	-MurmurHash
 
-Com: 2+3
+Com:
 
-	-CAS
 
-Dist: 8
+Dist: 6
 
-	-del assurance
-	-backwards repair
-	-gossip
+	2-del assurance
+	2-backwards repair
+	2-gossip
 
-Test: 5+1
-	-real test: test consitency with lots of servers, network problems and server shutdowns:
-	-divide tests
-	-read reapair test
-	-0 servers failure test
+Test: 5+2
+	2-real test: test consitency with lots of servers, network problems and server shutdowns:
+	1-divide tests
+	1-read reapair test
+	1-0 servers failure test
 
-    -add more benchmarks
-	-space per chunk tests (hash quality tests)
+    1-add more benchmarks
+	1-space per chunk tests (hash quality tests)
 
-Others: 1+4+4+4+3+1+1+1
+Others: 3+...
+	2-stoppers
+	1-parametrizar constantes
+	1-log treeless parameter
 
-	-stoppers
-	-parametrizar constantes
-	-log treeless parameter
+	1-docs: dependencies and constraints
+	1-json performance? => use another
+	1-stats
+	1-memprofile
 
-	-docs: dependencies and constraints
-	-json performance? => use another
-	-stats
-	-memprofile
+	1-log rotation: max size
 
-	-log rotation: max size
-
-    -procedures: TTL procedure,...
+    4-procedures: TTL procedure,...
 
 
 Memoria:

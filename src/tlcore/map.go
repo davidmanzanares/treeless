@@ -35,11 +35,17 @@ type Map struct {
 //The numChunks values cannot be change dynamically, but "good" values resides in a wide range,
 //only extreme values will have significant problems.
 func NewMap(path string, numChunks int) (m *Map) {
-	os.MkdirAll(path+"/chunks/", filePerms)
+	if path != "" {
+		os.MkdirAll(path+"/chunks/", filePerms)
+	}
 	m = &Map{path: path}
 	m.Chunks = make([]*Chunk, numChunks)
 	for i := 0; i < len(m.Chunks); i++ {
-		m.Chunks[i] = newChunk(m.path + "/chunks/" + strconv.Itoa(i))
+		if path == "" {
+			m.Chunks[i] = newChunk("")
+		} else {
+			m.Chunks[i] = newChunk(m.path + "/chunks/" + strconv.Itoa(i))
+		}
 	}
 	return m
 }
@@ -67,13 +73,15 @@ func (m *Map) Close() {
 	for i := 0; i < len(m.Chunks); i++ {
 		m.Chunks[i].close()
 	}
-	str, err := json.Marshal(m)
-	if err != nil {
-		panic(err)
-	}
-	err = ioutil.WriteFile(m.path+"/meta.json", str, filePerms)
-	if err != nil {
-		panic(err)
+	if m.path != "" {
+		str, err := json.Marshal(m)
+		if err != nil {
+			panic(err)
+		}
+		err = ioutil.WriteFile(m.path+"/meta.json", str, filePerms)
+		if err != nil {
+			panic(err)
+		}
 	}
 }
 

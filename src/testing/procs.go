@@ -15,22 +15,34 @@ type procServer struct {
 	cmd    *exec.Cmd
 }
 
+var ramonly = true
+
+var localIP = "127.0.0.1"
+
 func procStartCluster(numServers int) []testServer {
 	dbTestFolder := ""
-	if exists("/mnt/dbs/") {
+	if exists("/mnt/dbs/") && !ramonly {
 		dbTestFolder = "/mnt/dbs/"
 	}
 
 	l := make([]testServer, numServers)
 	ps := new(procServer)
-	ps.phy = string("127.0.0.1" + ":" + fmt.Sprint(10000))
-	ps.dbpath = dbTestFolder + "testDB" + fmt.Sprint(0)
+	ps.phy = string(localIP + ":" + fmt.Sprint(10000))
+	if ramonly {
+		ps.dbpath = ""
+	} else {
+		ps.dbpath = dbTestFolder + "testDB" + fmt.Sprint(0)
+	}
 	l[0] = ps
 	for i := 1; i < numServers; i++ {
 		ps = new(procServer)
 		ps.id = i
-		ps.phy = string("127.0.0.1" + ":" + fmt.Sprint(10000+i))
-		ps.dbpath = dbTestFolder + "testDB" + fmt.Sprint(i)
+		ps.phy = string(localIP + ":" + fmt.Sprint(10000+i))
+		if ramonly {
+			ps.dbpath = ""
+		} else {
+			ps.dbpath = dbTestFolder + "testDB" + fmt.Sprint(i)
+		}
 		l[i] = ps
 	}
 	return l
@@ -55,7 +67,7 @@ func (ps *procServer) create(numChunks, redundancy int, verbose bool) string {
 	ps.kill()
 	exec.Command("killall", "-q", "treeless").Run()
 	ps.cmd = exec.Command("./treeless", "-create", "-port",
-		fmt.Sprint(10000+ps.id), "-dbpath", ps.dbpath, "-localip", "127.0.0.1",
+		fmt.Sprint(10000+ps.id), "-dbpath", ps.dbpath, "-localip", localIP,
 		"-redundancy", fmt.Sprint(redundancy), "-chunks", fmt.Sprint(numChunks))
 	if verbose {
 		ps.cmd.Stdout = os.Stdout
@@ -75,7 +87,7 @@ func (ps *procServer) create(numChunks, redundancy int, verbose bool) string {
 
 func (ps *procServer) assoc(addr string) string {
 	ps.cmd = exec.Command("./treeless", "-assoc", addr, "-port",
-		fmt.Sprint(10000+ps.id), "-dbpath", ps.dbpath, "-localip", "127.0.0.1") //, "-cpuprofile"
+		fmt.Sprint(10000+ps.id), "-dbpath", ps.dbpath, "-localip", localIP)
 	if true {
 		ps.cmd.Stdout = os.Stdout
 		ps.cmd.Stderr = os.Stderr
@@ -97,7 +109,9 @@ func (ps *procServer) kill() {
 		ps.cmd.Process.Signal(os.Kill)
 		log.Println("Killed", ps.dbpath)
 		time.Sleep(time.Millisecond * 10)
-		os.RemoveAll(ps.dbpath)
+		if ps.dbpath != "" {
+			os.RemoveAll(ps.dbpath)
+		}
 	}
 }
 
