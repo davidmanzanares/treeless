@@ -115,6 +115,13 @@ func (st *Store) close() {
 	}
 }
 
+func (st *Store) deleteStore() {
+	if st.file != nil {
+		panic("Not closed")
+	}
+	os.Remove(st.osFile.Name())
+}
+
 func (st *Store) isPresent(index uint64) bool {
 	return (binary.LittleEndian.Uint32(st.file[index:]) & 0x80000000) == 0
 }
@@ -147,11 +154,11 @@ func (st *Store) val(index uint64) []byte { //TODO use uint32 instead of uint64
 func (st *Store) put(key, val []byte) (uint32, error) {
 	size := uint64(headerSize + len(key) + len(val))
 	index := st.Length
-	st.Length += size
-	for st.Length >= st.Size {
+	for st.Length+size >= st.Size {
 		log.Println("Store size limit reached: denied put operation")
 		return 0, errors.New("Store size limit reached: denied put operation")
 	}
+	st.Length += size
 	st.setKeyLen(index, uint32(len(key)))
 	st.setValLen(index, uint32(len(val)))
 	copy(st.key(index), key)
@@ -160,6 +167,7 @@ func (st *Store) put(key, val []byte) (uint32, error) {
 }
 
 func (st *Store) del(index uint32) error {
+	st.Deleted += uint64(st.totalLen(uint64(index)))
 	st.setKeyLen(uint64(index), 0x80000000|st.keyLen(uint64(index)))
 	return nil
 }

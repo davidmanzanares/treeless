@@ -52,6 +52,10 @@ func (c *Chunk) Restore(path string) {
 func (c *Chunk) Close() {
 	c.St.close()
 }
+func (c *Chunk) CloseAndDelete() {
+	c.St.close()
+	c.St.deleteStore()
+}
 
 func (c *Chunk) Wipe() {
 	c.St.close()
@@ -129,11 +133,11 @@ func (c *Chunk) Set(h64 uint64, key, value []byte) error {
 					//fmt.Println("Discarded", key, value, t)
 					return nil
 				}
-				c.St.del(stIndex)
 				storeIndex, err := c.St.put(key, value)
 				if err != nil {
 					return err
 				}
+				c.St.del(stIndex)
 				c.Hm.setHash(index, h)
 				c.Hm.setStoreIndex(index, storeIndex)
 				return nil
@@ -244,7 +248,7 @@ func (c *Chunk) Del(h64 uint64, key, value []byte) error {
 	}
 }
 
-func (c *Chunk) Iterate(foreach func(key, value []byte) bool) error {
+func (c *Chunk) Iterate(foreach func(key, value []byte) (continuE bool)) error {
 	//TODO: this is a long-running function and it locks the mutex, it should release-retrieve it at some interval
 	for index := uint64(0); index < c.St.Length; {
 		if c.St.isPresent(index) {

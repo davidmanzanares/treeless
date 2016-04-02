@@ -28,7 +28,7 @@ var cluster []testServer
 
 func TestMain(m *testing.M) {
 	debug.SetTraceback("all")
-	cmd := exec.Command("killall", "-s", "INT", "treeless")
+	cmd := exec.Command("killall", "treeless")
 	cmd.Run()
 	os.Chdir("..")
 	cmd = exec.Command("go", "build", "-o", "treeless")
@@ -92,7 +92,7 @@ func TestSimple(t *testing.T) {
 	}
 }
 
-//TestBigMessages, send 8KB GET, SET messages
+//TestBigMessages, send 1MB GET, SET messages
 func TestBigMessages(t *testing.T) {
 	//Server set-up
 	addr := cluster[0].create(testingNumChunks, 2, true)
@@ -106,15 +106,69 @@ func TestBigMessages(t *testing.T) {
 	}
 	defer client.Close()
 
+	client.SetTimeout = time.Second
+	client.GetTimeout = time.Second
+
 	//SET
-	_, err = client.Set([]byte("hola"), bytes.Repeat([]byte("X"), 8*1024))
+	_, err = client.Set([]byte("hola"), bytes.Repeat([]byte("X"), 1024*1024))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	//GET
 	value, _ := client.Get([]byte("hola"))
-	if string(value) != string(bytes.Repeat([]byte("X"), 8*1024)) {
+	if string(value) != string(bytes.Repeat([]byte("X"), 1024*1024)) {
+		t.Fatal("Get failed, returned string: ", string(value))
+	}
+}
+
+//TestBigMessages, send 128 GET, SET messages, server should deny the operation
+func TestSizeLimit(t *testing.T) {
+	//Server set-up
+	addr := cluster[0].create(testingNumChunks, 2, true)
+	defer cluster[0].kill()
+	waitForServer(addr)
+
+	//Client set-up
+	client, err := tlclient.Connect(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	client.SetTimeout = time.Second * 5
+	client.GetTimeout = time.Second * 5
+
+	//SET
+	{
+		_, err = client.Set([]byte("hola"), bytes.Repeat([]byte("X"), 128*1024*1024))
+	}
+	/*runtime.GC()
+	debug.FreeOSMemory()
+	var stats debug.GCStats
+	debug.ReadGCStats(&stats)
+	fmt.Println(stats)
+	time.Sleep(time.Minute)*/
+	if err == nil {
+		t.Fatal("Size limit not reached")
+	}
+
+	//GET
+	value, _ := client.Get([]byte("hola"))
+	if value != nil {
+		t.Fatal("Get returned:", value)
+	}
+
+	//Test 1MB, these should work
+	//SET
+	_, err = client.Set([]byte("hola"), bytes.Repeat([]byte("X"), 1024*1024))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	//GET
+	value, _ = client.Get([]byte("hola"))
+	if string(value) != string(bytes.Repeat([]byte("X"), 1024*1024)) {
 		t.Fatal("Get failed, returned string: ", string(value))
 	}
 }
@@ -722,6 +776,27 @@ func TestClock(t *testing.T) {
 	}
 	avgDiff = avgDiff / time.Duration(len(timestampMap))
 	fmt.Println("Max time difference: ", maxDiff, "\nAverage time difference:", avgDiff)
+}
+
+func TestDefrag(t *testing.T) {
+	addr := cluster[0].create(testingNumChunks, 2, true)
+	c, err := tlclient.Connect(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	ops := 16
+	key := make([]byte, 1)
+	value := make([]byte, 8*1024*1024)
+	for i := 0; i < ops; i++ {
+		_, err := c.Set(key, value)
+		if err != nil {
+			t.Fatal(err, i)
+		}
+		time.Sleep(time.Millisecond * 100)
+		c.Del(key)
+	}
 }
 
 func TestNodeRevival(t *testing.T) {

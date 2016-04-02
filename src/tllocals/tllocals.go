@@ -1,9 +1,9 @@
 package tllocals
 
 import (
+	"fmt"
 	"math"
 	"os"
-	"strconv"
 	"sync"
 	"time"
 	"treeless/src/tlcore"
@@ -13,7 +13,9 @@ import (
 type LHStatus struct {
 	LocalhostIPPort string //Read-only from external packages
 	dbpath          string
+	size            uint64
 	knownChunks     int
+	defragChannel   chan<- defragOp
 	chunks          []*metaChunk
 	mutex           sync.RWMutex //Global mutex, only some operations will use it
 }
@@ -21,6 +23,7 @@ type LHStatus struct {
 type metaChunk struct {
 	core           *tlcore.Chunk
 	status         ChunkStatus
+	revision       int64
 	protectionTime time.Time
 	sync.Mutex
 }
@@ -38,6 +41,10 @@ const (
 	Utils
 */
 
+func getChunkPath(dbpath string, chunkID int, revision int64) string {
+	return fmt.Sprint(dbpath, "/chunks/", chunkID, "_rev", revision)
+}
+
 //dbpath==""  means ram-only
 func NewLHStatus(dbpath string, size uint64, numChunks int,
 	LocalhostIPPort string) *LHStatus {
@@ -49,15 +56,17 @@ func NewLHStatus(dbpath string, size uint64, numChunks int,
 		os.MkdirAll(dbpath+"/chunks/", tlcore.FilePerms)
 	}
 	lh.dbpath = dbpath
+	lh.size = size
 	lh.chunks = make([]*metaChunk, numChunks)
 	for i := 0; i < numChunks; i++ {
 		lh.chunks[i] = new(metaChunk)
 		if dbpath == "" {
 			lh.chunks[i].core = tlcore.NewChunk("", size)
 		} else {
-			lh.chunks[i].core = tlcore.NewChunk(dbpath+"/chunks/"+strconv.Itoa(i), size)
+			lh.chunks[i].core = tlcore.NewChunk(getChunkPath(dbpath, i, 0), size)
 		}
 	}
+	lh.defragChannel = newDefragmenter(lh)
 	return lh
 }
 
@@ -158,9 +167,15 @@ func (lh *LHStatus) Delete(key, value []byte) error {
 	h := tlhash.FNV1a64(key)
 	//Opt: use AND operator
 	chunkIndex := int((h >> 32) % uint64(len(lh.chunks)))
-	lh.chunks[chunkIndex].Lock()
-	err := lh.chunks[chunkIndex].core.Del(h, key, value)
-	lh.chunks[chunkIndex].Unlock()
+	chunk := lh.chunks[chunkIndex]
+	chunk.Lock()
+	err := chunk.core.Del(h, key, value)
+	delP := float64(chunk.core.St.Deleted) / float64(chunk.core.St.Length)
+	usedP := float64(chunk.core.St.Length) / float64(chunk.core.St.Size)
+	chunk.Unlock()
+	if delP > 0.1 && usedP > 0.1 {
+		lh.defragChannel <- defragOp{chunkID: chunkIndex}
+	}
 	return err
 }
 
