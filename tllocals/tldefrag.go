@@ -2,7 +2,7 @@ package tllocals
 
 import (
 	"log"
-	"treeless/chunk"
+	"treeless/pmap"
 	"treeless/tlhash"
 )
 
@@ -18,16 +18,16 @@ func newDefragmenter(lh *LHStatus) chan<- defragOp {
 	go func() {
 		for op := range inputChannel {
 			chunk := lh.chunks[op.chunkID]
-			log.Println("Defrag id: ", op.chunkID, " Deleted: ", chunk.core.St.Deleted, " Length: ", chunk.core.St.Length)
+			log.Println("Defrag id: ", op.chunkID, " Deleted: ", chunk.core.Deleted(), " Length: ", chunk.core.Used())
 
 			chunk.Lock()
 
 			old := chunk.core
 			chunk.revision++
 			if lh.dbpath == "" {
-				chunk.core = tlcore.NewChunk("", lh.size)
+				chunk.core = pmap.New("", lh.size)
 			} else {
-				chunk.core = tlcore.NewChunk(getChunkPath(lh.dbpath, op.chunkID, chunk.revision), lh.size)
+				chunk.core = pmap.New(getChunkPath(lh.dbpath, op.chunkID, chunk.revision), lh.size)
 			}
 
 			old.Iterate(func(key, value []byte) bool {

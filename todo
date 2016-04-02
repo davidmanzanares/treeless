@@ -1,0 +1,43 @@
+Core: 3
+	-Store cache alignment
+	-IO error?
+
+	-MurmurHash
+
+Com:
+
+
+Dist: 6
+
+	2-backwards repair
+	2-gossip
+	2-del assurance
+
+	open closed store
+
+Test: 5+2
+	2-real test: test consitency with lots of servers, network problems and server shutdowns:
+	1-divide tests
+	1-read reapair test
+	1-0 servers failure test
+    1-add more benchmarks
+
+	1-space per chunk tests (hash quality tests)
+
+Others: 3+...
+	1-log treeless parameter
+
+	2-stoppers
+	1-json performance and space => use binary
+
+
+	1-stats
+	1-memprofile
+	1-log rotation: max size
+    4-procedures: TTL procedure,...
+
+
+Memoria:
+	https://codahale.com/you-cant-sacrifice-partition-tolerance/
+	http://blog.nindalf.com/how-goroutines-work/
+	-security: no by desing: see Redis

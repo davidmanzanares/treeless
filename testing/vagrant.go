@@ -127,7 +127,7 @@ func (vs *vagrantServer) assoc(addr string) string {
 }
 
 func (vs *vagrantServer) kill() {
-	vs.vagrantSSH("killall -q treeless; rm -f /home/vagrant/treeless.*")
+	vs.vagrantSSH("killall -q treeless; rm -f /home/vagrant/treeless.pid")
 }
 
 func (vs *vagrantServer) restart() {

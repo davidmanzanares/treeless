@@ -1,4 +1,4 @@
-package chunk
+package pmap
 
 import (
 	"encoding/binary"
@@ -10,16 +10,16 @@ import (
 	"launchpad.net/gommap"
 )
 
-//TODO: deleted pairs arent freed
-
 /*
-	A Store is a dynamically growing array stored on a memory mapped file.
-	It manages additions and deletions, but it is indexed by Store ids.
+	A store is a dynamically growing array stored on a memory mapped file.
+	It manages additions and deletions, but it is indexed by store ids.
 	An additional data structure is needed to perform fast key-value look-ups.
+
+	deleted pairs are never freed.
 */
 
 /*
-Binary structure of the Store
+Binary structure of the store
 
 The store is composed of key-value pairs.
 Each pair is represented this way:
@@ -29,14 +29,14 @@ Each pair is represented this way:
 	4 bytes: value len
 	Key len   bytes: key
 	Value len bytes: value
-The memory mapped file won't hold anymore information.
+Metadata is not saved on the memory-mapped file.
 */
 
-//Store stores a list of pairs, in an *unordered* way
-type Store struct {
-	Deleted uint64      //Deleted number of bytes
-	Length  uint64      //Total length, index of new items
-	Size    uint64      //Allocated size
+//store stores a list of pairs, in an *unordered* way
+type store struct {
+	deleted uint64      //deleted number of bytes
+	length  uint64      //Total length, index of new items
+	size    uint64      //Allocated size, it remains constant, the store cannot expand itself
 	osFile  *os.File    //OS mapped file located at Path
 	file    gommap.MMap //Memory mapped file located at Path
 }
@@ -51,10 +51,11 @@ const (
 //if it is used to store long (more bytes than the page size) pairs
 var mmapAdviseFlags = gommap.MADV_RANDOM
 
-func newStore(path string, size uint64) *Store {
+//Creates a new Store, set path to "" to create an anonymous memory-mapped region (not FS backed)
+func newStore(path string, size uint64) *store {
 	var err error
-	st := new(Store)
-	st.Size = size
+	st := new(store)
+	st.size = size
 	if path != "" {
 		st.osFile, err = os.OpenFile(path+".dat", os.O_RDWR|os.O_CREATE|os.O_TRUNC, FilePerms)
 		if err != nil {
@@ -62,7 +63,7 @@ func newStore(path string, size uint64) *Store {
 			fmt.Println(w)
 			panic(err)
 		}
-		err = st.osFile.Truncate(int64(st.Size))
+		err = st.osFile.Truncate(int64(st.size))
 		if err != nil {
 			panic(err)
 		}
@@ -71,7 +72,7 @@ func newStore(path string, size uint64) *Store {
 			panic(err)
 		}
 	} else {
-		st.file, err = gommap.MapRegion(0, 0, int64(st.Size), gommap.PROT_READ|gommap.PROT_WRITE, gommap.MAP_SHARED|gommap.MAP_ANONYMOUS)
+		st.file, err = gommap.MapRegion(0, 0, int64(st.size), gommap.PROT_READ|gommap.PROT_WRITE, gommap.MAP_SHARED|gommap.MAP_ANONYMOUS)
 		if err != nil {
 			panic(err)
 		}
@@ -83,7 +84,7 @@ func newStore(path string, size uint64) *Store {
 	return st
 }
 
-func (st *Store) open(path string) {
+func (st *store) open(path string) {
 	var err error
 	st.osFile, err = os.OpenFile(path+".dat", os.O_RDWR, FilePerms)
 	if err != nil {
@@ -98,7 +99,9 @@ func (st *Store) open(path string) {
 		panic(err)
 	}
 }
-func (st *Store) close() {
+
+//Close the store unmmaping the file and syncing to disk
+func (st *store) close() {
 	if st.file == nil {
 		panic("Already closed")
 	}
@@ -115,50 +118,59 @@ func (st *Store) close() {
 	}
 }
 
-func (st *Store) deleteStore() {
+//Close the store and delete associated files
+func (st *store) deleteStore() {
 	if st.file != nil {
 		panic("Not closed")
 	}
 	os.Remove(st.osFile.Name())
 }
 
-func (st *Store) isPresent(index uint64) bool {
+/*
+	Store access utility functions
+*/
+func (st *store) isPresent(index uint64) bool {
 	return (binary.LittleEndian.Uint32(st.file[index:]) & 0x80000000) == 0
 }
-func (st *Store) keyLen(index uint64) uint32 {
+func (st *store) keyLen(index uint64) uint32 {
 	return binary.LittleEndian.Uint32(st.file[index:]) & 0x7FFFFFFF
 }
-func (st *Store) valLen(index uint64) uint32 {
+func (st *store) valLen(index uint64) uint32 {
 	return binary.LittleEndian.Uint32(st.file[index+headerValueOffset:])
 }
-func (st *Store) totalLen(index uint64) uint32 {
+func (st *store) totalLen(index uint64) uint32 {
 	return st.keyLen(index) + st.valLen(index)
 }
-func (st *Store) setKeyLen(index uint64, x uint32) {
+func (st *store) setKeyLen(index uint64, x uint32) {
 	binary.LittleEndian.PutUint32(st.file[index:], x)
 }
-func (st *Store) setValLen(index uint64, x uint32) {
+func (st *store) setValLen(index uint64, x uint32) {
 	binary.LittleEndian.PutUint32(st.file[index+headerValueOffset:], x)
 }
 
 //Returns a slice to the selected key
-func (st *Store) key(index uint64) []byte {
+func (st *store) key(index uint64) []byte {
 	return st.file[index+headerSize : index+headerSize+uint64(st.keyLen(index))]
 }
 
 //Returns a slice to the selected value
-func (st *Store) val(index uint64) []byte { //TODO use uint32 instead of uint64
+func (st *store) val(index uint64) []byte { //TODO use uint32 instead of uint64
 	return st.file[index+8+uint64(st.keyLen(index)) : index+headerSize+uint64(st.totalLen(index))]
 }
 
-func (st *Store) put(key, val []byte) (uint32, error) {
+//Inserts a new pair at the end of the store, it can fail (with a returning error) if the store size limit is reached
+func (st *store) put(key, val []byte) (uint32, error) {
 	size := uint64(headerSize + len(key) + len(val))
-	index := st.Length
-	for st.Length+size >= st.Size {
-		log.Println("Store size limit reached: denied put operation")
-		return 0, errors.New("Store size limit reached: denied put operation")
+	//Cache-alignment
+	//if size <= 64 && st.length%64 >= 32 && (64-st.length%64) < size {
+	//st.length += 64 - st.length%64
+	//}
+	index := st.length
+	for st.length+size >= st.size {
+		log.Println("store size limit reached: denied put operation")
+		return 0, errors.New("store size limit reached: denied put operation")
 	}
-	st.Length += size
+	st.length += size
 	st.setKeyLen(index, uint32(len(key)))
 	st.setValLen(index, uint32(len(val)))
 	copy(st.key(index), key)
@@ -166,8 +178,9 @@ func (st *Store) put(key, val []byte) (uint32, error) {
 	return uint32(index), nil
 }
 
-func (st *Store) del(index uint32) error {
-	st.Deleted += uint64(st.totalLen(uint64(index)))
+//Mark a pair as deleted, it wont free its space
+func (st *store) del(index uint32) error {
+	st.deleted += uint64(st.totalLen(uint64(index)))
 	st.setKeyLen(uint64(index), 0x80000000|st.keyLen(uint64(index)))
 	return nil
 }

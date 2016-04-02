@@ -6,7 +6,7 @@ import (
 	"os"
 	"sync"
 	"time"
-	"treeless/chunk"
+	"treeless/pmap"
 	"treeless/tlhash"
 )
 
@@ -21,7 +21,7 @@ type LHStatus struct {
 }
 
 type metaChunk struct {
-	core           *tlcore.Chunk
+	core           *pmap.PMap
 	status         ChunkStatus
 	revision       int64
 	protectionTime time.Time
@@ -53,7 +53,7 @@ func NewLHStatus(dbpath string, size uint64, numChunks int,
 	lh.LocalhostIPPort = LocalhostIPPort
 
 	if dbpath != "" {
-		os.MkdirAll(dbpath+"/chunks/", tlcore.FilePerms)
+		os.MkdirAll(dbpath+"/chunks/", pmap.FilePerms)
 	}
 	lh.dbpath = dbpath
 	lh.size = size
@@ -61,9 +61,9 @@ func NewLHStatus(dbpath string, size uint64, numChunks int,
 	for i := 0; i < numChunks; i++ {
 		lh.chunks[i] = new(metaChunk)
 		if dbpath == "" {
-			lh.chunks[i].core = tlcore.NewChunk("", size)
+			lh.chunks[i].core = pmap.New("", size)
 		} else {
-			lh.chunks[i].core = tlcore.NewChunk(getChunkPath(dbpath, i, 0), size)
+			lh.chunks[i].core = pmap.New(getChunkPath(dbpath, i, 0), size)
 		}
 	}
 	lh.defragChannel = newDefragmenter(lh)
@@ -145,9 +145,10 @@ func (lh *LHStatus) Get(key []byte) ([]byte, error) {
 	h := tlhash.FNV1a64(key)
 	//Opt: use AND operator
 	chunkIndex := int((h >> 32) % uint64(len(lh.chunks)))
-	lh.chunks[chunkIndex].Lock()
-	v, err := lh.chunks[chunkIndex].core.Get(h, key)
-	lh.chunks[chunkIndex].Unlock()
+	chunk := lh.chunks[chunkIndex]
+	chunk.Lock()
+	v, err := chunk.core.Get(uint32(h), key)
+	chunk.Unlock()
 	return v, err
 }
 
@@ -170,8 +171,8 @@ func (lh *LHStatus) Delete(key, value []byte) error {
 	chunk := lh.chunks[chunkIndex]
 	chunk.Lock()
 	err := chunk.core.Del(h, key, value)
-	delP := float64(chunk.core.St.Deleted) / float64(chunk.core.St.Length)
-	usedP := float64(chunk.core.St.Length) / float64(chunk.core.St.Size)
+	delP := float64(chunk.core.Deleted()) / float64(chunk.core.Used())
+	usedP := float64(chunk.core.Used()) / float64(chunk.core.Size())
 	chunk.Unlock()
 	if delP > 0.1 && usedP > 0.1 {
 		lh.defragChannel <- defragOp{chunkID: chunkIndex}
@@ -203,6 +204,6 @@ func (lh *LHStatus) LengthOfChunk(chunkIndex int) uint64 {
 	if lh.chunks[chunkIndex].status <= ChunkPresent {
 		return math.MaxUint64
 	}
-	l := lh.chunks[chunkIndex].core.St.Length
-	return l
+	l := lh.chunks[chunkIndex].core.Used()
+	return uint64(l)
 }
