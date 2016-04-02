@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"net"
 	"sync/atomic"
-	"treeless/src/tlcom/tlproto"
-	"treeless/src/tlcom/udp"
+	"treeless/tlcom/tlproto"
+	"treeless/tlcom/udp"
 )
 
 //Server listen to TCP & UDP, accepting connections and responding to clients

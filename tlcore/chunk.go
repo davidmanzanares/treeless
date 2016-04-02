@@ -1,4 +1,4 @@
-package tlcore
+package chunk
 
 import (
 	"bytes"
@@ -6,7 +6,7 @@ import (
 	"errors"
 	"log"
 	"time"
-	"treeless/src/tlhash"
+	"treeless/tlhash"
 )
 
 /*

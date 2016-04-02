@@ -8,8 +8,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	"treeless/src/tllocals"
-	"treeless/src/tlsg"
+	"treeless/tllocals"
+	"treeless/tlsg"
 )
 
 const maxRebalanceWaitSeconds = 3

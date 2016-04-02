@@ -2,8 +2,8 @@ package tllocals
 
 import (
 	"log"
-	"treeless/src/tlcore"
-	"treeless/src/tlhash"
+	"treeless/chunk"
+	"treeless/tlhash"
 )
 
 const defragBufferSize = 256

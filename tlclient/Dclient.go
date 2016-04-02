@@ -4,10 +4,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"time"
-	"treeless/src/tlcom"
-	"treeless/src/tlhash"
-	"treeless/src/tlheartbeat"
-	"treeless/src/tlsg"
+	"treeless/tlcom"
+	"treeless/tlhash"
+	"treeless/tlheartbeat"
+	"treeless/tlsg"
 )
 
 type DBClient struct {

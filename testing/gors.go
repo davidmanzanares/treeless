@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"time"
-	"treeless/src/tlserver"
+	"treeless/tlserver"
 )
 
 func gorStartCluster(numServers int) []testServer {

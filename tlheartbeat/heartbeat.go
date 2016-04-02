@@ -5,8 +5,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"treeless/src/tlcom/udp"
-	"treeless/src/tlsg"
+	"treeless/tlcom/udp"
+	"treeless/tlsg"
 )
 
 var heartbeatTimeout = time.Millisecond * 500

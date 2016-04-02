@@ -2,7 +2,7 @@ package tltest
 
 import (
 	"time"
-	"treeless/src/tlclient"
+	"treeless/tlclient"
 )
 
 type capability int

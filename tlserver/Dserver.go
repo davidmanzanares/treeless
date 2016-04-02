@@ -7,14 +7,14 @@ import (
 	"log"
 	"runtime/debug"
 	"time"
-	"treeless/src/tlcom"
-	"treeless/src/tlcom/tlproto"
-	"treeless/src/tlcom/udp"
-	"treeless/src/tlhash"
-	"treeless/src/tlheartbeat"
-	"treeless/src/tllocals"
-	"treeless/src/tlrebalance"
-	"treeless/src/tlsg"
+	"treeless/tlcom"
+	"treeless/tlcom/tlproto"
+	"treeless/tlcom/udp"
+	"treeless/tlhash"
+	"treeless/tlheartbeat"
+	"treeless/tllocals"
+	"treeless/tlrebalance"
+	"treeless/tlsg"
 )
 
 //Server listen to TCP & UDP, accepting connections and responding to clients

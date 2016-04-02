@@ -3,7 +3,7 @@ package tlsg
 import (
 	"sync"
 	"time"
-	"treeless/src/tlcom"
+	"treeless/tlcom"
 )
 
 //VirtualServer stores generical server info

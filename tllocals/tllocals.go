@@ -6,8 +6,8 @@ import (
 	"os"
 	"sync"
 	"time"
-	"treeless/src/tlcore"
-	"treeless/src/tlhash"
+	"treeless/chunk"
+	"treeless/tlhash"
 )
 
 type LHStatus struct {

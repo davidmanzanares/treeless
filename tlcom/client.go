@@ -8,7 +8,7 @@ import (
 	"net"
 	"sync"
 	"time"
-	"treeless/src/tlcom/tlproto"
+	"treeless/tlcom/tlproto"
 )
 
 var brokerTick = time.Millisecond * 30

@@ -16,9 +16,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-	"treeless/src/tlclient"
-	"treeless/src/tlhash"
-	"treeless/src/tlutils"
+	"treeless/tlclient"
+	"treeless/tlhash"
+	"treeless/tlutils"
 )
 
 const testingNumChunks = 8
