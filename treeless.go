@@ -11,10 +11,10 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"time"
+	"treeless/heartbeat"
+	"treeless/server"
+	"treeless/servergroup"
 	"treeless/tlcom"
-	"treeless/tlheartbeat"
-	"treeless/tlserver"
-	"treeless/tlsg"
 )
 import _ "net/http/pprof"
 
@@ -70,13 +70,13 @@ func main() {
 	}
 
 	if *monitor != "" {
-		sg, err := tlsg.Assoc(*monitor)
+		sg, err := servergroup.Assoc(*monitor)
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
 		//Start heartbeat listener
-		hb := tlheartbeat.Start(sg)
+		hb := heartbeat.Start(sg)
 		go func() {
 			for {
 				fmt.Println("\033[H\033[2J" + sg.String())
@@ -94,8 +94,7 @@ func main() {
 		}
 		fmt.Println(s)*/
 	} else if *create {
-		//TODO 8 parametrizar
-		s := tlserver.Start("", *localIP, *port, *chunks, *redundancy, *dbpath, uint64(*size))
+		s := server.Start("", *localIP, *port, *chunks, *redundancy, *dbpath, uint64(*size))
 		go func() {
 			c := make(chan os.Signal, 1)
 			signal.Notify(c, os.Interrupt)
@@ -114,7 +113,7 @@ func main() {
 		}()
 		select {}
 	} else if *assoc != "" {
-		s := tlserver.Start(*assoc, *localIP, *port, *chunks, *redundancy, *dbpath, uint64(*size))
+		s := server.Start(*assoc, *localIP, *port, *chunks, *redundancy, *dbpath, uint64(*size))
 		go func() {
 			c := make(chan os.Signal, 1)
 			signal.Notify(c, os.Interrupt)

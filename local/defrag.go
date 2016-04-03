@@ -1,9 +1,9 @@
-package tllocals
+package local
 
 import (
 	"log"
+	"treeless/hashing"
 	"treeless/pmap"
-	"treeless/tlhash"
 )
 
 const defragBufferSize = 256
@@ -13,7 +13,7 @@ type defragOp struct {
 	status  chan bool
 }
 
-func newDefragmenter(lh *LHStatus) chan<- defragOp {
+func newDefragmenter(lh *Core) chan<- defragOp {
 	inputChannel := make(chan defragOp, defragBufferSize)
 	go func() {
 		for op := range inputChannel {
@@ -31,7 +31,7 @@ func newDefragmenter(lh *LHStatus) chan<- defragOp {
 			}
 
 			old.Iterate(func(key, value []byte) bool {
-				h := tlhash.FNV1a64(key)
+				h := hashing.FNV1a64(key)
 				err := chunk.core.Set(h, key, value)
 				if err != nil {
 					panic(err)

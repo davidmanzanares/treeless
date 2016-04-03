@@ -2,7 +2,7 @@ package tltest
 
 import (
 	"time"
-	"treeless/tlclient"
+	"treeless/client"
 )
 
 type capability int
@@ -33,7 +33,7 @@ type testServer interface {
 func waitForServer(addr string) bool {
 	for i := 0; i < 50; i++ {
 		time.Sleep(time.Millisecond * 50)
-		client, err := tlclient.Connect(addr)
+		client, err := client.Connect(addr)
 		if err == nil {
 			client.Close()
 			return true

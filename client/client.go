@@ -1,18 +1,18 @@
-package tlclient
+package client
 
 import (
 	"encoding/binary"
 	"errors"
 	"time"
+	"treeless/hashing"
+	"treeless/heartbeat"
+	"treeless/servergroup"
 	"treeless/tlcom"
-	"treeless/tlhash"
-	"treeless/tlheartbeat"
-	"treeless/tlsg"
 )
 
 type DBClient struct {
-	sg         *tlsg.ServerGroup
-	hb         *tlheartbeat.Heartbeater
+	sg         *servergroup.ServerGroup
+	hb         *heartbeat.Heartbeater
 	GetTimeout time.Duration
 	SetTimeout time.Duration
 	DelTimeout time.Duration
@@ -21,14 +21,14 @@ type DBClient struct {
 
 func Connect(addr string) (*DBClient, error) {
 	c := new(DBClient)
-	sg, err := tlsg.Assoc(addr)
+	sg, err := servergroup.Assoc(addr)
 	if err != nil {
 		return nil, err
 	}
 	c.sg = sg
 
 	//Start heartbeat listener
-	c.hb = tlheartbeat.Start(sg)
+	c.hb = heartbeat.Start(sg)
 
 	c.GetTimeout = time.Millisecond * 500
 	c.SetTimeout = time.Millisecond * 500
@@ -39,7 +39,7 @@ func Connect(addr string) (*DBClient, error) {
 
 func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 	//Last write wins policy
-	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks())
+	chunkID := hashing.GetChunkID(key, c.sg.NumChunks())
 	servers := c.sg.GetChunkHolders(chunkID)
 	var charray [8]*tlcom.GetOperation
 	var times [8]time.Time
@@ -85,7 +85,7 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 }
 
 func (c *DBClient) Set(key, value []byte) (written bool, errs error) {
-	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks())
+	chunkID := hashing.GetChunkID(key, c.sg.NumChunks())
 	servers := c.sg.GetChunkHolders(chunkID)
 	valueWithTime := make([]byte, 8+len(value))
 	binary.LittleEndian.PutUint64(valueWithTime, uint64(time.Now().UnixNano()))
@@ -118,12 +118,12 @@ func (c *DBClient) Set(key, value []byte) (written bool, errs error) {
 }
 
 func (c *DBClient) CAS(key, value []byte, timestamp time.Time, oldValue []byte) (written bool, errs error) {
-	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks())
+	chunkID := hashing.GetChunkID(key, c.sg.NumChunks())
 	servers := c.sg.GetChunkHolders(chunkID)
 	valueWithTime := make([]byte, 24+len(value))
 	casTime := time.Now().Add(c.drift)
 	binary.LittleEndian.PutUint64(valueWithTime[0:8], uint64(timestamp.UnixNano()))
-	binary.LittleEndian.PutUint64(valueWithTime[8:16], tlhash.FNV1a64(oldValue))
+	binary.LittleEndian.PutUint64(valueWithTime[8:16], hashing.FNV1a64(oldValue))
 	binary.LittleEndian.PutUint64(valueWithTime[16:24], uint64(casTime.UnixNano()))
 	copy(valueWithTime[24:], value)
 	//Master CAS
@@ -134,7 +134,7 @@ func (c *DBClient) CAS(key, value []byte, timestamp time.Time, oldValue []byte) 
 			b := make([]byte, len(s.Phy)+len(key))
 			copy(b, key)
 			copy(b[len(key):], s.Phy)
-			rank[i] = tlhash.FNV1a64(b)
+			rank[i] = hashing.FNV1a64(b)
 			//fmt.Println(s.Phy, rank[i], key)
 		}
 	}
@@ -175,7 +175,7 @@ func (c *DBClient) CAS(key, value []byte, timestamp time.Time, oldValue []byte) 
 }
 
 func (c *DBClient) Del(key []byte) (errs error) {
-	chunkID := tlhash.GetChunkID(key, c.sg.NumChunks())
+	chunkID := hashing.GetChunkID(key, c.sg.NumChunks())
 	servers := c.sg.GetChunkHolders(chunkID)
 	t := make([]byte, 8)
 	binary.LittleEndian.PutUint64(t, uint64(time.Now().UnixNano()))

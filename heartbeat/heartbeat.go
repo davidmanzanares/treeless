@@ -1,18 +1,20 @@
-package tlheartbeat
+package heartbeat
 
 import (
 	"log"
 	"sync"
 	"sync/atomic"
 	"time"
+	"treeless/servergroup"
 	"treeless/tlcom/udp"
-	"treeless/tlsg"
 )
 
 var heartbeatTimeout = time.Millisecond * 500
 var heartbeatSleep = time.Millisecond * 500
 var timeoutRetries = 3
 
+//Heartbeater is used to discover changes in the DB topology by using a ping-pong protocol
+//Exported fields are used to configure various parameters
 type Heartbeater struct {
 	Sleep          time.Duration
 	SleepOnFail    time.Duration
@@ -21,12 +23,14 @@ type Heartbeater struct {
 	stop           int32
 }
 
+//Stop requesting and listening to heartbeats
 func (h *Heartbeater) Stop() {
 	atomic.StoreInt32(&h.stop, 1)
 }
 
-func Start(sg *tlsg.ServerGroup) *Heartbeater {
-	//Init
+//Start a new heartbeater in the background and introduce the changes into sg
+//It blocks until the first heartbeat of each server is served
+func Start(sg *servergroup.ServerGroup) *Heartbeater {
 	h := new(Heartbeater)
 	var w sync.WaitGroup //Wait for the first round
 	w.Add(1)
@@ -37,8 +41,7 @@ func Start(sg *tlsg.ServerGroup) *Heartbeater {
 		firstRun := true
 		for atomic.LoadInt32(&h.stop) == 0 {
 			queryList := sg.Servers()
-			for i := 0; i < len(queryList); i++ {
-				qs := queryList[i]
+			for _, qs := range queryList {
 				addr := qs.Phy
 				aa, err := tlUDP.Request(addr, heartbeatTimeout)
 				if err == nil {
@@ -49,7 +52,7 @@ func Start(sg *tlsg.ServerGroup) *Heartbeater {
 							_, err := tlUDP.Request(s, heartbeatTimeout)
 							if err == nil {
 								//Add new server to queryList
-								sg.AddServerToGroup(s)
+								sg.AddServerToGroup(s) //TODO fast addition
 							}
 						}
 					}

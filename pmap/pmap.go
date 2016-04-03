@@ -9,7 +9,7 @@ import (
 	"errors"
 	"log"
 	"time"
-	"treeless/tlhash"
+	"treeless/hashing"
 )
 
 //FilePerms i
@@ -55,7 +55,7 @@ func (c *PMap) Restore(path string) {
 		if c.st.isPresent(index) {
 			key := c.st.key(index)
 			val := c.st.val(index)
-			h64 := tlhash.FNV1a64(key)
+			h64 := hashing.FNV1a64(key)
 			c.restorePair(h64, key, val, uint32(index))
 		}
 		index += 8 + uint64(c.st.totalLen(index))
@@ -215,7 +215,7 @@ func (c *PMap) CAS(h64 uint64, key, value []byte) error {
 		storedHash := c.hm.getHash(index)
 		if storedHash == emptyBucket {
 			//Empty bucket: put the pair
-			if !providedTime.Equal(time.Unix(0, 0)) && hv != tlhash.FNV1a64(nil) {
+			if !providedTime.Equal(time.Unix(0, 0)) && hv != hashing.FNV1a64(nil) {
 				return errors.New("CAS failed: empty pair: non-zero timestamp")
 			}
 			storeIndex, err := c.st.put(key, value[16:])
@@ -241,7 +241,7 @@ func (c *PMap) CAS(h64 uint64, key, value []byte) error {
 				if oldT != providedTime {
 					return errors.New("CAS failed: timestamp mismatch")
 				}
-				if hv != tlhash.FNV1a64(v[8:]) {
+				if hv != hashing.FNV1a64(v[8:]) {
 					log.Println("hash mismatch!")
 					return errors.New("CAS failed: hash mismatch")
 				}

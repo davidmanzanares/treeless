@@ -16,9 +16,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-	"treeless/tlclient"
-	"treeless/tlhash"
-	"treeless/tlutils"
+	"treeless/client"
+	"treeless/hashing"
+	"treeless/tlfmt"
 )
 
 const testingNumChunks = 8
@@ -61,7 +61,7 @@ func TestSimple(t *testing.T) {
 	defer cluster[0].kill()
 	waitForServer(addr)
 	//Client set-up
-	client, err := tlclient.Connect(addr)
+	client, err := client.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestBigMessages(t *testing.T) {
 	waitForServer(addr)
 
 	//Client set-up
-	client, err := tlclient.Connect(addr)
+	client, err := client.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestSizeLimit(t *testing.T) {
 	waitForServer(addr)
 
 	//Client set-up
-	client, err := tlclient.Connect(addr)
+	client, err := client.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestTimeout(t *testing.T) {
 	defer cluster[0].kill()
 	waitForServer(addr)
 	//Client set-up
-	client, err := tlclient.Connect(addr)
+	client, err := client.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestBasicRebalance(t *testing.T) {
 	waitForServer(addr1)
 
 	//Client set-up
-	client, err := tlclient.Connect(addr1)
+	client, err := client.Connect(addr1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +310,7 @@ func metaTest(t *testing.T, addr string, numOperations, maxKeySize, maxValueSize
 	for core := 0; core < threads; core++ {
 		go func(core int) {
 			//Client set-up
-			c, err := tlclient.Connect(addr)
+			c, err := client.Connect(addr)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -333,7 +333,7 @@ func metaTest(t *testing.T, addr string, numOperations, maxKeySize, maxValueSize
 		fmt.Println("Write phase completed in:", time.Now().Sub(t1))
 	}
 	//Check map is in DB
-	c, err := tlclient.Connect(addr)
+	c, err := client.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,12 +392,12 @@ func metaTestConsistencyAsyncSet(t *testing.T, serverAddr string, numClients, it
 	var mutex sync.Mutex
 	goMap := make(map[string][]byte)
 	quitASAP := false
-	p := tlutils.NewProgress("Operating...", iterations*numClients)
+	p := tlfmt.NewProgress("Operating...", iterations*numClients)
 	for i := 0; i < numClients; i++ {
 		go func(thread int) {
 			mutex.Lock()
 			//Create client and connect it to the fake server
-			c, err := tlclient.Connect(serverAddr)
+			c, err := client.Connect(serverAddr)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -462,12 +462,12 @@ func metaTestConsistency(t *testing.T, serverAddr string, numClients, iterations
 	var mutex sync.Mutex
 	goMap := make(map[string][]byte)
 	quitASAP := false
-	p := tlutils.NewProgress("Operating...", iterations*numClients)
+	p := tlfmt.NewProgress("Operating...", iterations*numClients)
 	for i := 0; i < numClients; i++ {
 		go func(thread int) {
 			mutex.Lock()
 			//Create client and connect it to the fake server
-			c, err := tlclient.Connect(serverAddr)
+			c, err := client.Connect(serverAddr)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -522,7 +522,7 @@ func TestHotRebalance(t *testing.T) {
 	addr := cluster[0].create(testingNumChunks, 2, true)
 	waitForServer(addr)
 	//Client set-up
-	c, err := tlclient.Connect(addr)
+	c, err := client.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -561,7 +561,7 @@ func TestHotRebalance(t *testing.T) {
 			stop2()
 		}
 	}()
-	p := tlutils.NewProgress("Writting", numOperations*threads)
+	p := tlfmt.NewProgress("Writting", numOperations*threads)
 	for core := 0; core < threads; core++ {
 		go func(core int) {
 			rNext := randKVOpGenerator(1, maxKeySize, maxValueSize, core, 64, core)
@@ -601,7 +601,7 @@ func TestHotRebalance(t *testing.T) {
 	if testing.Verbose() {
 		fmt.Println("Write phase completed in:", time.Now().Sub(t1))
 	}
-	p = tlutils.NewProgress("Reading", len(goMap)+len(goDeletes))
+	p = tlfmt.NewProgress("Reading", len(goMap)+len(goDeletes))
 	//Check map is in DB
 	i := 0
 	for key, value := range goMap {
@@ -612,7 +612,7 @@ func TestHotRebalance(t *testing.T) {
 		}
 		rval, _ := c.Get([]byte(key))
 		if !bytes.Equal(rval, value) {
-			fmt.Println("GET value differs. Correct value:", value, "Returned value:", rval, "Errors:", err, "ChunkID:", tlhash.FNV1a64([]byte(key))%8)
+			fmt.Println("GET value differs. Correct value:", value, "Returned value:", rval, "Errors:", err, "ChunkID:", hashing.FNV1a64([]byte(key))%8)
 			t.Fail()
 		} else {
 			//fmt.Println("OK")
@@ -647,12 +647,12 @@ func TestLatency(t *testing.T) {
 	addr := cluster[0].create(testingNumChunks, 2, true)
 	defer cluster[0].kill()
 	//Client set-up
-	c, err := tlclient.Connect(addr)
+	c, err := client.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	c2, err2 := tlclient.Connect(addr)
+	c2, err2 := client.Connect(addr)
 	if err2 != nil {
 		t.Fatal(err2)
 	}
@@ -720,7 +720,7 @@ func TestClock(t *testing.T) {
 	addr := cluster[0].create(testingNumChunks, 2, true)
 	defer cluster[0].kill()
 	//Client set-up
-	c, err := tlclient.Connect(addr)
+	c, err := client.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -780,7 +780,7 @@ func TestClock(t *testing.T) {
 
 func TestDefrag(t *testing.T) {
 	addr := cluster[0].create(testingNumChunks, 2, true)
-	c, err := tlclient.Connect(addr)
+	c, err := client.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -801,7 +801,7 @@ func TestDefrag(t *testing.T) {
 
 func TestNodeRevival(t *testing.T) {
 	addr := cluster[0].create(testingNumChunks, 2, true)
-	c, err := tlclient.Connect(addr)
+	c, err := client.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -837,7 +837,7 @@ func TestCAS(t *testing.T) {
 		cluster[i].assoc(addr)
 	}
 	time.Sleep(time.Second * 5)
-	c, err := tlclient.Connect(addr)
+	c, err := client.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -845,7 +845,7 @@ func TestCAS(t *testing.T) {
 
 	//Func Inc
 	tries := uint64(0)
-	inc := func(c *tlclient.DBClient, key []byte) {
+	inc := func(c *client.DBClient, key []byte) {
 		written := false
 		for !written {
 			oldv, t := c.Get(key)
@@ -884,7 +884,7 @@ func TestCAS(t *testing.T) {
 	w.Add(clients)
 	for c := 0; c < clients; c++ {
 		go func() {
-			c, err := tlclient.Connect(addr)
+			c, err := client.Connect(addr)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -940,9 +940,9 @@ func testBenchParallel(t *testing.T, oneClient bool, pGet, pSet, pDel float32, s
 	operations := 1000000
 	w.Add(vClients)
 	runtime.GOMAXPROCS(runtime.NumCPU())
-	clients := make([]*tlclient.DBClient, vClients)
+	clients := make([]*client.DBClient, vClients)
 	if oneClient {
-		c, err := tlclient.Connect(addr)
+		c, err := client.Connect(addr)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -952,7 +952,7 @@ func testBenchParallel(t *testing.T, oneClient bool, pGet, pSet, pDel float32, s
 		}
 	} else {
 		for i := range clients {
-			c, err := tlclient.Connect(addr)
+			c, err := client.Connect(addr)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -960,7 +960,7 @@ func testBenchParallel(t *testing.T, oneClient bool, pGet, pSet, pDel float32, s
 			clients[i] = c
 		}
 	}
-	//p := tlutils.NewProgress("Operating...", operations)
+	//p := tlfmt.NewProgress("Operating...", operations)
 	ops := int32(0)
 	runtime.GC()
 	runtime.Gosched()
@@ -1017,8 +1017,8 @@ func testBenchSequential(t *testing.T, servers int) {
 
 	//Sequential workload simulation
 	operations := 50000
-	p := tlutils.NewProgress("Operating...", operations)
-	c, err := tlclient.Connect(addr)
+	p := tlfmt.NewProgress("Operating...", operations)
+	c, err := client.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}

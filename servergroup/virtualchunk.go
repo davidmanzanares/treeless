@@ -1,4 +1,4 @@
-package tlsg
+package servergroup
 
 import "fmt"
 

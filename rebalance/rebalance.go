@@ -1,4 +1,4 @@
-package tlrebalance
+package rebalance
 
 import (
 	"log"
@@ -8,23 +8,27 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	"treeless/tllocals"
-	"treeless/tlsg"
+	"treeless/local"
+	"treeless/servergroup"
 )
 
 const maxRebalanceWaitSeconds = 3
 
+//Rebalancer is used to rebalance the system, getting a copy (duplication) of chunks
+//and deleting the local copy of chunks as needed
 type Rebalancer struct {
 	duplicatorChannel chan int
 	w                 *sync.WaitGroup
 }
 
+//Stop stops rebalancing the server
 func (r *Rebalancer) Stop() {
 	r.duplicatorChannel <- (-1)
 	r.w.Wait()
 }
 
-func StartRebalance(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, ShouldStop func() bool) {
+//StartRebalance creates a new Rebalancer and begins its operation
+func StartRebalance(sg *servergroup.ServerGroup, lh *local.Core, ShouldStop func() bool) {
 	//Delegate chunk downloads to the duplicator
 	duplicate := duplicator(sg, lh, ShouldStop)
 	release := releaser(sg, lh)
@@ -54,7 +58,7 @@ func StartRebalance(sg *tlsg.ServerGroup, lh *tllocals.LHStatus, ShouldStop func
 				//Local server has more work than it should
 				//Locate a chunk with more redundancy than the required redundancy and *not* protected
 				for _, cid := range lh.KnownChunksList() {
-					if lh.ChunkStatus(cid) == tllocals.ChunkSynched && sg.NumHolders(cid) > sg.Redundancy() {
+					if lh.ChunkStatus(cid) == local.ChunkSynched && sg.NumHolders(cid) > sg.Redundancy() {
 						log.Println("Release to rebalance.", cid, sg.NumHolders(cid), " Reason:", known, avg)
 						release(cid)
 						break
@@ -93,7 +97,7 @@ func getFreeDiskSpace() uint64 {
 //It will download the chunk otherwise
 //However this download will be executed in the background (i.e. in another goroutine).
 //Duplicate will return inmediatly unless the channel buffer is filled
-func duplicator(sg *tlsg.ServerGroup, lh *tllocals.LHStatus,
+func duplicator(sg *servergroup.ServerGroup, lh *local.Core,
 	ShouldStop func() bool) (duplicate func(cid int)) {
 
 	duplicateChannel := make(chan int, 1024)
@@ -120,13 +124,13 @@ func duplicator(sg *tlsg.ServerGroup, lh *tllocals.LHStatus,
 			return
 		}
 
-		lh.ChunkSetStatus(cid, tllocals.ChunkPresent)
+		lh.ChunkSetStatus(cid, local.ChunkPresent)
 		if length == 0 {
 			go func() {
 				//Heartbeat must be propagated before transfer initialization
 				time.Sleep(time.Second * 2)
 				log.Println("Duplication completed: 0 sized", s.Phy, cid)
-				lh.ChunkSetStatus(cid, tllocals.ChunkSynched)
+				lh.ChunkSetStatus(cid, local.ChunkSynched)
 			}()
 		} else {
 			go func() {
@@ -157,7 +161,7 @@ func duplicator(sg *tlsg.ServerGroup, lh *tllocals.LHStatus,
 					continue
 				} else {
 					//Set chunk as ready
-					lh.ChunkSetStatus(cid, tllocals.ChunkSynched)
+					lh.ChunkSetStatus(cid, local.ChunkSynched)
 					log.Println("Chunk duplication completed", cid)
 					transferred = true
 					break
@@ -173,7 +177,11 @@ func duplicator(sg *tlsg.ServerGroup, lh *tllocals.LHStatus,
 	return duplicate
 }
 
-func releaser(sg *tlsg.ServerGroup, lh *tllocals.LHStatus) (release func(cid int)) {
+//The releaser recieves chunkIDs and tries to delete the local copy
+//release will return inmediatly unless the channel buffer is filled
+//It request a chunk "protection" from the other servers to prevent data-loss
+//(avoiding multiple deletions simultaneously on the same chunk)
+func releaser(sg *servergroup.ServerGroup, lh *local.Core) (release func(cid int)) {
 	releaseChannel := make(chan int, 1024)
 
 	release = func(cid int) {
@@ -186,7 +194,7 @@ func releaser(sg *tlsg.ServerGroup, lh *tllocals.LHStatus) (release func(cid int
 				return
 			}
 			//Request chunk protection?
-			if lh.ChunkStatus(c) == tllocals.ChunkProtected {
+			if lh.ChunkStatus(c) == local.ChunkProtected {
 				log.Println("Chunk release aborted: chunk already protected on localhost", c)
 				continue
 			}

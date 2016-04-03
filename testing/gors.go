@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"time"
-	"treeless/tlserver"
+	"treeless/server"
 )
 
 func gorStartCluster(numServers int) []testServer {
@@ -21,7 +21,7 @@ var gorID = 0
 type gorServer struct {
 	phy    string
 	dbpath string
-	server *tlserver.DBServer
+	server *server.DBServer
 }
 
 func (gs *gorServer) addr() string {
@@ -34,7 +34,7 @@ func (gs *gorServer) create(numChunks, redundancy int, verbose bool) string {
 		dbTestFolder = "/mnt/dbs/"
 	}
 	gs.dbpath = dbTestFolder + "testDB" + fmt.Sprint(gorID)
-	gs.server = tlserver.Start("", "127.0.0.1", 10000+gorID, numChunks, redundancy, gs.dbpath, 1024*1024*16)
+	gs.server = server.Start("", "127.0.0.1", 10000+gorID, numChunks, redundancy, gs.dbpath, 1024*1024*16)
 	gorID++
 	gs.phy = string("127.0.0.1" + ":" + fmt.Sprint(10000+gorID-1))
 	waitForServer(gs.phy)
@@ -47,7 +47,7 @@ func (gs *gorServer) assoc(addr string) string {
 		dbTestFolder = "/mnt/dbs/"
 	}
 	gs.dbpath = dbTestFolder + "testDB" + fmt.Sprint(gorID)
-	gs.server = tlserver.Start(addr, "127.0.0.1", 10000+gorID, -1, -1, gs.dbpath, 1024*1024*16)
+	gs.server = server.Start(addr, "127.0.0.1", 10000+gorID, -1, -1, gs.dbpath, 1024*1024*16)
 	gorID++
 	gs.phy = string("127.0.0.1" + ":" + fmt.Sprint(10000+gorID-1))
 	waitForServer(gs.phy)

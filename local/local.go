@@ -1,4 +1,4 @@
-package tllocals
+package local
 
 import (
 	"fmt"
@@ -6,11 +6,12 @@ import (
 	"os"
 	"sync"
 	"time"
+	"treeless/hashing"
 	"treeless/pmap"
-	"treeless/tlhash"
 )
 
-type LHStatus struct {
+//Core provides an interface to access local stored chunks
+type Core struct {
 	LocalhostIPPort string //Read-only from external packages
 	dbpath          string
 	size            uint64
@@ -46,10 +47,10 @@ func getChunkPath(dbpath string, chunkID int, revision int64) string {
 }
 
 //dbpath==""  means ram-only
-func NewLHStatus(dbpath string, size uint64, numChunks int,
-	LocalhostIPPort string) *LHStatus {
+func NewCore(dbpath string, size uint64, numChunks int,
+	LocalhostIPPort string) *Core {
 
-	lh := new(LHStatus)
+	lh := new(Core)
 	lh.LocalhostIPPort = LocalhostIPPort
 
 	if dbpath != "" {
@@ -70,7 +71,7 @@ func NewLHStatus(dbpath string, size uint64, numChunks int,
 	return lh
 }
 
-func (lh *LHStatus) Close() {
+func (lh *Core) Close() {
 	for i := 0; i < len(lh.chunks); i++ {
 		lh.chunks[i].Lock()
 		lh.chunks[i].core.Close()
@@ -81,13 +82,13 @@ func (lh *LHStatus) Close() {
 /*
 	Getters
 */
-func (lh *LHStatus) KnownChunks() int {
+func (lh *Core) KnownChunks() int {
 	lh.mutex.RLock()
 	n := lh.knownChunks
 	lh.mutex.RUnlock()
 	return n
 }
-func (lh *LHStatus) KnownChunksList() []int {
+func (lh *Core) KnownChunksList() []int {
 	lh.mutex.RLock()
 	list := make([]int, 0, lh.knownChunks)
 	for i := 0; i < len(lh.chunks); i++ {
@@ -98,7 +99,7 @@ func (lh *LHStatus) KnownChunksList() []int {
 	lh.mutex.RUnlock()
 	return list
 }
-func (lh *LHStatus) ChunkStatus(id int) ChunkStatus {
+func (lh *Core) ChunkStatus(id int) ChunkStatus {
 	lh.mutex.RLock()
 	s := lh.chunks[id].status
 	lh.mutex.RUnlock()
@@ -109,7 +110,7 @@ func (lh *LHStatus) ChunkStatus(id int) ChunkStatus {
 	Setters
 */
 
-func (lh *LHStatus) ChunkSetStatus(cid int, st ChunkStatus) { //DELETE use SetSynched...
+func (lh *Core) ChunkSetStatus(cid int, st ChunkStatus) { //DELETE use SetSynched...
 	lh.mutex.Lock()
 	if lh.chunks[cid].status == 0 && st != 0 {
 		lh.knownChunks++
@@ -141,8 +142,8 @@ func (lh *LHStatus) ChunkSetStatus(cid int, st ChunkStatus) { //DELETE use SetSy
 */
 
 //Get the value for the provided key
-func (lh *LHStatus) Get(key []byte) ([]byte, error) {
-	h := tlhash.FNV1a64(key)
+func (lh *Core) Get(key []byte) ([]byte, error) {
+	h := hashing.FNV1a64(key)
 	//Opt: use AND operator
 	chunkIndex := int((h >> 32) % uint64(len(lh.chunks)))
 	chunk := lh.chunks[chunkIndex]
@@ -153,8 +154,8 @@ func (lh *LHStatus) Get(key []byte) ([]byte, error) {
 }
 
 //Set the value for the provided key
-func (lh *LHStatus) Set(key, value []byte) error {
-	h := tlhash.FNV1a64(key)
+func (lh *Core) Set(key, value []byte) error {
+	h := hashing.FNV1a64(key)
 	//Opt: use AND operator
 	chunkIndex := int((h >> 32) % uint64(len(lh.chunks)))
 	lh.chunks[chunkIndex].Lock()
@@ -164,8 +165,8 @@ func (lh *LHStatus) Set(key, value []byte) error {
 }
 
 //Delete the pair indexed by key
-func (lh *LHStatus) Delete(key, value []byte) error {
-	h := tlhash.FNV1a64(key)
+func (lh *Core) Delete(key, value []byte) error {
+	h := hashing.FNV1a64(key)
 	//Opt: use AND operator
 	chunkIndex := int((h >> 32) % uint64(len(lh.chunks)))
 	chunk := lh.chunks[chunkIndex]
@@ -180,8 +181,8 @@ func (lh *LHStatus) Delete(key, value []byte) error {
 	return err
 }
 
-func (lh *LHStatus) CAS(key, value []byte) error {
-	h := tlhash.FNV1a64(key)
+func (lh *Core) CAS(key, value []byte) error {
+	h := hashing.FNV1a64(key)
 	//Opt: use AND operator
 	chunkIndex := int((h >> 32) % uint64(len(lh.chunks)))
 	lh.chunks[chunkIndex].Lock()
@@ -191,14 +192,14 @@ func (lh *LHStatus) CAS(key, value []byte) error {
 }
 
 //Iterate all key-value pairs of a chunk, executing foreach for each key-value pair
-func (lh *LHStatus) Iterate(chunkIndex int, foreach func(key, value []byte) bool) error {
+func (lh *Core) Iterate(chunkIndex int, foreach func(key, value []byte) bool) error {
 	lh.chunks[chunkIndex].Lock()
 	err := lh.chunks[chunkIndex].core.Iterate(foreach)
 	lh.chunks[chunkIndex].Unlock()
 	return err
 }
 
-func (lh *LHStatus) LengthOfChunk(chunkIndex int) uint64 {
+func (lh *Core) LengthOfChunk(chunkIndex int) uint64 {
 	lh.chunks[chunkIndex].Lock()
 	defer lh.chunks[chunkIndex].Unlock()
 	if lh.chunks[chunkIndex].status <= ChunkPresent {
