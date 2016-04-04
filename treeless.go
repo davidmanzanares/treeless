@@ -38,11 +38,11 @@ func main() {
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
 	webprofile := flag.Bool("webprofile", false, "webprofile")
 	localIP := flag.String("localip", tlcom.GetLocalIP(), "set local IP")
-	logToFile := flag.Bool("logtofile", false, "set logging to file")
+	logToFile := flag.String("logtofile", "", "set logging to file")
 
 	flag.Parse()
-	if *logToFile {
-		f, err := os.OpenFile("/mnt/treeless.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if *logToFile != "" {
+		f, err := os.OpenFile(*logToFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 		if err != nil {
 			fmt.Println("Error when opening log file")
 			return

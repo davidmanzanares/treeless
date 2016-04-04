@@ -17,7 +17,6 @@ import (
 	"testing"
 	"time"
 	"treeless/client"
-	"treeless/hashing"
 	"treeless/tlfmt"
 )
 
@@ -25,6 +24,7 @@ const testingNumChunks = 8
 const benchmarkingNumChunks = 64
 
 var cluster []testServer
+var ultraverbose = false
 
 func TestMain(m *testing.M) {
 	debug.SetTraceback("all")
@@ -41,8 +41,9 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic("Errors building the program, testing aborted.")
 	}
+	flag.BoolVar(&ultraverbose, "vv", false, "Sets ultra-verbose mode")
 	flag.Parse()
-	if !testing.Verbose() {
+	if !ultraverbose {
 		log.SetOutput(ioutil.Discard)
 	}
 	//CLUSTER INITIALIZATION
@@ -57,7 +58,7 @@ func TestMain(m *testing.M) {
 //Test just a few hard-coded operations with one server - one client
 func TestSimple(t *testing.T) {
 	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2, true)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	defer cluster[0].kill()
 	waitForServer(addr)
 	//Client set-up
@@ -95,7 +96,7 @@ func TestSimple(t *testing.T) {
 //TestBigMessages, send 1MB GET, SET messages
 func TestBigMessages(t *testing.T) {
 	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2, true)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	defer cluster[0].kill()
 	waitForServer(addr)
 
@@ -125,7 +126,7 @@ func TestBigMessages(t *testing.T) {
 //TestBigMessages, send 128 GET, SET messages, server should deny the operation
 func TestSizeLimit(t *testing.T) {
 	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2, true)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	defer cluster[0].kill()
 	waitForServer(addr)
 
@@ -176,7 +177,7 @@ func TestSizeLimit(t *testing.T) {
 //Test just a few hard-coded operations with one server - one client
 func TestTimeout(t *testing.T) {
 	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2, true)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	defer cluster[0].kill()
 	waitForServer(addr)
 	//Client set-up
@@ -212,73 +213,13 @@ func TestTimeout(t *testing.T) {
 	log.Println("Timeout:", time.Now().Sub(tb))
 }
 
-func TestBasicRebalance(t *testing.T) {
-	//Server set-up
-	addr1 := cluster[0].create(testingNumChunks, 2, true)
-	waitForServer(addr1)
-
-	//Client set-up
-	client, err := client.Connect(addr1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer client.Close()
-	//Set operation
-	_, err = client.Set([]byte("hola"), []byte("mundo"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	//Second server set-up
-	cluster[1].assoc(addr1)
-	defer cluster[1].kill()
-	//Wait for rebalance
-	fmt.Println("Server 1 shut down soon...")
-	time.Sleep(time.Second * 5)
-	//First server shut down
-	fmt.Println("Server 1 shut down")
-	cluster[0].kill()
-	time.Sleep(time.Millisecond * 100)
-	//Get operation
-	value, _ := client.Get([]byte("hola"))
-	if string(value) != "mundo" {
-		t.Fatal("Get failed, returned string: ", string(value))
-	}
-
-	//Del operation
-	client.Del([]byte("hola"))
-	//Get operation
-	value, _ = client.Get([]byte("hola"))
-	if value != nil {
-		t.Fatal("Get failed, returned string: ", string(value))
-	}
-}
-
 //Test lots of operations made by a single client against a single DB server
 func TestCmplx1_1(t *testing.T) {
 	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2, true)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	defer cluster[0].kill()
 	waitForServer(addr)
 	metaTest(t, addr, 10*1000, 4, 8, 10, 1024)
-}
-
-func randKVOpGenerator(minKeySize, maxKeySize, maxValueSize, seed, mult, offset int) func() (op int, k, v []byte) {
-	r := rand.New(rand.NewSource(int64(seed)))
-	base := make([]byte, 4)
-	base2 := make([]byte, 4)
-	return func() (op int, k, v []byte) {
-		opKeySize := r.Intn(maxKeySize) + minKeySize
-		opValueSize := r.Intn(maxValueSize) + 1
-		binary.LittleEndian.PutUint32(base, uint32(r.Int31())*uint32(mult)+uint32(offset))
-		binary.LittleEndian.PutUint32(base2, uint32(r.Int31())*uint32(mult)+uint32(offset))
-		key := bytes.Repeat([]byte(base), opKeySize)[0:opKeySize]
-		value := bytes.Repeat([]byte(base2), opValueSize)[0:opValueSize]
-		op = 0
-		if r.Float32() > 0.5 {
-			op = 1
-		}
-		return op, key, value
-	}
 }
 
 //This test will make lots of PUT/SET/DELETE operations using a PRNG, then it will use GET operations to check the DB status
@@ -371,14 +312,14 @@ func metaTest(t *testing.T, addr string, numOperations, maxKeySize, maxValueSize
 }
 
 func TestConsistency(t *testing.T) {
-	addr := cluster[0].create(testingNumChunks, 2, true)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	defer cluster[0].kill()
 	waitForServer(addr)
 	metaTestConsistency(t, addr, 20, 200)
 }
 
 func TestConsistencyAsyncSet(t *testing.T) {
-	addr := cluster[0].create(testingNumChunks, 2, true)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	defer cluster[0].kill()
 	waitForServer(addr)
 	metaTestConsistencyAsyncSet(t, addr, 20, 200)
@@ -516,135 +457,10 @@ func metaTestConsistency(t *testing.T, serverAddr string, numClients, iterations
 	w.Wait()
 }
 
-func TestHotRebalance(t *testing.T) {
-	var stop2 func()
-	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2, true)
-	waitForServer(addr)
-	//Client set-up
-	c, err := client.Connect(addr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer c.Close()
-
-	threads := 4
-	maxKeySize := 4
-	maxValueSize := 4
-	numOperations := 50000
-	runtime.GOMAXPROCS(runtime.NumCPU())
-	//Operate on built-in map, DB will be checked against this map
-	goMap := make(map[string][]byte)
-	var goDeletes []([]byte)
-	for core := 0; core < threads; core++ {
-		rNext := randKVOpGenerator(1, maxKeySize, maxValueSize, core, 64, core)
-		for i := 0; i < numOperations; i++ {
-			opType, key, value := rNext()
-			switch opType {
-			case 0:
-				//Put
-				goMap[string(key)] = value
-			case 1:
-				//Delete
-				delete(goMap, string(key))
-				goDeletes = append(goDeletes, key)
-			}
-		}
-	}
-
-	//Operate on TreelessDB
-	t1 := time.Now()
-	var w sync.WaitGroup
-	w.Add(threads)
-	defer func() {
-		if stop2 != nil {
-			stop2()
-		}
-	}()
-	p := tlfmt.NewProgress("Writting", numOperations*threads)
-	for core := 0; core < threads; core++ {
-		go func(core int) {
-			rNext := randKVOpGenerator(1, maxKeySize, maxValueSize, core, 64, core)
-			for i := 0; i < numOperations; i++ {
-				//fmt.Println(core, i)
-				if core == 0 && i == 0 {
-					fmt.Println("Server 2 power up")
-					//Second server set-up
-					cluster[1].assoc(addr)
-					//Wait for rebalance
-					time.Sleep(time.Second * 10)
-					//First server shut down
-					fmt.Println("Server 1 shut down")
-					cluster[0].kill()
-				}
-				p.Inc()
-				opType, key, value := rNext()
-				switch opType {
-				case 0:
-					/*if _, ok := goMap[string(key)]; !ok {
-						panic(ok)
-					}*/
-					written, _ := c.Set(key, value)
-					for !written { //TODO to sg
-						written, _ = c.Set(key, value)
-						fmt.Println("SLEEP", core, i)
-						time.Sleep(time.Millisecond * 300)
-					}
-				case 1:
-					c.Del(key)
-				}
-			}
-			w.Done()
-		}(core)
-	}
-	w.Wait()
-	if testing.Verbose() {
-		fmt.Println("Write phase completed in:", time.Now().Sub(t1))
-	}
-	p = tlfmt.NewProgress("Reading", len(goMap)+len(goDeletes))
-	//Check map is in DB
-	i := 0
-	for key, value := range goMap {
-		p.Inc()
-		i++
-		if len(value) > 128 {
-			fmt.Println(123)
-		}
-		rval, _ := c.Get([]byte(key))
-		if !bytes.Equal(rval, value) {
-			fmt.Println("GET value differs. Correct value:", value, "Returned value:", rval, "Errors:", err, "ChunkID:", hashing.FNV1a64([]byte(key))%8)
-			t.Fail()
-		} else {
-			//fmt.Println("OK")
-		}
-	}
-
-	//Check deleteds aren't in DB
-	dels := 0
-	for i := 0; i < len(goDeletes); i++ {
-		p.Inc()
-		key := goDeletes[i]
-		_, ok := goMap[string(key)]
-		if ok {
-			continue
-		}
-		v, _ := c.Get([]byte(key))
-		dels++
-		if v != nil {
-			t.Fatal("Deleted key present on DB")
-		}
-	}
-	if testing.Verbose() {
-		fmt.Println("Present keys tested:", len(goMap))
-		fmt.Println("Deleted keys tested:", dels)
-	}
-	cluster[1].kill()
-}
-
 //TestLatency tests latency between a SET operation and a GET operaton that sees the the SET written value
 func TestLatency(t *testing.T) {
 	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2, true)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	defer cluster[0].kill()
 	//Client set-up
 	c, err := client.Connect(addr)
@@ -717,7 +533,7 @@ func TestLatency(t *testing.T) {
 //TestClock tests records timestamps synchronization
 func TestClock(t *testing.T) {
 	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2, true)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	defer cluster[0].kill()
 	//Client set-up
 	c, err := client.Connect(addr)
@@ -779,7 +595,7 @@ func TestClock(t *testing.T) {
 }
 
 func TestDefrag(t *testing.T) {
-	addr := cluster[0].create(testingNumChunks, 2, true)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	c, err := client.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
@@ -797,263 +613,4 @@ func TestDefrag(t *testing.T) {
 		time.Sleep(time.Millisecond * 100)
 		c.Del(key)
 	}
-}
-
-func TestNodeRevival(t *testing.T) {
-	addr := cluster[0].create(testingNumChunks, 2, true)
-	c, err := client.Connect(addr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer c.Close()
-
-	//Write
-	c.Set([]byte("hello"), []byte("world"))
-
-	addr2 := cluster[1].assoc(addr)
-	time.Sleep(time.Second * 5)
-
-	fmt.Println("Server 0 down")
-	cluster[0].kill()
-
-	cluster[0].assoc(addr2)
-	time.Sleep(time.Second * 8)
-
-	fmt.Println("Server 1 down")
-	cluster[1].kill()
-
-	//Read
-	time.Sleep(time.Millisecond * 100)
-	v, _ := c.Get([]byte("hello"))
-	if string(v) != "world" {
-		t.Fatal("Mismatch:", v)
-	}
-}
-
-func TestCAS(t *testing.T) {
-	runtime.GOMAXPROCS(5)
-	addr := cluster[0].create(testingNumChunks, 2, false)
-	for i := 1; i < len(cluster); i++ {
-		cluster[i].assoc(addr)
-	}
-	time.Sleep(time.Second * 5)
-	c, err := client.Connect(addr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer c.Close()
-
-	//Func Inc
-	tries := uint64(0)
-	inc := func(c *client.DBClient, key []byte) {
-		written := false
-		for !written {
-			oldv, t := c.Get(key)
-			//fmt.Println(oldv, t)
-			x := binary.LittleEndian.Uint32(oldv)
-			//fmt.Println(x)
-			x++
-			value := make([]byte, 8)
-			binary.LittleEndian.PutUint32(value, uint32(x))
-			binary.LittleEndian.PutUint32(value[4:8], uint32(rand.Int63()))
-			written, _ = c.CAS(key, value, t, oldv)
-			atomic.AddUint64(&tries, 1)
-			if !written {
-				//time.Sleep(time.Millisecond)
-			}
-		}
-	}
-
-	key := make([]byte, 1)
-	key[0] = byte(1)
-	value := make([]byte, 4)
-	binary.LittleEndian.PutUint32(value, uint32(0))
-	written, errs := c.CAS(key, value, time.Unix(0, 0), nil)
-	if !written {
-		t.Fatal("Initial CAS failed", errs)
-	}
-	v, _ := c.Get(key)
-	//fmt.Println(oldv, t)
-	n := binary.LittleEndian.Uint32(v)
-	if n != 0 {
-		t.Fatal("Initial CAS failed", n, v)
-	}
-	ops := 100
-	clients := 100
-	var w sync.WaitGroup
-	w.Add(clients)
-	for c := 0; c < clients; c++ {
-		go func() {
-			c, err := client.Connect(addr)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer c.Close()
-			for i := 0; i < ops; i++ {
-				inc(c, key)
-			}
-			w.Done()
-		}()
-	}
-	w.Wait()
-	//Get & check
-	value, _ = c.Get(key)
-	x := int(binary.LittleEndian.Uint32(value))
-	fmt.Println("Tries:", tries, "Total operations:", ops*clients, "Clients:", clients)
-	if x != ops*clients {
-		t.Fatal("Mismatch:", ops*clients, "!=", x, "Value:", value)
-	}
-}
-
-func TestReadRepair(t *testing.T) {
-	//Start A
-	//Start B
-
-	//Disconnect A
-
-	//SET
-
-	//Connect A (A should have the old value)
-
-	//GET (should trigger the read-repairing system)
-
-	//Kill B (A should have the new value)
-
-	//GET and check
-}
-
-func TestBenchParallelEachS1_G90_S10_D0(t *testing.T) {
-	testBenchParallel(t, false, 0.9, 0.1, 0.0, 1)
-
-}
-func TestBenchParallelSharedS1_G90_S10_D0(t *testing.T) {
-	testBenchParallel(t, true, 0.9, 0.1, 0.0, 1)
-}
-
-func testBenchParallel(t *testing.T, oneClient bool, pGet, pSet, pDel float32, servers int) {
-	addr := cluster[0].create(benchmarkingNumChunks, 2, false)
-	for i := 1; i < servers; i++ {
-		cluster[i].assoc(addr)
-	}
-	var w sync.WaitGroup
-	vClients := 1024
-	operations := 1000000
-	w.Add(vClients)
-	runtime.GOMAXPROCS(runtime.NumCPU())
-	clients := make([]*client.DBClient, vClients)
-	if oneClient {
-		c, err := client.Connect(addr)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer c.Close()
-		for i := range clients {
-			clients[i] = c
-		}
-	} else {
-		for i := range clients {
-			c, err := client.Connect(addr)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer c.Close()
-			clients[i] = c
-		}
-	}
-	//p := tlfmt.NewProgress("Operating...", operations)
-	ops := int32(0)
-	runtime.GC()
-	runtime.Gosched()
-	t1 := time.Now()
-	for i := 0; i < vClients; i++ {
-		go func(thread int) {
-			c := clients[thread]
-			value := make([]byte, 4)
-			rNext := randKVOpGenerator(4, 4, 4, thread+1, 2048, thread+1)
-			for atomic.AddInt32(&ops, 1) <= int32(operations) {
-				//p.Inc()
-				//Operate
-				op := rand.Float32()
-				_, key, _ := rNext()
-				//fmt.Println(op, key, value)
-				switch {
-				case op < pGet:
-					c.Get(key)
-				case op < pGet+pSet:
-					binary.LittleEndian.PutUint32(value, uint32(rand.Int()))
-					c.Set(key, value)
-				default:
-					c.Del(key)
-				}
-			}
-			w.Done()
-		}(i)
-	}
-	w.Wait()
-	t2 := time.Now()
-	//Print stats
-	str := "1 client"
-	if !oneClient {
-		str = "N clients"
-	}
-	str += " " + fmt.Sprint(vClients) + " parralel operators"
-	fmt.Println("\nMassive parallel workload simulation "+str, "Get/Set/Del", pGet, pSet, pDel, "- Results")
-	fmt.Println("Operations:", operations, "Throughput:", float64(operations)/(t2.Sub(t1).Seconds()), "ops/s\n")
-}
-
-func TestBenchSequentialS1(t *testing.T) {
-	testBenchSequential(t, 1)
-}
-
-//Test sequential throughtput and consistency
-func testBenchSequential(t *testing.T, servers int) {
-	addr := cluster[0].create(benchmarkingNumChunks, 2, false)
-	for i := 1; i < servers; i++ {
-		cluster[i].assoc(addr)
-	}
-
-	//Initialize vars
-	goMap := make(map[string][]byte)
-
-	//Sequential workload simulation
-	operations := 50000
-	p := tlfmt.NewProgress("Operating...", operations)
-	c, err := client.Connect(addr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer c.Close()
-	t1 := time.Now()
-	for i := 0; i < operations; i++ {
-		//fmt.Println(thread, i)
-		p.Inc()
-		//Operate
-		op := int(rand.Int31n(int32(3)))
-		key := make([]byte, 1)
-		key[0] = byte(1)
-		value := make([]byte, 4)
-		binary.LittleEndian.PutUint32(value, uint32(rand.Int63()))
-		//fmt.Println(op, key, value)
-		switch op {
-		case 0:
-			goMap[string(key)] = value
-			c.Set(key, value)
-		case 1:
-			delete(goMap, string(key))
-			c.Del(key)
-		case 2:
-			v2 := goMap[string(key)]
-			v1, _ := c.Get(key)
-			if !bytes.Equal(v1, v2) {
-				fmt.Println("Mismatch, server returned:", v1,
-					"gomap returned:", v2)
-				t.Error("Mismatch, server returned:", v1,
-					"gomap returned:", v2)
-			}
-		}
-	}
-	t2 := time.Now()
-	//Print stats
-	fmt.Println("\n\nSequential workload simulation - Results")
-	fmt.Println("Operations:", operations, "Throughput:", float64(operations)/(t2.Sub(t1).Seconds()), "ops/s\n")
 }

@@ -2,7 +2,6 @@ package test
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"time"
@@ -85,10 +84,10 @@ func (ps *procServer) create(numChunks, redundancy int, verbose bool) string {
 	return ps.phy
 }
 
-func (ps *procServer) assoc(addr string) string {
+func (ps *procServer) assoc(addr string, verbose bool) string {
 	ps.cmd = exec.Command("./treeless", "-assoc", addr, "-port",
 		fmt.Sprint(10000+ps.id), "-dbpath", ps.dbpath, "-localip", localIP)
-	if true {
+	if verbose {
 		ps.cmd.Stdout = os.Stdout
 		ps.cmd.Stderr = os.Stderr
 	}
@@ -107,7 +106,7 @@ func (ps *procServer) assoc(addr string) string {
 func (ps *procServer) kill() {
 	if ps.cmd != nil {
 		ps.cmd.Process.Signal(os.Kill)
-		log.Println("Killed", ps.dbpath)
+		//log.Println("Killed", ps.dbpath)
 		time.Sleep(time.Millisecond * 10)
 		if ps.dbpath != "" {
 			os.RemoveAll(ps.dbpath)

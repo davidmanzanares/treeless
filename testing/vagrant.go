@@ -117,7 +117,7 @@ func (vs *vagrantServer) create(numChunks, redundancy int, verbose bool) string 
 	return vs.addr()
 }
 
-func (vs *vagrantServer) assoc(addr string) string {
+func (vs *vagrantServer) assoc(addr string, verbose bool) string {
 	//Stop
 	vs.vagrantSSH("killall -q treeless; rm -f /home/vagrant/treeless.*")
 	//Start and assoc
