@@ -3,7 +3,7 @@ package servergroup
 import (
 	"sync"
 	"time"
-	"treeless/tlcom"
+	"treeless/com"
 )
 
 //VirtualServer stores generical server info

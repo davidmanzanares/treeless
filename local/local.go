@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 	"treeless/hashing"
-	"treeless/pmap"
+	"treeless/local/pmap"
 )
 
 //Core provides an interface to access local stored chunks

@@ -8,7 +8,7 @@ import (
 	"sort"
 	"sync"
 	"time"
-	"treeless/tlcom"
+	"treeless/com"
 )
 
 //Hide virtuals

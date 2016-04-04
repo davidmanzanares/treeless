@@ -1,10 +1,11 @@
-package tlproto
+package buffconn
 
 import (
 	"encoding/binary"
 	"log"
 	"net"
 	"time"
+	"treeless/com/protocol"
 )
 
 //For maximum performance set this variable to the MSS(maximum segment size)
@@ -27,84 +28,17 @@ const windowFastModeEnable = time.Microsecond * 50
 
 */
 
-const minimumMessageSize = 13
-
 const fastModeEnable = true
-
-//Operation represents a DB operation or result, the Message type
-type Operation uint8
-
-//These constants represents the different message types
-const (
-	OpNil Operation = iota
-	OpGet
-	OpSet
-	OpDel
-	OpCAS
-	OpSetOK
-	OpDelOK
-	OpCASOK
-	OpGetResponse
-	OpGetConf
-	OpGetConfResponse
-	OpAddServerToGroup
-	OpAddServerToGroupACK
-	OpGetChunkInfo
-	OpGetChunkInfoResponse
-	OpTransfer
-	OpTransferCompleted
-	OpProtect
-	OpProtectOK
-	OpErr
-)
-
-//Message represents a DB message that can be sent and recieved using a network
-type Message struct {
-	Type            Operation
-	ID              uint32
-	Key, Value      []byte
-	ResponseChannel chan Message //Only used for inconming messages, buffered reader will set it to the connection write channel
-}
 
 //NewBufferedConn creates a new buffered tlproto connection that uses an existing TCP connection (conn).
 //It returns a writeChannel, use it to send messages throught conn
 //It recieves a readChannel, inconming messages will be sent to this channel
 //Close it by closing conn and writeChannel
-func NewBufferedConn(conn *net.TCPConn, fromWorld chan<- Message) (toWorldChannel chan<- Message) {
-	toWorld := make(chan Message, 1024)
+func NewBufferedConn(conn *net.TCPConn, fromWorld chan<- protocol.Message) (toWorldChannel chan<- protocol.Message) {
+	toWorld := make(chan protocol.Message, 1024)
 	go bufferedWriter(conn, toWorld)
 	go bufferedReader(conn, fromWorld, toWorld)
 	return toWorld
-}
-
-//Write serializes the message on the destination buffer
-func (m *Message) write(dest []byte) (msgSize int, tooLong bool) {
-
-	size := len(m.Key) + len(m.Value) + 13
-
-	if size > len(dest) {
-		return size, true
-	}
-
-	binary.LittleEndian.PutUint32(dest[0:4], uint32(size))
-	binary.LittleEndian.PutUint32(dest[4:8], m.ID)
-	binary.LittleEndian.PutUint32(dest[8:12], uint32(len(m.Key)))
-	dest[12] = byte(m.Type)
-	copy(dest[13:], m.Key)
-	copy(dest[13+len(m.Key):], m.Value)
-	return size, false
-}
-
-//Read unserializes a message from a buffer
-func read(src []byte) (m Message) {
-	m.ID = binary.LittleEndian.Uint32(src[4:8])
-	keySize := binary.LittleEndian.Uint32(src[8:12])
-	m.Type = Operation(src[12])
-	array := make([]byte, len(src[13:]))
-	copy(array, src[13:])
-	m.Key = array[:keySize]
-	m.Value = array[keySize:]
-	return m
 }
 
 func tcpWrite(conn *net.TCPConn, buffer []byte) error {
@@ -129,7 +63,7 @@ func tcpWrite(conn *net.TCPConn, buffer []byte) error {
 //Close the channel to stop the infinite listening loop.
 //
 //This function blocks, typical usage will be "go bufferedWriter(...)""
-func bufferedWriter(conn *net.TCPConn, toWorld <-chan Message) {
+func bufferedWriter(conn *net.TCPConn, toWorld <-chan protocol.Message) {
 	var ticker *time.Ticker
 	dirty := false
 	buffer := make([]byte, bufferSize)
@@ -149,7 +83,7 @@ func bufferedWriter(conn *net.TCPConn, toWorld <-chan Message) {
 				return
 			}
 			//Append message to buffer
-			msgSize, tooLong := m.write(buffer[index:])
+			msgSize, tooLong := m.Marshal(buffer[index:])
 			sents++
 			if !tooLong {
 				err := tcpWrite(conn, buffer[0:msgSize])
@@ -164,7 +98,7 @@ func bufferedWriter(conn *net.TCPConn, toWorld <-chan Message) {
 				}
 			} else {
 				bigMsg := make([]byte, msgSize)
-				m.write(bigMsg)
+				m.Marshal(bigMsg)
 				err := tcpWrite(conn, bigMsg)
 				if err != nil {
 					continue
@@ -203,7 +137,7 @@ func bufferedWriter(conn *net.TCPConn, toWorld <-chan Message) {
 					return
 				}
 				//Append message to buffer
-				msgSize, tooLong := m.write(buffer[index:])
+				msgSize, tooLong := m.Marshal(buffer[index:])
 				sents++
 				if tooLong {
 					//Message too long for the buffer remaining space
@@ -219,14 +153,14 @@ func bufferedWriter(conn *net.TCPConn, toWorld <-chan Message) {
 						//Too big message for the buffer (even if empty)
 						//Send this message
 						bigMsg := make([]byte, msgSize)
-						m.write(bigMsg)
+						m.Marshal(bigMsg)
 						err := tcpWrite(conn, bigMsg)
 						if err != nil {
 							continue
 						}
 					} else {
 						//Add msg to the buffer
-						m.write(buffer)
+						m.Marshal(buffer)
 						index += msgSize
 						dirty = true
 					}
@@ -243,7 +177,7 @@ func bufferedWriter(conn *net.TCPConn, toWorld <-chan Message) {
 //bufferedReader reads messages from conn and sends them to readChannel
 //Close the socket to end the infinite listening loop
 //This function blocks, typical usage: "go bufferedReader(...)"
-func bufferedReader(conn *net.TCPConn, fromWorld chan<- Message, toWorld chan Message) error {
+func bufferedReader(conn *net.TCPConn, fromWorld chan<- protocol.Message, toWorld chan protocol.Message) error {
 	//Ping-pong between buffers
 	var slices [2][]byte
 	slices[0] = make([]byte, bufferSize)
@@ -253,7 +187,7 @@ func bufferedReader(conn *net.TCPConn, fromWorld chan<- Message, toWorld chan Me
 
 	index := 0 //Write index
 	for {
-		if index < minimumMessageSize {
+		if index < protocol.MinimumMessageSize {
 			//Not enought bytes read to form a message, read more
 			n, err := conn.Read(buffer[index:])
 			if err != nil {
@@ -280,8 +214,7 @@ func bufferedReader(conn *net.TCPConn, fromWorld chan<- Message, toWorld chan Me
 				}
 				index = index + n
 			}
-			msg := read(bigBuffer)
-			msg.ResponseChannel = toWorld
+			msg := protocol.Unmarshal(bigBuffer)
 			fromWorld <- msg
 			index = 0
 			continue
@@ -298,8 +231,7 @@ func bufferedReader(conn *net.TCPConn, fromWorld chan<- Message, toWorld chan Me
 			continue
 		}
 
-		msg := read(buffer[:messageSize])
-		msg.ResponseChannel = toWorld
+		msg := protocol.Unmarshal(buffer[:messageSize])
 		fromWorld <- msg
 
 		//Buffer ping-pong

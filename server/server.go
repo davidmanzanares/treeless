@@ -7,14 +7,13 @@ import (
 	"log"
 	"runtime/debug"
 	"time"
+	"treeless/com"
+	"treeless/com/protocol"
+	"treeless/dist/heartbeat"
+	"treeless/dist/rebalance"
+	"treeless/dist/servergroup"
 	"treeless/hashing"
-	"treeless/heartbeat"
 	"treeless/local"
-	"treeless/rebalance"
-	"treeless/servergroup"
-	"treeless/tlcom"
-	"treeless/tlcom/tlproto"
-	"treeless/tlcom/udp"
 )
 
 //Server listen to TCP & UDP, accepting connections and responding to clients
@@ -117,8 +116,8 @@ func (s *DBServer) LogInfo() {
 }
 
 func udpCreateReplier(sg *servergroup.ServerGroup, lh *local.Core) tlcom.UDPCallback {
-	return func() tlUDP.AmAlive {
-		var r tlUDP.AmAlive
+	return func() protocol.AmAlive {
+		var r protocol.AmAlive
 		r.KnownChunks = lh.KnownChunksList()
 		r.KnownServers = sg.KnownServers()
 		//log.Println("UDP AA", r)
@@ -126,11 +125,11 @@ func udpCreateReplier(sg *servergroup.ServerGroup, lh *local.Core) tlcom.UDPCall
 	}
 }
 
-func worker(s *DBServer) (work func(message tlproto.Message) (response tlproto.Message)) {
-	return func(message tlproto.Message) (response tlproto.Message) {
+func worker(s *DBServer) (work func(message protocol.Message) (response protocol.Message)) {
+	return func(message protocol.Message) (response protocol.Message) {
 		//fmt.Println("Server", "message recieved", string(message.Key), string(message.Value), message.Type)
 		switch message.Type {
-		case tlproto.OpGet:
+		case protocol.OpGet:
 			rval, _ := s.lh.Get(message.Key)
 			//cid := tlhash.GetChunkID(message.Key, s.sg.NumChunks)
 			/*if s.sg.ChunkStatus(cid) != ChunkSynched {
@@ -139,11 +138,11 @@ func worker(s *DBServer) (work func(message tlproto.Message) (response tlproto.M
 			//fmt.Println(s.sg.ChunkStatus(cid), cid)
 			//fmt.Println("Get operation", message.Key, rval, err)
 			response.ID = message.ID
-			response.Type = tlproto.OpGetResponse
+			response.Type = protocol.OpResponse
 			response.Value = rval
 			return response
-		case tlproto.OpSet:
-			var response tlproto.Message
+		case protocol.OpSet:
+			var response protocol.Message
 
 			if len(message.Value) < 8 {
 				log.Println("Error: message value len < 8")
@@ -152,14 +151,14 @@ func worker(s *DBServer) (work func(message tlproto.Message) (response tlproto.M
 			err := s.lh.Set(message.Key, message.Value)
 			response.ID = message.ID
 			if err == nil {
-				response.Type = tlproto.OpSetOK
+				response.Type = protocol.OpOK
 			} else {
-				response.Type = tlproto.OpErr
+				response.Type = protocol.OpErr
 				response.Value = []byte(err.Error())
 			}
 			return response
-		case tlproto.OpCAS:
-			var response tlproto.Message
+		case protocol.OpCAS:
+			var response protocol.Message
 			if len(message.Value) < 24 {
 				log.Println("Error: CAS value len < 16")
 				return response
@@ -170,7 +169,7 @@ func worker(s *DBServer) (work func(message tlproto.Message) (response tlproto.M
 				response.ID = message.ID
 				response.Key = make([]byte, 1)
 				response.Key[0] = 1
-				response.Type = tlproto.OpErr
+				response.Type = protocol.OpErr
 				response.Value = []byte("Not Synched")
 				return response
 			}
@@ -178,28 +177,28 @@ func worker(s *DBServer) (work func(message tlproto.Message) (response tlproto.M
 			response.ID = message.ID
 			response.Key = make([]byte, 1)
 			if err == nil {
-				response.Type = tlproto.OpCASOK
+				response.Type = protocol.OpOK
 			} else {
-				response.Type = tlproto.OpErr
+				response.Type = protocol.OpErr
 				response.Value = []byte(err.Error())
 			}
 			return response
-		case tlproto.OpDel:
-			var response tlproto.Message
+		case protocol.OpDel:
+			var response protocol.Message
 			s.lh.Delete(message.Key, message.Value)
 			response.ID = message.ID
-			response.Type = tlproto.OpDelOK
+			response.Type = protocol.OpOK
 			return response
-		case tlproto.OpTransfer:
+		case protocol.OpTransfer:
 			var chunkID int
 			err := json.Unmarshal(message.Key, &chunkID)
 			if err != nil {
 				panic(string(message.Key) + err.Error())
 			}
-			transferFail := func() tlproto.Message {
-				var response tlproto.Message
+			transferFail := func() protocol.Message {
+				var response protocol.Message
 				response.ID = message.ID
-				response.Type = tlproto.OpErr
+				response.Type = protocol.OpErr
 				return response
 			}
 			if s.lh.ChunkStatus(chunkID) == local.ChunkSynched {
@@ -228,16 +227,16 @@ func worker(s *DBServer) (work func(message tlproto.Message) (response tlproto.M
 					if err == nil {
 						fmt.Println("Transfer operation completed, pairs:", i)
 						c.Close()
-						var response tlproto.Message
+						var response protocol.Message
 						response.ID = message.ID
-						response.Type = tlproto.OpTransferCompleted
+						response.Type = protocol.OpOK
 						return response
 					}
 					//TODO transfer aborted
 					log.Println("Transfer error:", err)
-					var response tlproto.Message
+					var response protocol.Message
 					response.ID = message.ID
-					response.Type = tlproto.OpErr
+					response.Type = protocol.OpErr
 					response.Value = []byte(err.Error())
 					c.Close()
 					return response
@@ -245,45 +244,45 @@ func worker(s *DBServer) (work func(message tlproto.Message) (response tlproto.M
 			} else {
 				return transferFail()
 			}
-		case tlproto.OpGetConf:
-			var response tlproto.Message
+		case protocol.OpGetConf:
+			var response protocol.Message
 			response.ID = message.ID
-			response.Type = tlproto.OpGetConfResponse
+			response.Type = protocol.OpResponse
 			b, err := s.sg.Marshal()
 			if err != nil {
 				panic(err)
 			}
 			response.Value = b
 			return response
-		case tlproto.OpAddServerToGroup:
-			var response tlproto.Message
+		case protocol.OpAddServerToGroup:
+			var response protocol.Message
 			response.ID = message.ID
 			s.sg.AddServerToGroup(string(message.Key))
-			response.Type = tlproto.OpAddServerToGroupACK
+			response.Type = protocol.OpOK
 			return response
-		case tlproto.OpGetChunkInfo:
-			var response tlproto.Message
+		case protocol.OpGetChunkInfo:
+			var response protocol.Message
 			response.ID = message.ID
 			chunkID := int(binary.LittleEndian.Uint32(message.Key))
-			response.Type = tlproto.OpGetChunkInfoResponse
+			response.Type = protocol.OpResponse
 			response.Value = make([]byte, 8)
 			length := s.lh.LengthOfChunk(chunkID)
 			binary.LittleEndian.PutUint64(response.Value, length)
 			return response
-		case tlproto.OpProtect:
-			var response tlproto.Message
+		case protocol.OpProtect:
+			var response protocol.Message
 			response.ID = message.ID
 			chunkID := binary.LittleEndian.Uint32(message.Key)
 			if s.lh.ChunkStatus(int(chunkID)) == local.ChunkSynched && s.sg.NumHolders(int(chunkID)) > s.sg.Redundancy() {
-				response.Type = tlproto.OpProtectOK
+				response.Type = protocol.OpOK
 			} else {
-				response.Type = tlproto.OpErr
+				response.Type = protocol.OpErr
 			}
 			return response
 		default:
-			var response tlproto.Message
+			var response protocol.Message
 			response.ID = message.ID
-			response.Type = tlproto.OpErr
+			response.Type = protocol.OpErr
 			response.Value = []byte("Operation not supported")
 			return response
 		}

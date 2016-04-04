@@ -8,7 +8,8 @@ import (
 	"net"
 	"sync"
 	"time"
-	"treeless/tlcom/tlproto"
+	"treeless/com/buffconn"
+	"treeless/com/protocol"
 )
 
 var brokerTick = time.Millisecond * 30
@@ -27,7 +28,7 @@ type Conn struct {
 }
 
 type ResponserMsg struct {
-	mess    tlproto.Message
+	mess    protocol.Message
 	timeout time.Duration
 	rch     chan Result
 }
@@ -64,8 +65,8 @@ type timeoutMsg struct {
 }
 
 func broker(c *Conn, onClose func()) {
-	fromWorld := make(chan tlproto.Message, 1024)
-	toWorld := tlproto.NewBufferedConn(c.conn, fromWorld)
+	fromWorld := make(chan protocol.Message, 1024)
+	toWorld := buffconn.NewBufferedConn(c.conn, fromWorld)
 	waits := make(map[uint32]chan<- Result)
 	tid := uint32(0)
 	pq := make([]timeoutMsg, 0, 64)
@@ -183,25 +184,11 @@ func broker(c *Conn, onClose func()) {
 				delete(waits, m.ID)
 				//l.Remove(w.el)
 				switch m.Type {
-				case tlproto.OpGetResponse:
+				case protocol.OpResponse:
 					ch <- Result{m.Value, nil}
-				case tlproto.OpSetOK:
+				case protocol.OpOK:
 					ch <- Result{nil, nil}
-				case tlproto.OpDelOK:
-					ch <- Result{nil, nil}
-				case tlproto.OpCASOK:
-					ch <- Result{nil, nil}
-				case tlproto.OpProtectOK:
-					ch <- Result{nil, nil}
-				case tlproto.OpGetConfResponse:
-					ch <- Result{m.Value, nil}
-				case tlproto.OpAddServerToGroupACK:
-					ch <- Result{nil, nil}
-				case tlproto.OpGetChunkInfoResponse:
-					ch <- Result{m.Value, nil}
-				case tlproto.OpTransferCompleted:
-					ch <- Result{nil, nil}
-				case tlproto.OpErr:
+				case protocol.OpErr:
 					ch <- Result{nil, errors.New("Response error: " + string(m.Value))}
 				default:
 					ch <- Result{nil, errors.New("Invalid response operation code: " + fmt.Sprint(m.Type))}
@@ -216,7 +203,7 @@ func (c *Conn) Close() {
 	close(c.responseChannel)
 }
 
-func (c *Conn) send(opType tlproto.Operation, key, value []byte,
+func (c *Conn) send(opType protocol.Operation, key, value []byte,
 	timeout time.Duration) chan Result {
 	if timeout == 0 {
 		//Send-only
@@ -238,7 +225,7 @@ func (c *Conn) send(opType tlproto.Operation, key, value []byte,
 	return m.rch
 }
 
-func (c *Conn) sendAndReceive(opType tlproto.Operation, key, value []byte,
+func (c *Conn) sendAndReceive(opType protocol.Operation, key, value []byte,
 	timeout time.Duration) Result {
 	rch := c.send(opType, key, value, timeout)
 	if rch == nil {
@@ -312,7 +299,7 @@ func (c *Conn) Get(key []byte, timeout time.Duration) GetOperation {
 	if timeout <= 0 {
 		panic("get timeout <=0")
 	}
-	ch := c.send(tlproto.OpGet, key, nil, timeout)
+	ch := c.send(protocol.OpGet, key, nil, timeout)
 	if ch == nil {
 		panic("xnil")
 	}
@@ -321,13 +308,13 @@ func (c *Conn) Get(key []byte, timeout time.Duration) GetOperation {
 
 //Set a new key/value pair
 func (c *Conn) Set(key []byte, value []byte, timeout time.Duration) SetOperation {
-	ch := c.send(tlproto.OpSet, key, value, timeout)
+	ch := c.send(protocol.OpSet, key, value, timeout)
 	return SetOperation{rch: ch, c: c}
 }
 
 //Del deletes a key/value pair
 func (c *Conn) Del(key []byte, value []byte, timeout time.Duration) DelOperation {
-	ch := c.send(tlproto.OpDel, key, value, timeout)
+	ch := c.send(protocol.OpDel, key, value, timeout)
 	return DelOperation{rch: ch, c: c}
 }
 
@@ -335,7 +322,7 @@ func (c *Conn) CAS(key []byte, value []byte, timeout time.Duration) CASOperation
 	if timeout <= 0 {
 		panic("CAS timeout <=0")
 	}
-	ch := c.send(tlproto.OpCAS, key, value, timeout)
+	ch := c.send(protocol.OpCAS, key, value, timeout)
 	return CASOperation{rch: ch, c: c}
 }
 
@@ -346,27 +333,27 @@ func (c *Conn) Transfer(addr string, chunkID int) error {
 		panic(err)
 	}
 	value := []byte(addr)
-	r := c.sendAndReceive(tlproto.OpTransfer, key, value, 500*time.Millisecond)
+	r := c.sendAndReceive(protocol.OpTransfer, key, value, 500*time.Millisecond)
 	return r.Err
 }
 
 //GetAccessInfo request DB access info
 func (c *Conn) GetAccessInfo() ([]byte, error) {
-	r := c.sendAndReceive(tlproto.OpGetConf, nil, nil, 500*time.Millisecond)
+	r := c.sendAndReceive(protocol.OpGetConf, nil, nil, 500*time.Millisecond)
 	return r.Value, r.Err
 }
 
 //AddServerToGroup request to add this server to the server group
 func (c *Conn) AddServerToGroup(addr string) error {
 	key := []byte(addr)
-	r := c.sendAndReceive(tlproto.OpAddServerToGroup, key, nil, 500*time.Millisecond)
+	r := c.sendAndReceive(protocol.OpAddServerToGroup, key, nil, 500*time.Millisecond)
 	return r.Err
 }
 
 func (c *Conn) Protect(chunkID int) error {
 	key := make([]byte, 4) //TODO static array
 	binary.LittleEndian.PutUint32(key, uint32(chunkID))
-	r := c.sendAndReceive(tlproto.OpProtect, key, nil, 500*time.Millisecond)
+	r := c.sendAndReceive(protocol.OpProtect, key, nil, 500*time.Millisecond)
 	if r.Err != nil {
 		return r.Err
 	}
@@ -377,7 +364,7 @@ func (c *Conn) Protect(chunkID int) error {
 func (c *Conn) GetChunkInfo(chunkID int) (size uint64, err error) {
 	key := make([]byte, 4) //TODO static array
 	binary.LittleEndian.PutUint32(key, uint32(chunkID))
-	r := c.sendAndReceive(tlproto.OpGetChunkInfo, key, nil, 500*time.Millisecond)
+	r := c.sendAndReceive(protocol.OpGetChunkInfo, key, nil, 500*time.Millisecond)
 	if r.Err != nil {
 		return 0, r.Err
 	}

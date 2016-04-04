@@ -5,8 +5,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"treeless/servergroup"
-	"treeless/tlcom/udp"
+	"treeless/com/udpconn"
+	"treeless/dist/servergroup"
 )
 
 var heartbeatTimeout = time.Millisecond * 500
@@ -43,13 +43,13 @@ func Start(sg *servergroup.ServerGroup) *Heartbeater {
 			queryList := sg.Servers()
 			for _, qs := range queryList {
 				addr := qs.Phy
-				aa, err := tlUDP.Request(addr, heartbeatTimeout)
+				aa, err := udpconn.Request(addr, heartbeatTimeout)
 				if err == nil {
 					delete(timeouts, qs.Phy)
 					//Detect added servers
 					for _, s := range aa.KnownServers {
 						if !sg.IsServerOnGroup(s) {
-							_, err := tlUDP.Request(s, heartbeatTimeout)
+							_, err := udpconn.Request(s, heartbeatTimeout)
 							if err == nil {
 								//Add new server to queryList
 								sg.AddServerToGroup(s) //TODO fast addition

@@ -11,10 +11,10 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"time"
-	"treeless/heartbeat"
+	"treeless/com"
+	"treeless/dist/heartbeat"
+	"treeless/dist/servergroup"
 	"treeless/server"
-	"treeless/servergroup"
-	"treeless/tlcom"
 )
 import _ "net/http/pprof"
 

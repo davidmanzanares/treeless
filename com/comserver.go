@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"net"
 	"sync/atomic"
-	"treeless/tlcom/tlproto"
-	"treeless/tlcom/udp"
+	"treeless/com/buffconn"
+	"treeless/com/protocol"
+	"treeless/com/udpconn"
 )
 
 //Server listen to TCP & UDP, accepting connections and responding to clients
@@ -18,16 +19,16 @@ type Server struct {
 	stopped int32
 }
 
-type TCPCallback func(write chan<- tlproto.Message, read <-chan tlproto.Message)
-type UDPCallback func() tlUDP.AmAlive
+type TCPCallback func(write chan<- protocol.Message, read <-chan protocol.Message)
+type UDPCallback func() protocol.AmAlive
 
 //Start a Treeless server
-func Start(addr string, localIP string, localport int, worker func(tlproto.Message) (response tlproto.Message), udpc UDPCallback) *Server {
+func Start(addr string, localIP string, localport int, worker func(protocol.Message) (response protocol.Message), udpc UDPCallback) *Server {
 	var s Server
 	//Init server
 	s.localIP = localIP
 	listenConnections(&s, localport, worker)
-	s.udpCon = tlUDP.Reply(tlUDP.ReplyCallback(udpc), localport)
+	s.udpCon = udpconn.Reply(udpconn.ReplyCallback(udpc), localport)
 	return &s
 }
 
@@ -43,20 +44,18 @@ func (s *Server) Stop() {
 	s.tcpListener.Close()
 }
 
-func listenRequests(conn *net.TCPConn, id int, worker func(tlproto.Message) (response tlproto.Message)) {
+func listenRequests(conn *net.TCPConn, id int, worker func(protocol.Message) (response protocol.Message)) {
 	//log.Println("New connection accepted. Connection ID:", id)
 	//tcpWriter will buffer TCP writes to send more message in less TCP packets
 	//this technique allows bigger throughtputs, but latency in increased a little
-	ch := make(chan tlproto.Message, 1024)
-	toWorld := tlproto.NewBufferedConn(conn, ch)
+	ch := make(chan protocol.Message, 1024)
+	toWorld := buffconn.NewBufferedConn(conn, ch)
 	go func() {
 		for {
 			m, ok := <-ch
 			if ok {
 				response := worker(m)
-				if response.Type != tlproto.OpNil {
-					toWorld <- response
-				}
+				toWorld <- response
 			} else {
 				//log.Println("Server: connection closed", conn.RemoteAddr())
 				close(toWorld)
@@ -69,7 +68,7 @@ func listenRequests(conn *net.TCPConn, id int, worker func(tlproto.Message) (res
 
 }
 
-func listenConnections(s *Server, port int, worker func(tlproto.Message) (response tlproto.Message)) {
+func listenConnections(s *Server, port int, worker func(protocol.Message) (response protocol.Message)) {
 	taddr, err := net.ResolveTCPAddr("tcp", s.localIP+":"+fmt.Sprint(port))
 	if err != nil {
 		panic(err)

@@ -1,4 +1,4 @@
-package tltest
+package test
 
 import (
 	"time"

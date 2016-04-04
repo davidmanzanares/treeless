@@ -3,7 +3,7 @@ package local
 import (
 	"log"
 	"treeless/hashing"
-	"treeless/pmap"
+	"treeless/local/pmap"
 )
 
 const defragBufferSize = 256
