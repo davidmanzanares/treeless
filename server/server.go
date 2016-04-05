@@ -116,12 +116,12 @@ func (s *DBServer) LogInfo() {
 }
 
 func udpCreateReplier(sg *servergroup.ServerGroup, lh *local.Core) tlcom.UDPCallback {
-	return func() protocol.AmAlive {
+	return func() protocol.ShortAmAlive {
 		var r protocol.AmAlive
 		r.KnownChunks = lh.KnownChunksList()
 		r.KnownServers = sg.KnownServers()
 		//log.Println("UDP AA", r)
-		return r
+		return r.Short()
 	}
 }
 
@@ -253,6 +253,15 @@ func worker(s *DBServer) (work func(message protocol.Message) (response protocol
 				panic(err)
 			}
 			response.Value = b
+			return response
+		case protocol.OpAmAliveRequest:
+			var response protocol.Message
+			response.ID = message.ID
+			response.Type = protocol.OpResponse
+			var aa protocol.AmAlive
+			aa.KnownChunks = s.lh.KnownChunksList()
+			aa.KnownServers = s.sg.KnownServers()
+			response.Value = aa.Marshal()
 			return response
 		case protocol.OpAddServerToGroup:
 			var response protocol.Message

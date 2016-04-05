@@ -5,6 +5,7 @@ Core:
 
 Com:
 	Binary udp
+	CreateConnection timeout arg
 
 Dist:
 	Backwards repair

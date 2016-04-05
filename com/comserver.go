@@ -20,7 +20,7 @@ type Server struct {
 }
 
 type TCPCallback func(write chan<- protocol.Message, read <-chan protocol.Message)
-type UDPCallback func() protocol.AmAlive
+type UDPCallback func() protocol.ShortAmAlive
 
 //Start a Treeless server
 func Start(addr string, localIP string, localport int, worker func(protocol.Message) (response protocol.Message), udpc UDPCallback) *Server {

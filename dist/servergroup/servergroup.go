@@ -222,6 +222,17 @@ func (sg *ServerGroup) KnownServers() []string {
 	sg.mutex.RUnlock()
 	return list
 }
+func (sg *ServerGroup) GetServerChunks(addr string) []int {
+	sg.mutex.Lock()
+	defer sg.mutex.Unlock()
+	s, ok := sg.servers[addr]
+	if !ok {
+		return nil
+	}
+	c := make([]int, len(s.heldChunks))
+	copy(c, s.heldChunks)
+	return c
+}
 
 /*
 	ServerGroup setters

@@ -1,9 +1,13 @@
 package heartbeat
 
 import (
+	"errors"
 	"log"
+	"net"
 	"sync/atomic"
 	"time"
+	"treeless/com/buffconn"
+	"treeless/com/protocol"
 	"treeless/com/udpconn"
 	"treeless/dist/servergroup"
 )
@@ -29,8 +33,40 @@ func (h *Heartbeater) Stop() {
 	atomic.StoreInt32(&h.stop, 1)
 }
 
+func getaa(addr string) (*protocol.AmAlive, error) {
+	d := &net.Dialer{Timeout: time.Second}
+	conn, err := d.Dial("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	readch := make(chan protocol.Message)
+	writech := buffconn.NewBufferedConn(conn.(*net.TCPConn), readch)
+	writech <- protocol.Message{Type: protocol.OpAmAliveRequest}
+	select {
+	case <-time.After(time.Second):
+		conn.Close()
+		close(writech)
+		return nil, errors.New("Reseponse timeout")
+	case m := <-readch:
+		conn.Close()
+		close(writech)
+		return protocol.AmAliveUnMarshal(m.Value)
+	}
+}
+
 func (h *Heartbeater) request(addr string) (ok bool) {
-	aa, err := udpconn.Request(addr, heartbeatTimeout)
+	saa, err := udpconn.Request(addr, heartbeatTimeout)
+	if err == nil {
+		var ourAA protocol.AmAlive
+		ourAA.KnownChunks = h.sg.GetServerChunks(addr)
+		ourAA.KnownServers = h.sg.KnownServers()
+		if *saa == ourAA.Short() {
+			//Fast path
+			return true
+		}
+	}
+	//Slow path
+	aa, err := getaa(addr)
 	if err != nil {
 		if h.sg.IsServerOnGroup(addr) {
 			h.timeouts[addr] = h.timeouts[addr] + 1

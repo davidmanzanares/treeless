@@ -18,6 +18,7 @@ const (
 	OpGetChunkInfo
 	OpProtect
 	OpTransfer
+	OpAmAliveRequest
 	//Responses
 	OpOK
 	OpErr

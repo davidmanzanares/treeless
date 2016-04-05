@@ -8,7 +8,7 @@ import (
 )
 
 //ReplyCallback is a function type that should return an AmAlive message
-type ReplyCallback func() protocol.AmAlive
+type ReplyCallback func() protocol.ShortAmAlive
 
 //Reply listens and response to UDP requests
 func Reply(callback ReplyCallback, udpPort int) net.Conn {
@@ -23,8 +23,8 @@ func Reply(callback ReplyCallback, udpPort int) net.Conn {
 				conn.Close()
 				return
 			}
-			aa := callback()
-			_, err = conn.WriteTo(aa.Marshal(), addr)
+			saa := callback()
+			_, err = conn.WriteTo(saa.Marshal(), addr)
 			if err != nil {
 				log.Println(err)
 			}
@@ -34,7 +34,7 @@ func Reply(callback ReplyCallback, udpPort int) net.Conn {
 }
 
 //Request sends a UDP request to ip with a timeout, it waits until the timeout for a response
-func Request(addr string, timeout time.Duration) (response *protocol.AmAlive, err error) {
+func Request(addr string, timeout time.Duration) (response *protocol.ShortAmAlive, err error) {
 	conn, err := net.ListenUDP("udp", nil)
 	if err != nil {
 		return nil, err
@@ -47,12 +47,12 @@ func Request(addr string, timeout time.Duration) (response *protocol.AmAlive, er
 	conn.SetDeadline(time.Now().Add(timeout))
 	conn.WriteTo([]byte("ping"), destAddr)
 	for {
-		message := make([]byte, protocol.MaxHeartbeatSize)
+		message := make([]byte, protocol.MaxShortHeartbeatSize)
 		n, readAddr, err := conn.ReadFromUDP(message)
 		if err != nil {
 			return nil, err
 		} else if readAddr.IP.Equal(destAddr.IP) {
-			return protocol.AmAliveUnMarshal(message[:n])
+			return protocol.ShortAmAliveUnMarshal(message[:n])
 		}
 	}
 }
