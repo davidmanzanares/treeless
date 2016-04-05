@@ -2,7 +2,6 @@ package heartbeat
 
 import (
 	"log"
-	"sync"
 	"sync/atomic"
 	"time"
 	"treeless/com/udpconn"
@@ -21,6 +20,8 @@ type Heartbeater struct {
 	Timeout        time.Duration
 	TimeoutRetries time.Duration
 	stop           int32
+	timeouts       map[string]int
+	sg             *servergroup.ServerGroup
 }
 
 //Stop requesting and listening to heartbeats
@@ -28,58 +29,63 @@ func (h *Heartbeater) Stop() {
 	atomic.StoreInt32(&h.stop, 1)
 }
 
+func (h *Heartbeater) request(addr string) (ok bool) {
+	aa, err := udpconn.Request(addr, heartbeatTimeout)
+	if err != nil {
+		if h.sg.IsServerOnGroup(addr) {
+			h.timeouts[addr] = h.timeouts[addr] + 1
+			if h.timeouts[addr] > 3 {
+				delete(h.timeouts, addr)
+				//Server is dead
+				log.Println("Server is dead:", addr)
+				h.sg.RemoveServer(addr)
+			}
+		} else {
+			delete(h.timeouts, addr)
+		}
+		return false
+	}
+	delete(h.timeouts, addr)
+	if !h.sg.IsServerOnGroup(addr) {
+		h.sg.AddServerToGroup(addr)
+	}
+	h.sg.SetServerChunks(addr, aa.KnownChunks)
+	//Detect added servers
+	for _, s := range aa.KnownServers {
+		if !h.sg.IsServerOnGroup(s) {
+			h.request(s)
+		}
+	}
+	return true
+}
+
 //Start a new heartbeater in the background and introduce the changes into sg
 //It blocks until the first heartbeat of each server is served
 func Start(sg *servergroup.ServerGroup) *Heartbeater {
 	h := new(Heartbeater)
-	var w sync.WaitGroup //Wait for the first round
-	w.Add(1)
+	h.timeouts = make(map[string]int)
+	h.sg = sg
+	for _, s := range sg.Servers() {
+		h.request(s.Phy)
+	}
 	go func() {
-		timeouts := make(map[string]int)
 		ticker := time.NewTicker(heartbeatSleep)
 		defer ticker.Stop()
-		firstRun := true
 		for atomic.LoadInt32(&h.stop) == 0 {
 			queryList := sg.Servers()
-			for _, qs := range queryList {
-				addr := qs.Phy
-				aa, err := udpconn.Request(addr, heartbeatTimeout)
-				if err == nil {
-					delete(timeouts, qs.Phy)
-					//Detect added servers
-					for _, s := range aa.KnownServers {
-						if !sg.IsServerOnGroup(s) {
-							_, err := udpconn.Request(s, heartbeatTimeout)
-							if err == nil {
-								//Add new server to queryList
-								sg.AddServerToGroup(s) //TODO fast addition
-							}
-						}
-					}
-					sg.SetServerChunks(addr, aa.KnownChunks)
-				} else {
-					timeouts[qs.Phy] = timeouts[qs.Phy] + 1
-					if timeouts[qs.Phy] > 3 {
-						//Server is dead
-						log.Println("Server is dead:", qs.Phy)
-						delete(timeouts, qs.Phy)
-						sg.RemoveServer(qs.Phy)
-					}
-				}
-				if !firstRun {
-					<-ticker.C
-				}
-			}
-			if firstRun {
-				w.Done()
-				firstRun = false
-			}
 			if len(queryList) == 0 {
 				log.Println("Heartbeat querylist empty")
 				return
 			}
+			for _, qs := range queryList {
+				for i := 0; i < 5; i++ {
+					if h.request(qs.Phy) {
+						break
+					}
+				}
+				<-ticker.C
+			}
 		}
 	}()
-	w.Wait()
 	return h
 }

@@ -21,6 +21,7 @@ Test:
 	Space per chunk tests (hash quality tests)
 
 Others:
+	Free non used communications
 	Stoppers
 	Stats
 	Memprofile
