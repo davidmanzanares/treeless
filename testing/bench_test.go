@@ -14,16 +14,15 @@ import (
 )
 
 func TestBenchParallelEachS1_G90_S10_D0(t *testing.T) {
-	testBenchParallel(t, false, 0.9, 0.1, 0.0, 1)
+	testBenchParallel(t, false, 0.9, 0.1, 0.0, 1, 100000)
 
 }
 func TestBenchParallelSharedS1_G90_S10_D0(t *testing.T) {
-	testBenchParallel(t, true, 0.9, 0.1, 0.0, 1)
+	testBenchParallel(t, true, 0.9, 0.1, 0.0, 1, 1000000)
 }
 
-func testBenchParallel(t *testing.T, oneClient bool, pGet, pSet, pDel float32, servers int) {
+func testBenchParallel(t *testing.T, oneClient bool, pGet, pSet, pDel float32, servers int, operations int) {
 	vClients := 1024
-	operations := 1000000
 	addr := cluster[0].create(benchmarkingNumChunks, 2, false)
 	for i := 1; i < servers; i++ {
 		cluster[i].assoc(addr, ultraverbose)

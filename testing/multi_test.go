@@ -36,7 +36,7 @@ func TestBasicRebalance(t *testing.T) {
 	defer cluster[1].kill()
 	//Wait for rebalance
 	fmt.Println("Server 1 shut down soon...")
-	time.Sleep(time.Second * 5)
+	time.Sleep(time.Second * 6)
 	//First server shut down
 	fmt.Println("Server 1 shut down")
 	cluster[0].kill()
@@ -193,13 +193,13 @@ func TestNodeRevival(t *testing.T) {
 	c.Set([]byte("hello"), []byte("world"))
 
 	addr2 := cluster[1].assoc(addr, ultraverbose)
-	time.Sleep(time.Second * 5)
+	time.Sleep(time.Second * 6)
 
 	fmt.Println("Server 0 down")
 	cluster[0].kill()
 
 	cluster[0].assoc(addr2, ultraverbose)
-	time.Sleep(time.Second * 8)
+	time.Sleep(time.Second * 9)
 
 	fmt.Println("Server 1 down")
 	cluster[1].kill()

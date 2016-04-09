@@ -14,7 +14,7 @@ type AmAlive struct {
 }
 
 type Gossip struct {
-	Server     string
+	ServerAddr string
 	ServerHash uint64
 }
 

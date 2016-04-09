@@ -321,6 +321,7 @@ func (sg *ServerGroup) DeadServer(addr string) error {
 	for _, i := range s.heldChunks {
 		delete(sg.chunks[i].holders, s)
 	}
+	s.heldChunks = nil
 	sg.mutex.Unlock()
 	s.freeConn()
 	return nil

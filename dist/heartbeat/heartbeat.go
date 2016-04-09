@@ -67,7 +67,7 @@ func (h *Heartbeater) addNews(addr string, hash uint64) {
 	}
 	h.newsMutex.Lock()
 	h.newsTime = append(h.newsTime, time.Now())
-	h.news = append(h.news, protocol.Gossip{Server: addr, ServerHash: hash})
+	h.news = append(h.news, protocol.Gossip{ServerAddr: addr, ServerHash: hash})
 	h.newsMutex.Unlock()
 }
 
@@ -94,7 +94,7 @@ func (h *Heartbeater) request(addr string) (ok bool) {
 		//Gossip protocol
 		if saaerr == nil {
 			for _, g := range saa.News {
-				gaddr := g.Server
+				gaddr := g.ServerAddr
 				var ourAA protocol.AmAlive
 				ourAA.KnownChunks = h.sg.GetServerChunks(gaddr)
 				ourAA.KnownServers = h.sg.KnownServers()
@@ -180,6 +180,7 @@ func Start(sg *servergroup.ServerGroup) *Heartbeater {
 	return h
 }
 
+//ListenReply starts listening and repling to UDP heartbeat requests
 func (h *Heartbeater) ListenReply(c *local.Core) func() protocol.ShortAmAlive {
 	h.core = c
 	return func() protocol.ShortAmAlive {

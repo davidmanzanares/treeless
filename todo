@@ -4,25 +4,23 @@ Core:
 	MurmurHash
 
 Com:
-	*permadeath check
 	udp server to hearbeat
 
 Dist:
 	*Backwards repair
-	*Gossip
 	Del assurance
 	*Open closed store
 
 Test:
+	*gors
 	*Real test: test consitency with lots of servers, network problems and server shutdowns:
 	Read reapair test
-	0 servers failure test
     Add more benchmarks
 	Space per chunk tests (hash quality tests)
 
 Others:
 	*Free non used communications
-	Stoppers
+	treemon own package
 	Stats
 	Memprofile
 	Log rotation: max size
