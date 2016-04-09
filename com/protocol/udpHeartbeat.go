@@ -13,19 +13,23 @@ type AmAlive struct {
 	KnownServers []string //Servers known by the server
 }
 
-//ShortAmAlive stores the hash of some heartbeat information
-type ShortAmAlive struct {
-	AAHash uint64
+type Gossip struct {
+	Server     string
+	ServerHash uint64
 }
 
-//TODO del json
+//ShortAmAlive stores the hash of some heartbeat information
+type ShortAmAlive struct {
+	Hash uint64
+	News []Gossip
+}
 
 func (aa *AmAlive) Short() ShortAmAlive {
 	s, err := json.Marshal(aa)
 	if err != nil {
 		panic(err)
 	}
-	return ShortAmAlive{AAHash: hashing.FNV1a64(s)}
+	return ShortAmAlive{Hash: hashing.FNV1a64(s)}
 }
 
 //Marshal serializes aa into a []byte

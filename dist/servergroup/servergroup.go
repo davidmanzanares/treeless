@@ -309,3 +309,19 @@ func (sg *ServerGroup) RemoveServer(addr string) error {
 	s.freeConn()
 	return nil
 }
+
+func (sg *ServerGroup) DeadServer(addr string) error {
+	sg.mutex.Lock()
+	s, ok := sg.servers[addr]
+	if !ok {
+		sg.mutex.Unlock()
+		return errors.New("Server not known")
+	}
+	sg.servers[addr].lastHeartbeat = time.Time{}
+	for _, i := range s.heldChunks {
+		delete(sg.chunks[i].holders, s)
+	}
+	sg.mutex.Unlock()
+	s.freeConn()
+	return nil
+}

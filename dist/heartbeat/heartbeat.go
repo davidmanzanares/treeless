@@ -4,12 +4,14 @@ import (
 	"errors"
 	"log"
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 	"treeless/com/buffconn"
 	"treeless/com/protocol"
 	"treeless/com/udpconn"
 	"treeless/dist/servergroup"
+	"treeless/local"
 )
 
 var heartbeatTimeout = time.Millisecond * 500
@@ -26,6 +28,10 @@ type Heartbeater struct {
 	stop           int32
 	timeouts       map[string]int
 	sg             *servergroup.ServerGroup
+	core           *local.Core
+	news           []protocol.Gossip
+	newsTime       []time.Time
+	newsMutex      sync.Mutex
 }
 
 //Stop requesting and listening to heartbeats
@@ -54,15 +60,58 @@ func getaa(addr string) (*protocol.AmAlive, error) {
 	}
 }
 
+func (h *Heartbeater) addNews(addr string, hash uint64) {
+	h.cleanNews()
+	if h.core != nil && addr == h.core.LocalhostIPPort {
+		return
+	}
+	h.newsMutex.Lock()
+	h.newsTime = append(h.newsTime, time.Now())
+	h.news = append(h.news, protocol.Gossip{Server: addr, ServerHash: hash})
+	h.newsMutex.Unlock()
+}
+
+func (h *Heartbeater) cleanNews() {
+	t := time.Now()
+	h.newsMutex.Lock()
+	for i := 0; i < len(h.news); i++ {
+		if h.newsTime[i].Add(time.Minute).Before(t) {
+			h.news = h.news[1:]
+			h.newsTime = h.newsTime[1:]
+		} else {
+			break
+		}
+	}
+	h.newsMutex.Unlock()
+}
+
 func (h *Heartbeater) request(addr string) (ok bool) {
-	saa, err := udpconn.Request(addr, heartbeatTimeout)
-	if err == nil {
+	if h.core != nil && addr == h.core.LocalhostIPPort {
+		return false
+	}
+	saa, saaerr := udpconn.Request(addr, heartbeatTimeout)
+	defer func() {
+		//Gossip protocol
+		if saaerr == nil {
+			for _, g := range saa.News {
+				gaddr := g.Server
+				var ourAA protocol.AmAlive
+				ourAA.KnownChunks = h.sg.GetServerChunks(gaddr)
+				ourAA.KnownServers = h.sg.KnownServers()
+				if g.ServerHash != ourAA.Short().Hash {
+					//Mismatch detected, request more info
+					log.Println("Gossip", addr, gaddr, h.request(gaddr))
+				}
+			}
+		}
+	}()
+	if saaerr == nil {
 		var ourAA protocol.AmAlive
 		ourAA.KnownChunks = h.sg.GetServerChunks(addr)
 		ourAA.KnownServers = h.sg.KnownServers()
-		if *saa == ourAA.Short() {
+		if saa.Hash == ourAA.Short().Hash {
 			//Fast path
-			return true
+			return false
 		}
 	}
 	//Slow path
@@ -74,12 +123,13 @@ func (h *Heartbeater) request(addr string) (ok bool) {
 				delete(h.timeouts, addr)
 				//Server is dead
 				log.Println("Server is dead:", addr)
-				h.sg.RemoveServer(addr)
+				h.sg.DeadServer(addr)
+				h.addNews(addr, 0)
 			}
 		} else {
 			delete(h.timeouts, addr)
 		}
-		return false
+		return true
 	}
 	delete(h.timeouts, addr)
 	if !h.sg.IsServerOnGroup(addr) {
@@ -92,6 +142,10 @@ func (h *Heartbeater) request(addr string) (ok bool) {
 			h.request(s)
 		}
 	}
+	var ourAA protocol.AmAlive
+	ourAA.KnownChunks = h.sg.GetServerChunks(addr)
+	ourAA.KnownServers = h.sg.KnownServers()
+	h.addNews(addr, ourAA.Short().Hash)
 	return true
 }
 
@@ -124,4 +178,21 @@ func Start(sg *servergroup.ServerGroup) *Heartbeater {
 		}
 	}()
 	return h
+}
+
+func (h *Heartbeater) ListenReply(c *local.Core) func() protocol.ShortAmAlive {
+	h.core = c
+	return func() protocol.ShortAmAlive {
+		h.cleanNews()
+		var r protocol.AmAlive
+		r.KnownChunks = c.KnownChunksList()
+		r.KnownServers = h.sg.KnownServers()
+		s := r.Short()
+		h.newsMutex.Lock()
+		s.News = make([]protocol.Gossip, len(h.news))
+		copy(s.News, h.news)
+		h.newsMutex.Unlock()
+		//log.Println("UDP AA", r)
+		return s
+	}
 }

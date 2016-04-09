@@ -68,6 +68,11 @@ func TestSimple(t *testing.T) {
 	}
 	defer client.Close()
 
+	/*time.Sleep(time.Second * 5)
+	fmt.Println("GO!")
+	cluster[1].assoc(addr, ultraverbose)
+	time.Sleep(time.Second * 5)*/
+
 	//Set operation
 	_, err = client.Set([]byte("hola"), []byte("mundo"))
 	if err != nil {
@@ -604,7 +609,7 @@ func TestDefrag(t *testing.T) {
 
 	ops := 16
 	key := make([]byte, 1)
-	value := make([]byte, 8*1024*1024)
+	value := make([]byte, 1024*1024)
 	for i := 0; i < ops; i++ {
 		_, err := c.Set(key, value)
 		if err != nil {

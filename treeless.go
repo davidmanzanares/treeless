@@ -33,7 +33,7 @@ func main() {
 	port := flag.Int("port", 9876, "Use this port as the localhost server port")
 	redundancy := flag.Int("redundancy", 2, "Redundancy of the new DB server group")
 	chunks := flag.Int("chunks", 2, "Number of chunks")
-	size := flag.Int64("size", DefaultDBSize, "DB size limit")
+	size := flag.Int64("size", DefaultDBSize, "DB chunk size")
 	dbpath := flag.String("dbpath", "", "Filesystem path to store DB info")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
 	webprofile := flag.Bool("webprofile", false, "webprofile")

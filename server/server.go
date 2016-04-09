@@ -97,7 +97,7 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 	rebalance.StartRebalance(s.sg, s.lh, func() bool { return false })
 
 	//Init server
-	s.s = tlcom.Start(addr, localIP, localport, worker(&s), udpCreateReplier(s.sg, s.lh))
+	s.s = tlcom.Start(addr, localIP, localport, worker(&s), s.hb.ListenReply(s.lh))
 	log.Println("Server boot-up completed")
 	return &s
 }
@@ -113,16 +113,6 @@ func (s *DBServer) Stop() {
 func (s *DBServer) LogInfo() {
 	log.Println("Info log")
 	log.Println(s.sg)
-}
-
-func udpCreateReplier(sg *servergroup.ServerGroup, lh *local.Core) tlcom.UDPCallback {
-	return func() protocol.ShortAmAlive {
-		var r protocol.AmAlive
-		r.KnownChunks = lh.KnownChunksList()
-		r.KnownServers = sg.KnownServers()
-		//log.Println("UDP AA", r)
-		return r.Short()
-	}
 }
 
 func worker(s *DBServer) (work func(message protocol.Message) (response protocol.Message)) {
