@@ -22,7 +22,7 @@ func TestBenchParallelSharedS1_G90_S10_D0(t *testing.T) {
 }
 
 func testBenchParallel(t *testing.T, oneClient bool, pGet, pSet, pDel float32, servers int, operations int) {
-	vClients := 1024
+	vClients := 512
 	addr := cluster[0].create(benchmarkingNumChunks, 2, false)
 	for i := 1; i < servers; i++ {
 		cluster[i].assoc(addr, ultraverbose)

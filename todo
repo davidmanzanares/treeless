@@ -5,6 +5,7 @@ Core:
 
 Com:
 	udp server to hearbeat
+	udp binary & quick hash
 
 Dist:
 	*Backwards repair
@@ -12,9 +13,9 @@ Dist:
 	*Open closed store
 
 Test:
-	*gors
 	*Real test: test consitency with lots of servers, network problems and server shutdowns:
 	Read reapair test
+	gors
     Add more benchmarks
 	Space per chunk tests (hash quality tests)
 
