@@ -12,7 +12,7 @@ import (
 	"treeless/com/protocol"
 )
 
-var brokerTick = time.Millisecond * 30
+var brokerTick = time.Millisecond * 5
 
 //Stores a DB operation result
 type Result struct {
@@ -68,15 +68,23 @@ func broker(c *Conn, onClose func()) {
 	fromWorld := make(chan protocol.Message, 1024)
 	toWorld := buffconn.NewBufferedConn(c.conn, fromWorld)
 	waits := make(map[uint32]chan<- Result)
-	tid := uint32(0)
-	pq := make([]timeoutMsg, 0, 64)
-	ticker := time.NewTicker(time.Hour)
-	tickerActivated := false
-	onCloseCalled := false
+	pq := make([]timeoutMsg, 0, 1024)
+	tickerActivation := make(chan bool)
+	quit := false
+	var mutex sync.Mutex
 	go func() {
+		//Ticker
+		ticker := time.NewTicker(brokerTick)
+		defer ticker.Stop()
+		activated := false
 		for {
-			select {
-			case now := <-ticker.C:
+			if activated {
+				now := <-ticker.C
+				mutex.Lock()
+				if quit {
+					mutex.Unlock()
+					return
+				}
 				for len(pq) > 0 {
 					f := pq[0]
 					if now.After(f.t) {
@@ -92,107 +100,126 @@ func broker(c *Conn, onClose func()) {
 						break
 					}
 				}
-				if len(pq) == 0 && tickerActivated {
-					ticker.Stop()
-					ticker = time.NewTicker(time.Hour)
+				if len(pq) == 0 {
+					activated = false
 				}
-			case msg, ok := <-c.responseChannel:
-				if !ok {
-					for len(pq) > 0 {
-						f := pq[0]
-						w, ok := waits[f.tid]
-						if ok {
-							if w == nil {
-								panic("w rch == nil")
-							}
-							delete(waits, f.tid)
-							w <- Result{nil, errors.New("Connection closed => fast timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
+				mutex.Unlock()
+			} else {
+				activated = <-tickerActivation
+			}
+		}
+	}()
+
+	go func() {
+		//To world
+		tid := uint32(0)
+		for {
+			msg, ok := <-c.responseChannel
+			mutex.Lock()
+			if !ok {
+				for len(pq) > 0 {
+					f := pq[0]
+					w, ok := waits[f.tid]
+					if ok {
+						if w == nil {
+							panic("w rch == nil")
 						}
-						pq = pq[1:]
+						delete(waits, f.tid)
+						w <- Result{nil, errors.New("Connection closed => fast timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
 					}
-					//log.Println(errors.New(fmt.Sprint("Broker: Connection closed", "Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr())))
-					close(toWorld)
-					return
+					pq = pq[1:]
 				}
-				msg.mess.ID = tid
-				if msg.timeout > 0 {
-					//Send and *Recieve*
-					if msg.rch == nil {
-						panic("msg rch == nil")
-					}
-
-					if len(pq) == 0 && !tickerActivated {
-						ticker.Stop()
-						ticker = time.NewTicker(brokerTick)
-					}
-
-					tm := timeoutMsg{t: time.Now().Add(msg.timeout), tid: tid}
-
-					inserted := false
-					for i := len(pq) - 1; i >= 0; i-- {
-						t := pq[i].t
-						if t.Before(tm.t) {
-							pq = append(pq, tm)
-							copy(pq[i+2:], pq[i+1:])
-							pq[i+1] = tm
-							inserted = true
-							break
-						}
-					}
-					if inserted == false {
+				//log.Println(errors.New(fmt.Sprint("Broker: Connection closed", "Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr())))
+				close(toWorld)
+				quit = true
+				mutex.Unlock()
+				return
+			}
+			msg.mess.ID = tid
+			if msg.timeout > 0 {
+				//Send and *Recieve*
+				if msg.rch == nil {
+					panic("msg rch == nil")
+				}
+				tm := timeoutMsg{t: time.Now().Add(msg.timeout), tid: tid}
+				inserted := false
+				for i := len(pq) - 1; i >= 0; i-- {
+					t := pq[i].t
+					if t.Before(tm.t) {
 						pq = append(pq, tm)
-						copy(pq[0:], pq[1:])
-						pq[0] = tm
-					}
-					waits[tid] = msg.rch
-				} else {
-					if msg.rch != nil {
-						panic("msg rch != nil")
+						copy(pq[i+2:], pq[i+1:])
+						pq[i+1] = tm
+						inserted = true
+						break
 					}
 				}
-				tid++
-				toWorld <- msg.mess
-			case m, ok := <-fromWorld:
-				if !ok {
-					//Connection closed
-					for len(pq) > 0 {
-						f := pq[0]
-						w, ok := waits[f.tid]
-						//fmt.Println(w, ok)
-						if ok {
-							if w == nil {
-								panic("w rch == nil")
-							}
-							delete(waits, f.tid)
-							w <- Result{nil, errors.New("Connection closed => fast timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
-						}
-						pq = pq[1:]
-					}
-					if !onCloseCalled {
-						onClose()
-						onCloseCalled = true
-					}
-					time.Sleep(brokerTick)
-					continue
+				if inserted == false {
+					pq = append(pq, tm)
+					copy(pq[0:], pq[1:])
+					pq[0] = tm
 				}
-				w, ok := waits[m.ID]
-				if !ok {
-					//Was timeout'ed
-					continue
+				waits[tid] = msg.rch
+			} else {
+				if msg.rch != nil {
+					panic("msg rch != nil")
 				}
-				ch := w
-				delete(waits, m.ID)
-				//l.Remove(w.el)
-				switch m.Type {
-				case protocol.OpResponse:
-					ch <- Result{m.Value, nil}
-				case protocol.OpOK:
-					ch <- Result{nil, nil}
-				case protocol.OpErr:
-					ch <- Result{nil, errors.New("Response error: " + string(m.Value))}
+			}
+			mutex.Unlock()
+			tid++
+			toWorld <- msg.mess
+			if msg.timeout > 0 {
+				select {
+				case tickerActivation <- true:
 				default:
-					ch <- Result{nil, errors.New("Invalid response operation code: " + fmt.Sprint(m.Type))}
 				}
+			}
+		}
+	}()
+
+	go func() {
+		//From world
+		for {
+			m, ok := <-fromWorld
+			mutex.Lock()
+			if !ok || quit {
+				//Connection closed
+				for len(pq) > 0 {
+					f := pq[0]
+					w, ok := waits[f.tid]
+					//fmt.Println(w, ok)
+					if ok {
+						if w == nil {
+							panic("w rch == nil")
+						}
+						delete(waits, f.tid)
+						w <- Result{nil, errors.New("Connection closed => fast timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
+					}
+					pq = pq[1:]
+				}
+				quit = true
+				mutex.Unlock()
+				onClose()
+				return
+			}
+			w, ok := waits[m.ID]
+			if !ok {
+				//Was timeout'ed
+				mutex.Unlock()
+				continue
+			}
+			ch := w
+			delete(waits, m.ID)
+			mutex.Unlock()
+			//l.Remove(w.el)
+			switch m.Type {
+			case protocol.OpResponse:
+				ch <- Result{m.Value, nil}
+			case protocol.OpOK:
+				ch <- Result{nil, nil}
+			case protocol.OpErr:
+				ch <- Result{nil, errors.New("Response error: " + string(m.Value))}
+			default:
+				ch <- Result{nil, errors.New("Invalid response operation code: " + fmt.Sprint(m.Type))}
 			}
 		}
 	}()

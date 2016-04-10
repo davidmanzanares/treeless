@@ -65,7 +65,7 @@ func tcpWrite(conn *net.TCPConn, buffer []byte) {
 //
 //This function blocks, typical usage will be "go bufferedWriter(...)""
 func bufferedWriter(conn *net.TCPConn, toWorld <-chan protocol.Message, offset *int32) {
-	var ticker *time.Ticker
+	ticker := time.NewTicker(windowTimeDuration)
 	var tickerChannel <-chan time.Time
 
 	buffer := make([]byte, bufferSize)
@@ -73,16 +73,14 @@ func bufferedWriter(conn *net.TCPConn, toWorld <-chan protocol.Message, offset *
 
 	sents := 0
 	for {
-		/*if rand.Float32() > 0.99 {
+		/*if rand.Float32() > 0.999 {
 			fmt.Println(ticker)
 		}*/
 		select {
 		case m, ok := <-toWorld:
 			if !ok {
 				//Channel closed, stop loop
-				if ticker != nil {
-					ticker.Stop()
-				}
+				ticker.Stop()
 				conn.Close()
 				return
 			}
@@ -105,7 +103,7 @@ func bufferedWriter(conn *net.TCPConn, toWorld <-chan protocol.Message, offset *
 					m.Marshal(buffer)
 					index += msgSize
 				}
-			} else if ticker != nil {
+			} else if tickerChannel != nil {
 				//Fast path
 				index += msgSize
 				sents++
@@ -113,7 +111,6 @@ func bufferedWriter(conn *net.TCPConn, toWorld <-chan protocol.Message, offset *
 				//Slow path
 				if fastModeEnableProbability > 0 && (atomic.LoadInt32(offset) > 1 || rand.Float32() < fastModeEnableProbability) {
 					//Activate fast path
-					ticker = time.NewTicker(windowTimeDuration)
 					tickerChannel = ticker.C
 				}
 				tcpWrite(conn, buffer[:msgSize])
@@ -124,8 +121,6 @@ func bufferedWriter(conn *net.TCPConn, toWorld <-chan protocol.Message, offset *
 			index = 0
 			if sents < 2 {
 				//Deactivate fast path
-				ticker.Stop()
-				ticker = nil
 				tickerChannel = nil
 				tcpWrite(conn, buffer[0:index])
 				index = 0

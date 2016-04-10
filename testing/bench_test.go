@@ -13,17 +13,17 @@ import (
 	"treeless/client"
 )
 
-func TestBenchParallelEachS1_G90_S10_D0(t *testing.T) {
-	testBenchParallel(t, false, 0.9, 0.1, 0.0, 1, 100000)
+func TestBenchParallelEachS1_Get(t *testing.T) {
+	testBenchParallel(t, false, 1.0, 0., 0.0, 1, 8000)
 
 }
-func TestBenchParallelSharedS1_G90_S10_D0(t *testing.T) {
-	testBenchParallel(t, true, 0.9, 0.1, 0.0, 1, 1000000)
+func TestBenchParallelSharedS1_Get(t *testing.T) {
+	testBenchParallel(t, true, 1.0, 0.0, 0.0, 1, 10000000)
 }
 
 func testBenchParallel(t *testing.T, oneClient bool, pGet, pSet, pDel float32, servers int, operations int) {
 	vClients := 512
-	addr := cluster[0].create(benchmarkingNumChunks, 2, false)
+	addr := cluster[0].create(benchmarkingNumChunks, 2, true)
 	for i := 1; i < servers; i++ {
 		cluster[i].assoc(addr, ultraverbose)
 	}
@@ -52,25 +52,24 @@ func testBenchParallel(t *testing.T, oneClient bool, pGet, pSet, pDel float32, s
 	}
 	//p := tlfmt.NewProgress("Operating...", operations)
 	ops := int32(0)
-	runtime.GC()
 	runtime.Gosched()
+	runtime.GC()
 	t1 := time.Now()
 	for i := 0; i < vClients; i++ {
 		go func(thread int) {
 			c := clients[thread]
+			key := make([]byte, 4)
 			value := make([]byte, 4)
-			rNext := randKVOpGenerator(4, 4, 4, thread+1, 2048, thread+1)
 			for atomic.AddInt32(&ops, 1) <= int32(operations) {
+				binary.LittleEndian.PutUint32(key, rand.Uint32())
 				//p.Inc()
 				//Operate
 				op := rand.Float32()
-				_, key, _ := rNext()
 				//fmt.Println(op, key, value)
 				switch {
 				case op < pGet:
 					c.Get(key)
 				case op < pGet+pSet:
-					binary.LittleEndian.PutUint32(value, uint32(rand.Int()))
 					c.Set(key, value)
 				default:
 					c.Del(key)

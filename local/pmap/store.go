@@ -123,7 +123,9 @@ func (st *store) deleteStore() {
 	if st.file != nil {
 		panic("Not closed")
 	}
-	os.Remove(st.osFile.Name())
+	if st.osFile != nil {
+		os.Remove(st.osFile.Name())
+	}
 }
 
 /*

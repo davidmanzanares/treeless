@@ -41,18 +41,20 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 	//Last write wins policy
 	chunkID := hashing.GetChunkID(key, c.sg.NumChunks())
 	servers := c.sg.GetChunkHolders(chunkID)
-	var charray [8]*tlcom.GetOperation
+	var charray [8]tlcom.GetOperation
+	var chvalidarray [8]bool
 	var times [8]time.Time
 	for i, s := range servers {
 		if s != nil {
 			c, err := s.Get(key, c.GetTimeout)
 			if err == nil {
-				charray[i] = &c
+				charray[i] = c
+				chvalidarray[i] = true
 			}
 		}
 	}
 	for i := 0; i < len(servers); i++ {
-		if charray[i] == nil {
+		if !chvalidarray[i] {
 			continue
 		}
 		r := charray[i].Wait()

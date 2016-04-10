@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand"
 	"sort"
 	"sync"
 	"time"
@@ -54,7 +55,6 @@ func CreateServerGroup(numChunks int, redundancy int) *ServerGroup {
 	//Add all chunks to the servergroup
 	for i := 0; i < sg.numChunks; i++ {
 		sg.chunks[i].id = i
-		sg.chunks[i].holders = make(map[*VirtualServer]bool)
 	}
 	return sg
 }
@@ -86,7 +86,6 @@ func UnmarhalServerGroup(serialization []byte) (*ServerGroup, error) {
 	//Add all chunks to the servergroup
 	for i := 0; i < sg.numChunks; i++ {
 		sg.chunks[i].id = i
-		sg.chunks[i].holders = make(map[*VirtualServer]bool)
 	}
 
 	return sg, nil
@@ -113,8 +112,8 @@ func (sg *ServerGroup) String() string {
 		srv := "\n\t"
 		column := 0
 		var holders []string
-		for k := range sg.chunks[i].holders {
-			holders = append(holders, k.Phy)
+		for _, h := range sg.chunks[i].holders {
+			holders = append(holders, h.Phy)
 		}
 		sort.Strings(holders)
 		for _, phy := range holders {
@@ -195,7 +194,7 @@ func (sg *ServerGroup) GetChunkHolders(chunkID int) (holders [8]*VirtualServer) 
 	sg.mutex.RLock()
 	c := sg.chunks[chunkID]
 	i := 0
-	for h := range c.holders {
+	for _, h := range c.holders {
 		holders[i] = h
 		i++
 	}
@@ -205,12 +204,13 @@ func (sg *ServerGroup) GetChunkHolders(chunkID int) (holders [8]*VirtualServer) 
 
 func (sg *ServerGroup) GetAnyHolder(chunkID int) *VirtualServer {
 	sg.mutex.RLock()
-	for k := range sg.chunks[chunkID].holders {
+	if len(sg.chunks[chunkID].holders) < 1 {
 		sg.mutex.RUnlock()
-		return k
+		return nil
 	}
+	h := sg.chunks[chunkID].holders[rand.Intn(len(sg.chunks[chunkID].holders))]
 	sg.mutex.RUnlock()
-	return nil
+	return h
 }
 
 func (sg *ServerGroup) KnownServers() []string {
@@ -257,14 +257,14 @@ func (sg *ServerGroup) SetServerChunks(addr string, cids []int) {
 		}
 		if i == len(cids) {
 			//Forgotten chunk
-			delete(sg.chunks[c].holders, s)
+			sg.chunks[c].removeHolder(s)
 		}
 	}
 
 	for i := 0; i < len(cids); i++ {
-		if !sg.chunks[cids[i]].holders[s] {
+		if !sg.chunks[cids[i]].hasHolder(s) {
 			//Added chunk
-			sg.chunks[cids[i]].holders[s] = true
+			sg.chunks[cids[i]].addHolder(s)
 		}
 	}
 
@@ -303,7 +303,7 @@ func (sg *ServerGroup) RemoveServer(addr string) error {
 	}
 	delete(sg.servers, addr)
 	for _, i := range s.heldChunks {
-		delete(sg.chunks[i].holders, s)
+		sg.chunks[i].removeHolder(s)
 	}
 	sg.mutex.Unlock()
 	s.freeConn()
@@ -319,7 +319,7 @@ func (sg *ServerGroup) DeadServer(addr string) error {
 	}
 	sg.servers[addr].lastHeartbeat = time.Time{}
 	for _, i := range s.heldChunks {
-		delete(sg.chunks[i].holders, s)
+		sg.chunks[i].removeHolder(s)
 	}
 	s.heldChunks = nil
 	sg.mutex.Unlock()

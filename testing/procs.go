@@ -14,7 +14,7 @@ type procServer struct {
 	cmd    *exec.Cmd
 }
 
-var ramonly = false
+var ramonly = true
 
 var localIP = "127.0.0.1"
 
