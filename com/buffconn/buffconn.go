@@ -74,7 +74,7 @@ func bufferedWriter(conn *net.TCPConn, toWorld <-chan protocol.Message, offset *
 	sents := 0
 	for {
 		/*if rand.Float32() > 0.999 {
-			fmt.Println(ticker)
+			fmt.Println(tickerChannel)
 		}*/
 		select {
 		case m, ok := <-toWorld:

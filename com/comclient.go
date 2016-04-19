@@ -60,17 +60,99 @@ func CreateConnection(addr string, onClose func()) (*Conn, error) {
 }
 
 type timeoutMsg struct {
-	t   time.Time
-	tid uint32
+	t          time.Time
+	tid        uint32
+	prev, next *timeoutMsg
+}
+
+type queue struct {
+	head, tail *timeoutMsg
+	pool       sync.Pool
+	l          int
+}
+
+func createQueue() (q *queue) {
+	q = new(queue)
+	q.pool = sync.Pool{New: func() interface{} {
+		return new(timeoutMsg)
+	}}
+	return q
+}
+func (q *queue) push(tm *timeoutMsg) {
+	q.l = q.l + 1
+	if q.l == 1 {
+		q.tail = tm
+		q.head = tm
+		return
+	}
+	x := q.tail
+	for x.next != nil && x.t.After(tm.t) {
+		x = x.next
+	}
+	if x.next == nil && x.t.After(tm.t) {
+		//To head
+		q.head = tm
+		x.next = tm
+		tm.prev = x
+	}
+	prev := x.prev
+	x.prev = tm
+	tm.next = x
+	tm.prev = prev
+	if prev != nil {
+		prev.next = tm
+	} else {
+		q.tail = tm
+	}
+}
+func (q *queue) len() int {
+	return q.l
+}
+func (q *queue) clean(now time.Time, timeoutCallback func(tm *timeoutMsg)) {
+	for q.l > 0 {
+		f := q.head
+		if now.After(f.t) {
+			//Timeout'ed
+			q.head = f.prev
+			q.l = q.l - 1
+			if q.l == 1 {
+				q.head.next = nil
+				q.tail = q.head
+			} else if q.l > 1 {
+				q.head.next = nil
+			} else {
+				q.head = nil
+				q.tail = nil
+			}
+			f.next = nil
+			f.prev = nil
+			q.pool.Put(f)
+			timeoutCallback(f)
+		} else {
+			break
+		}
+	}
+}
+func (q *queue) forall(callback func(tm *timeoutMsg)) {
+	for q.l > 0 {
+		f := q.head
+		callback(f)
+		q.head = f.prev
+		f.next = nil
+		f.prev = nil
+		q.pool.Put(f)
+		q.l--
+	}
+	q.head = nil
+	q.tail = nil
 }
 
 func broker(c *Conn, onClose func()) {
 	fromWorld := make(chan protocol.Message, 1024)
 	toWorld := buffconn.NewBufferedConn(c.conn, fromWorld)
 	waits := make(map[uint32]chan<- Result)
-	pq := make([]timeoutMsg, 0, 1024)
+	pq := createQueue()
 	tickerActivation := make(chan bool)
-	quit := false
 	var mutex sync.Mutex
 	go func() {
 		//Ticker
@@ -81,31 +163,24 @@ func broker(c *Conn, onClose func()) {
 			if activated {
 				now := <-ticker.C
 				mutex.Lock()
-				if quit {
-					mutex.Unlock()
-					return
-				}
-				for len(pq) > 0 {
-					f := pq[0]
-					if now.After(f.t) {
-						//Timeout'ed
-						w, ok := waits[f.tid]
-						if ok {
-							delete(waits, f.tid)
-							//fmt.Println("Timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))
-							w <- Result{nil, errors.New("Timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
-						}
-						pq = pq[1:]
-					} else {
-						break
+				pq.clean(now, func(tm *timeoutMsg) {
+					w, ok := waits[tm.tid]
+					if ok {
+						delete(waits, tm.tid)
+						//fmt.Println("Timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))
+						w <- Result{nil, errors.New("Timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
 					}
-				}
-				if len(pq) == 0 {
+				})
+				if pq.len() == 0 {
 					activated = false
 				}
 				mutex.Unlock()
 			} else {
-				activated = <-tickerActivation
+				var ok bool
+				activated, ok = <-tickerActivation
+				if !ok {
+					return
+				}
 			}
 		}
 	}()
@@ -117,21 +192,18 @@ func broker(c *Conn, onClose func()) {
 			msg, ok := <-c.responseChannel
 			mutex.Lock()
 			if !ok {
-				for len(pq) > 0 {
-					f := pq[0]
-					w, ok := waits[f.tid]
+				pq.forall(func(tm *timeoutMsg) {
+					w, ok := waits[tm.tid]
 					if ok {
 						if w == nil {
 							panic("w rch == nil")
 						}
-						delete(waits, f.tid)
+						delete(waits, tm.tid)
 						w <- Result{nil, errors.New("Connection closed => fast timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
 					}
-					pq = pq[1:]
-				}
+				})
 				//log.Println(errors.New(fmt.Sprint("Broker: Connection closed", "Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr())))
 				close(toWorld)
-				quit = true
 				mutex.Unlock()
 				return
 			}
@@ -141,32 +213,20 @@ func broker(c *Conn, onClose func()) {
 				if msg.rch == nil {
 					panic("msg rch == nil")
 				}
-				tm := timeoutMsg{t: time.Now().Add(msg.timeout), tid: tid}
-				inserted := false
-				for i := len(pq) - 1; i >= 0; i-- {
-					t := pq[i].t
-					if t.Before(tm.t) {
-						pq = append(pq, tm)
-						copy(pq[i+2:], pq[i+1:])
-						pq[i+1] = tm
-						inserted = true
-						break
-					}
-				}
-				if inserted == false {
-					pq = append(pq, tm)
-					copy(pq[0:], pq[1:])
-					pq[0] = tm
-				}
+				tm := pq.pool.Get().(*timeoutMsg)
+				tm.t = time.Now().Add(msg.timeout)
+				tm.tid = tid
+
+				pq.push(tm)
 				waits[tid] = msg.rch
 			} else {
 				if msg.rch != nil {
 					panic("msg rch != nil")
 				}
 			}
+			toWorld <- msg.mess
 			mutex.Unlock()
 			tid++
-			toWorld <- msg.mess
 			if msg.timeout > 0 {
 				select {
 				case tickerActivation <- true:
@@ -181,22 +241,8 @@ func broker(c *Conn, onClose func()) {
 		for {
 			m, ok := <-fromWorld
 			mutex.Lock()
-			if !ok || quit {
+			if !ok {
 				//Connection closed
-				for len(pq) > 0 {
-					f := pq[0]
-					w, ok := waits[f.tid]
-					//fmt.Println(w, ok)
-					if ok {
-						if w == nil {
-							panic("w rch == nil")
-						}
-						delete(waits, f.tid)
-						w <- Result{nil, errors.New("Connection closed => fast timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
-					}
-					pq = pq[1:]
-				}
-				quit = true
 				mutex.Unlock()
 				onClose()
 				return
@@ -210,7 +256,6 @@ func broker(c *Conn, onClose func()) {
 			ch := w
 			delete(waits, m.ID)
 			mutex.Unlock()
-			//l.Remove(w.el)
 			switch m.Type {
 			case protocol.OpResponse:
 				ch <- Result{m.Value, nil}

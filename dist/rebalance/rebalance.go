@@ -39,14 +39,14 @@ func StartRebalance(sg *servergroup.ServerGroup, lh *local.Core, ShouldStop func
 			known := float64(lh.KnownChunks())
 			total := float64(sg.NumChunks()) * float64(sg.Redundancy())
 			avg := total / float64(sg.NumServers())
-			if rand.Float32() > 0.75 { //LR-Duplicate
-				for i := 0; i < sg.NumChunks(); i++ {
-					if sg.NumHolders(i) < sg.Redundancy() && lh.ChunkStatus(i) == 0 {
-						log.Println("Duplicate to mantain redundancy. Reason:", i, sg.NumHolders(i), sg.Redundancy())
-						duplicate(i)
-					}
+			//LR-Duplicate
+			for i := 0; i < sg.NumChunks(); i++ {
+				if sg.NumHolders(i) < sg.Redundancy() && lh.ChunkStatus(i) == 0 {
+					log.Println("Duplicate to mantain redundancy. Reason:", i, sg.NumHolders(i), sg.Redundancy())
+					duplicate(i)
 				}
-			} else if known+1 < avg*0.95 { //REB-Duplicate
+			}
+			if known+1 < avg*0.95 { //REB-Duplicate
 				//Local server hass less work than it should
 				//Try to download a random chunk
 				c := int(rand.Int31n(int32(sg.NumChunks())))
@@ -69,7 +69,7 @@ func StartRebalance(sg *servergroup.ServerGroup, lh *local.Core, ShouldStop func
 			//We should wait a little
 			//Wait more if the local server has almost an average work
 			//Wait less if the local server has little work
-			timetowait := 1.0 / (avg*0.95 - (known + 1))
+			timetowait := 1.0/(avg*0.95-(known+1)) + 1
 			if timetowait <= 0.0 || timetowait > maxRebalanceWaitSeconds {
 				timetowait = maxRebalanceWaitSeconds
 			}
@@ -131,6 +131,7 @@ func duplicator(sg *servergroup.ServerGroup, lh *local.Core,
 				time.Sleep(time.Second * 2)
 				log.Println("Duplication completed: 0 sized", s.Phy, cid)
 				lh.ChunkSetStatus(cid, local.ChunkSynched)
+				sg.SetServerChunks(lh.LocalhostIPPort, lh.KnownChunksList())
 			}()
 		} else {
 			go func() {
@@ -162,6 +163,7 @@ func duplicator(sg *servergroup.ServerGroup, lh *local.Core,
 				} else {
 					//Set chunk as ready
 					lh.ChunkSetStatus(cid, local.ChunkSynched)
+					sg.SetServerChunks(lh.LocalhostIPPort, lh.KnownChunksList())
 					log.Println("Chunk duplication completed", cid)
 					transferred = true
 					break
@@ -219,6 +221,7 @@ func releaser(sg *servergroup.ServerGroup, lh *local.Core) (release func(cid int
 			}
 			//Release
 			lh.ChunkSetStatus(c, 0)
+			sg.SetServerChunks(lh.LocalhostIPPort, lh.KnownChunksList())
 			log.Println("Remove completed", c)
 		}
 	}()

@@ -173,6 +173,7 @@ func Start(sg *servergroup.ServerGroup) *Heartbeater {
 						break
 					}
 				}
+				//fmt.Println(sg)
 				<-ticker.C
 			}
 		}

@@ -14,16 +14,16 @@ import (
 )
 
 func TestBenchParallelEachS1_Get(t *testing.T) {
-	testBenchParallel(t, false, 1.0, 0., 0.0, 1, 8000)
+	testBenchParallel(t, false, 1.0, 0., 0.0, 1, 500000)
 
 }
 func TestBenchParallelSharedS1_Get(t *testing.T) {
-	testBenchParallel(t, true, 1.0, 0.0, 0.0, 1, 10000000)
+	testBenchParallel(t, true, 1.0, 0.0, 0.0, 1, 5000000)
 }
 
 func testBenchParallel(t *testing.T, oneClient bool, pGet, pSet, pDel float32, servers int, operations int) {
-	vClients := 512
-	addr := cluster[0].create(benchmarkingNumChunks, 2, true)
+	vClients := 1024
+	addr := cluster[0].create(testingNumChunks, 1, ultraverbose)
 	for i := 1; i < servers; i++ {
 		cluster[i].assoc(addr, ultraverbose)
 	}
@@ -50,6 +50,7 @@ func testBenchParallel(t *testing.T, oneClient bool, pGet, pSet, pDel float32, s
 			clients[i] = c
 		}
 	}
+	//time.Sleep(time.Second * 20)
 	//p := tlfmt.NewProgress("Operating...", operations)
 	ops := int32(0)
 	runtime.Gosched()
@@ -90,7 +91,7 @@ func TestBenchSequentialS1(t *testing.T) {
 
 //Test sequential throughtput and consistency
 func testBenchSequential(t *testing.T, servers int) {
-	addr := cluster[0].create(benchmarkingNumChunks, 2, false)
+	addr := cluster[0].create(testingNumChunks, 2, false)
 	for i := 1; i < servers; i++ {
 		cluster[i].assoc(addr, false)
 	}
