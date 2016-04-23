@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"syscall"
 	"time"
 )
 
@@ -118,10 +119,16 @@ func (ps *procServer) restart() {
 	panic("Not implemented!")
 }
 func (ps *procServer) disconnect() {
-	panic("Not implemented!")
+	if ps.cmd != nil {
+		ps.cmd.Process.Signal(syscall.SIGSTOP)
+		time.Sleep(time.Millisecond * 10)
+	}
 }
 func (ps *procServer) reconnect() {
-	panic("Not implemented!")
+	if ps.cmd != nil {
+		ps.cmd.Process.Signal(syscall.SIGCONT)
+		time.Sleep(time.Millisecond * 10)
+	}
 }
 
 func (ps *procServer) testCapability(c capability) bool {

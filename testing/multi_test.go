@@ -303,8 +303,8 @@ func TestCAS(t *testing.T) {
 		}()
 	}
 	w.Wait()
-	fmt.Println("SLEEEP")
-	time.Sleep(time.Minute)
+	//fmt.Println("SLEEEP")
+	//time.Sleep(time.Minute)
 	//Get & check
 	value, _ = c.Get(key)
 	x := int(binary.LittleEndian.Uint32(value))
@@ -316,17 +316,73 @@ func TestCAS(t *testing.T) {
 
 func TestReadRepair(t *testing.T) {
 	//Start A
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
+	c, err := client.Connect(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
 	//Start B
+	cluster[1].assoc(addr, ultraverbose)
+	time.Sleep(time.Second * 8)
 
-	//Disconnect A
+	fmt.Println("Disconnect A")
+	cluster[0].disconnect()
+	time.Sleep(time.Second * 8)
 
 	//SET
+	c.Set([]byte("hola"), []byte("mundo"))
 
 	//Connect A (A should have the old value)
+	fmt.Println("Reconnect A")
+	cluster[0].reconnect()
+	time.Sleep(time.Second * 3)
 
 	//GET (should trigger the read-repairing system)
+	c.Get([]byte("hola"))
 
 	//Kill B (A should have the new value)
+	cluster[1].kill()
+	time.Sleep(time.Second)
 
 	//GET and check
+	v, _ := c.Get([]byte("hola"))
+	if string(v) != "mundo" {
+		t.Fatal("Mismatch", string(v))
+	}
+}
+
+func TestBackwardsRepair(t *testing.T) {
+	//Start A
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
+	c, err := client.Connect(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	//Start B
+	cluster[1].assoc(addr, ultraverbose)
+	time.Sleep(time.Second * 8)
+
+	fmt.Println("Disconnect A")
+	cluster[0].disconnect()
+	time.Sleep(time.Second * 8)
+
+	//SET
+	c.Set([]byte("hola"), []byte("mundo"))
+
+	//Connect A (A should have the old value)
+	fmt.Println("Reconnect A")
+	cluster[0].reconnect()
+	time.Sleep(time.Second * 15)
+
+	//Kill B (A should have the new value)
+	cluster[1].kill()
+	time.Sleep(time.Second * 5)
+
+	//GET and check
+	v, _ := c.Get([]byte("hola"))
+	if string(v) != "mundo" {
+		t.Fatal("Mismatch", string(v))
+	}
 }

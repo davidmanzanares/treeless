@@ -11,7 +11,6 @@ Dist:
 
 Test:
 	*Real test: test consitency with lots of servers, network problems and server shutdowns:
-	*Read reapair test
 	gors
     Add more benchmarks
 	Space per chunk tests (hash quality tests)
