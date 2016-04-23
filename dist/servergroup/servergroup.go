@@ -327,3 +327,33 @@ func (sg *ServerGroup) DeadServer(addr string) error {
 	s.freeConn()
 	return nil
 }
+
+func (sg *ServerGroup) IsSynched(cid int) bool {
+	sg.mutex.RLock()
+	c := sg.chunks[cid]
+	if len(c.holders) < 2 {
+		sg.mutex.RUnlock()
+		return true
+	}
+	sum := c.holders[0].heldChunks[cid].Checksum
+	for i := 1; i < len(c.holders); i++ {
+		sum2 := c.holders[i].heldChunks[cid].Checksum
+		if sum != sum2 {
+			//log.Println(c.holders[0].Phy, sum, c.holders[i].Phy, sum2)
+			sg.mutex.RUnlock()
+			return false
+		}
+	}
+	sg.mutex.RUnlock()
+	return true
+}
+
+func (sg *ServerGroup) UnSynchedChunks() []int {
+	var list []int
+	for i := range sg.chunks {
+		if !sg.IsSynched(i) {
+			list = append(list, i)
+		}
+	}
+	return list
+}

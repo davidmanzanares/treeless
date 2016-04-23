@@ -32,7 +32,7 @@ func (s *syncChecksum) Sum(el uint64, t time.Time) {
 		//Move forward the time
 		s.oldTime = s.mediumTime
 		s.mediumTime = s.newTime
-		s.newTime = time.Unix(int64((time.Now().Unix()))+2, 0)
+		s.newTime = time.Unix(int64((time.Now().Unix()))+1, 0)
 		s.currentChecksum = s.mediumChecksum
 		s.mediumChecksum = s.newChecksum
 	}

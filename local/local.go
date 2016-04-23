@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"runtime"
 	"sync"
 	"time"
 	"treeless/com/protocol"
@@ -197,6 +198,22 @@ func (lh *Core) CAS(key, value []byte) error {
 func (lh *Core) Iterate(chunkIndex int, foreach func(key, value []byte) bool) error {
 	lh.chunks[chunkIndex].Lock()
 	err := lh.chunks[chunkIndex].core.Iterate(foreach)
+	lh.chunks[chunkIndex].Unlock()
+	return err
+}
+
+//Iterate all key-value pairs of a chunk, executing foreach for each key-value pair
+func (lh *Core) BackwardsIterate(chunkIndex int, foreach func(key, value []byte) bool) error {
+	lh.chunks[chunkIndex].Lock()
+	i := 0
+	err := lh.chunks[chunkIndex].core.Iterate(func(key, value []byte) bool {
+		if i%128 == 0 {
+			lh.chunks[chunkIndex].Unlock()
+			runtime.Gosched()
+			lh.chunks[chunkIndex].Lock()
+		}
+		return foreach(key, value)
+	})
 	lh.chunks[chunkIndex].Unlock()
 	return err
 }

@@ -299,9 +299,12 @@ func TestCAS(t *testing.T) {
 				inc(c, key)
 			}
 			w.Done()
+			time.Sleep(time.Second)
 		}()
 	}
 	w.Wait()
+	fmt.Println("SLEEEP")
+	time.Sleep(time.Minute)
 	//Get & check
 	value, _ = c.Get(key)
 	x := int(binary.LittleEndian.Uint32(value))

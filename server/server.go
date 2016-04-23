@@ -11,6 +11,7 @@ import (
 	"treeless/com/protocol"
 	"treeless/dist/heartbeat"
 	"treeless/dist/rebalance"
+	"treeless/dist/repair"
 	"treeless/dist/servergroup"
 	"treeless/hashing"
 	"treeless/local"
@@ -95,6 +96,8 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 	s.hb = heartbeat.Start(s.sg)
 	//Rebalancer start
 	rebalance.StartRebalance(s.sg, s.lh, func() bool { return false })
+
+	repair.StartRepairSystem(s.sg, s.lh, func() bool { return false })
 
 	//Init server
 	s.s = tlcom.Start(addr, localIP, localport, worker(&s), s.hb.ListenReply(s.lh))

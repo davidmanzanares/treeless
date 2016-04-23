@@ -238,7 +238,7 @@ func (c *PMap) CAS(h64 uint64, key, value []byte) error {
 			c.hm.setHash(index, h)
 			c.hm.setStoreIndex(index, storeIndex)
 			c.hm.numStoredKeys++
-			c.checksum.Sum(h64^hashing.FNV1a64(value), t)
+			c.checksum.Sum(h64^hashing.FNV1a64(value[16:]), t)
 			return nil
 		}
 		if h == storedHash {
@@ -267,7 +267,7 @@ func (c *PMap) CAS(h64 uint64, key, value []byte) error {
 				}
 				c.hm.setHash(index, h)
 				c.hm.setStoreIndex(index, storeIndex)
-				c.checksum.Sum(h64^hashing.FNV1a64(value), t)
+				c.checksum.Sum(h64^hashing.FNV1a64(value[16:]), t)
 				return nil
 			}
 		}
