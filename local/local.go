@@ -6,6 +6,7 @@ import (
 	"os"
 	"sync"
 	"time"
+	"treeless/com/protocol"
 	"treeless/hashing"
 	"treeless/local/pmap"
 )
@@ -88,17 +89,18 @@ func (lh *Core) KnownChunks() int {
 	lh.mutex.RUnlock()
 	return n
 }
-func (lh *Core) KnownChunksList() []int {
+func (lh *Core) ChunksList() []protocol.AmAliveChunk {
 	lh.mutex.RLock()
-	list := make([]int, 0, lh.knownChunks)
+	list := make([]protocol.AmAliveChunk, 0, lh.knownChunks)
 	for i := 0; i < len(lh.chunks); i++ {
 		if lh.chunks[i].status != 0 {
-			list = append(list, i)
+			list = append(list, protocol.AmAliveChunk{ID: i, Checksum: lh.chunks[i].core.Checksum()})
 		}
 	}
 	lh.mutex.RUnlock()
 	return list
 }
+
 func (lh *Core) ChunkStatus(id int) ChunkStatus {
 	lh.mutex.RLock()
 	s := lh.chunks[id].status

@@ -7,10 +7,15 @@ import (
 
 const MaxShortHeartbeatSize = 128
 
+type AmAliveChunk struct {
+	ID       int
+	Checksum uint64
+}
+
 //AmAlive stores heartbeat information
 type AmAlive struct {
-	KnownChunks  []int    //Chunks known by the server
-	KnownServers []string //Servers known by the server
+	KnownChunks  []AmAliveChunk //Chunks known by the server
+	KnownServers []string       //Servers known by the server
 }
 
 type Gossip struct {

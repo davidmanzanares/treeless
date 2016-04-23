@@ -57,10 +57,10 @@ func StartRebalance(sg *servergroup.ServerGroup, lh *local.Core, ShouldStop func
 			} else if known >= avg { //HR-Release
 				//Local server has more work than it should
 				//Locate a chunk with more redundancy than the required redundancy and *not* protected
-				for _, cid := range lh.KnownChunksList() {
-					if lh.ChunkStatus(cid) == local.ChunkSynched && sg.NumHolders(cid) > sg.Redundancy() {
-						log.Println("Release to rebalance.", cid, sg.NumHolders(cid), " Reason:", known, avg)
-						release(cid)
+				for _, c := range lh.ChunksList() {
+					if lh.ChunkStatus(c.ID) == local.ChunkSynched && sg.NumHolders(c.ID) > sg.Redundancy() {
+						log.Println("Release to rebalance.", c.ID, sg.NumHolders(c.ID), " Reason:", known, avg)
+						release(c.ID)
 						break
 					}
 				}
@@ -131,7 +131,7 @@ func duplicator(sg *servergroup.ServerGroup, lh *local.Core,
 				time.Sleep(time.Second * 2)
 				log.Println("Duplication completed: 0 sized", s.Phy, cid)
 				lh.ChunkSetStatus(cid, local.ChunkSynched)
-				sg.SetServerChunks(lh.LocalhostIPPort, lh.KnownChunksList())
+				sg.SetServerChunks(lh.LocalhostIPPort, lh.ChunksList())
 			}()
 		} else {
 			go func() {
@@ -163,7 +163,7 @@ func duplicator(sg *servergroup.ServerGroup, lh *local.Core,
 				} else {
 					//Set chunk as ready
 					lh.ChunkSetStatus(cid, local.ChunkSynched)
-					sg.SetServerChunks(lh.LocalhostIPPort, lh.KnownChunksList())
+					sg.SetServerChunks(lh.LocalhostIPPort, lh.ChunksList())
 					log.Println("Chunk duplication completed", cid)
 					transferred = true
 					break
@@ -221,7 +221,7 @@ func releaser(sg *servergroup.ServerGroup, lh *local.Core) (release func(cid int
 			}
 			//Release
 			lh.ChunkSetStatus(c, 0)
-			sg.SetServerChunks(lh.LocalhostIPPort, lh.KnownChunksList())
+			sg.SetServerChunks(lh.LocalhostIPPort, lh.ChunksList())
 			log.Println("Remove completed", c)
 		}
 	}()

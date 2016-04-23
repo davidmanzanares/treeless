@@ -5,7 +5,7 @@ import "fmt"
 //VirtualChunk stores generical chunk info, including server holders
 type VirtualChunk struct {
 	id      int
-	holders []*VirtualServer //Set of server holders TODO: array
+	holders []*VirtualServer
 }
 
 func (c *VirtualChunk) String() {

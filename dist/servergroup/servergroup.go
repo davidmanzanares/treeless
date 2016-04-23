@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 	"treeless/com"
+	"treeless/com/protocol"
 )
 
 //Hide virtuals
@@ -222,14 +223,14 @@ func (sg *ServerGroup) KnownServers() []string {
 	sg.mutex.RUnlock()
 	return list
 }
-func (sg *ServerGroup) GetServerChunks(addr string) []int {
+func (sg *ServerGroup) GetServerChunks(addr string) []protocol.AmAliveChunk {
 	sg.mutex.Lock()
 	defer sg.mutex.Unlock()
 	s, ok := sg.servers[addr]
 	if !ok {
 		return nil
 	}
-	c := make([]int, len(s.heldChunks))
+	c := make([]protocol.AmAliveChunk, len(s.heldChunks))
 	copy(c, s.heldChunks)
 	return c
 }
@@ -238,7 +239,7 @@ func (sg *ServerGroup) GetServerChunks(addr string) []int {
 	ServerGroup setters
 */
 
-func (sg *ServerGroup) SetServerChunks(addr string, cids []int) {
+func (sg *ServerGroup) SetServerChunks(addr string, cids []protocol.AmAliveChunk) {
 	sg.mutex.Lock()
 	defer sg.mutex.Unlock()
 
@@ -257,14 +258,14 @@ func (sg *ServerGroup) SetServerChunks(addr string, cids []int) {
 		}
 		if i == len(cids) {
 			//Forgotten chunk
-			sg.chunks[c].removeHolder(s)
+			sg.chunks[c.ID].removeHolder(s)
 		}
 	}
 
 	for i := 0; i < len(cids); i++ {
-		if !sg.chunks[cids[i]].hasHolder(s) {
+		if !sg.chunks[cids[i].ID].hasHolder(s) {
 			//Added chunk
-			sg.chunks[cids[i]].addHolder(s)
+			sg.chunks[cids[i].ID].addHolder(s)
 		}
 	}
 
@@ -302,8 +303,8 @@ func (sg *ServerGroup) RemoveServer(addr string) error {
 		return errors.New("Server not known")
 	}
 	delete(sg.servers, addr)
-	for _, i := range s.heldChunks {
-		sg.chunks[i].removeHolder(s)
+	for _, c := range s.heldChunks {
+		sg.chunks[c.ID].removeHolder(s)
 	}
 	sg.mutex.Unlock()
 	s.freeConn()
@@ -318,8 +319,8 @@ func (sg *ServerGroup) DeadServer(addr string) error {
 		return errors.New("Server not known")
 	}
 	sg.servers[addr].lastHeartbeat = time.Time{}
-	for _, i := range s.heldChunks {
-		sg.chunks[i].removeHolder(s)
+	for _, c := range s.heldChunks {
+		sg.chunks[c.ID].removeHolder(s)
 	}
 	s.heldChunks = nil
 	sg.mutex.Unlock()

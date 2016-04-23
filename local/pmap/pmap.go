@@ -15,6 +15,8 @@ import (
 //FilePerms i
 const FilePerms = 0700
 
+const defaultCheckSumInterval = time.Second
+
 /*
 A PMap is a persistent dicctionary with high-performance access and specific timestamp semantics.
 
@@ -33,9 +35,10 @@ kernel. It uses an 8 byte long header.
 Note: this module is *not* thread-safe.
 */
 type PMap struct {
-	hm   *hashmap
-	st   *store
-	path string
+	hm       *hashmap
+	st       *store
+	checksum syncChecksum
+	path     string
 }
 
 //New returns an initialized PMap stored in path with a maximum store size.
@@ -45,7 +48,13 @@ func New(path string, size uint64) *PMap {
 	c.path = path
 	c.hm = newHashMap(defaultHashMapInitialLog2Size, defaultHashMapSizeLimit)
 	c.st = newStore(c.path, size)
+	c.checksum.SetInterval(defaultCheckSumInterval)
 	return c
+}
+
+func (c *PMap) Checksum() uint64 {
+	c.checksum.Sum(0, time.Now())
+	return c.checksum.Checksum()
 }
 
 func (c *PMap) Restore(path string) {
@@ -155,6 +164,8 @@ func (c *PMap) Set(h64 uint64, key, value []byte) error {
 			c.hm.setHash(index, h)
 			c.hm.setStoreIndex(index, storeIndex)
 			c.hm.numStoredKeys++
+			t := time.Unix(0, int64(binary.LittleEndian.Uint64(value[:8])))
+			c.checksum.Sum(h64^hashing.FNV1a64(value), t)
 			return nil
 		}
 		if h == storedHash {
@@ -176,9 +187,11 @@ func (c *PMap) Set(h64 uint64, key, value []byte) error {
 				if err != nil {
 					return err
 				}
+				c.checksum.Sub(h64^hashing.FNV1a64(v), t)
 				c.st.del(stIndex)
 				c.hm.setHash(index, h)
 				c.hm.setStoreIndex(index, storeIndex)
+				c.checksum.Sum(h64^hashing.FNV1a64(value), t)
 				return nil
 			}
 		}
@@ -225,6 +238,7 @@ func (c *PMap) CAS(h64 uint64, key, value []byte) error {
 			c.hm.setHash(index, h)
 			c.hm.setStoreIndex(index, storeIndex)
 			c.hm.numStoredKeys++
+			c.checksum.Sum(h64^hashing.FNV1a64(value), t)
 			return nil
 		}
 		if h == storedHash {
@@ -245,6 +259,7 @@ func (c *PMap) CAS(h64 uint64, key, value []byte) error {
 					log.Println("hash mismatch!")
 					return errors.New("CAS failed: hash mismatch")
 				}
+				c.checksum.Sub(h64^hashing.FNV1a64(v), t)
 				c.st.del(stIndex)
 				storeIndex, err := c.st.put(key, value[16:])
 				if err != nil {
@@ -252,6 +267,7 @@ func (c *PMap) CAS(h64 uint64, key, value []byte) error {
 				}
 				c.hm.setHash(index, h)
 				c.hm.setStoreIndex(index, storeIndex)
+				c.checksum.Sum(h64^hashing.FNV1a64(value), t)
 				return nil
 			}
 		}
@@ -287,6 +303,7 @@ func (c *PMap) Del(h64 uint64, key, value []byte) error {
 					//Stored pair is newer than the provided pair
 					return nil
 				}
+				c.checksum.Sub(h64^hashing.FNV1a64(v), t)
 				c.st.del(stIndex)
 				c.hm.setHash(index, deletedBucket)
 				return nil

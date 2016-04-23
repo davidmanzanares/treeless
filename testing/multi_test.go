@@ -110,7 +110,7 @@ func TestHotRebalance(t *testing.T) {
 				if core == 0 && i == 0 {
 					fmt.Println("Server 2 power up")
 					//Second server set-up
-					cluster[1].assoc(addr, false)
+					cluster[1].assoc(addr, ultraverbose)
 					//Wait for rebalance
 					time.Sleep(time.Second * 10)
 					//First server shut down

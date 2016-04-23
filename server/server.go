@@ -57,9 +57,9 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 		//New DB group
 		s.sg = servergroup.CreateServerGroup(numChunks, redundancy)
 		s.sg.AddServerToGroup(localIP + ":" + fmt.Sprint(localport))
-		list := make([]int, numChunks)
+		list := make([]protocol.AmAliveChunk, numChunks)
 		for i := 0; i < numChunks; i++ {
-			list[i] = i
+			list[i].ID = i
 		}
 		s.sg.SetServerChunks(localIP+":"+fmt.Sprint(localport), list)
 	} else {
@@ -249,7 +249,7 @@ func worker(s *DBServer) (work func(message protocol.Message) (response protocol
 			response.ID = message.ID
 			response.Type = protocol.OpResponse
 			var aa protocol.AmAlive
-			aa.KnownChunks = s.lh.KnownChunksList()
+			aa.KnownChunks = s.lh.ChunksList()
 			aa.KnownServers = s.sg.KnownServers()
 			response.Value = aa.Marshal()
 			return response

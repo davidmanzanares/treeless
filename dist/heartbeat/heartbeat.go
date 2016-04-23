@@ -14,8 +14,8 @@ import (
 	"treeless/local"
 )
 
-var heartbeatTimeout = time.Millisecond * 500
-var heartbeatSleep = time.Millisecond * 500
+var heartbeatTimeout = time.Millisecond * 200
+var heartbeatSleep = time.Millisecond * 200
 var timeoutRetries = 3
 
 //Heartbeater is used to discover changes in the DB topology by using a ping-pong protocol
@@ -187,7 +187,7 @@ func (h *Heartbeater) ListenReply(c *local.Core) func() protocol.ShortAmAlive {
 	return func() protocol.ShortAmAlive {
 		h.cleanNews()
 		var r protocol.AmAlive
-		r.KnownChunks = c.KnownChunksList()
+		r.KnownChunks = c.ChunksList()
 		r.KnownServers = h.sg.KnownServers()
 		s := r.Short()
 		h.newsMutex.Lock()
