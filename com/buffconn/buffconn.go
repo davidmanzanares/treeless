@@ -2,6 +2,7 @@ package buffconn
 
 import (
 	"encoding/binary"
+	"io"
 	"log"
 	"math/rand"
 	"net"
@@ -39,20 +40,28 @@ const fastModeEnableProbability = 1 / 500.0
 func NewBufferedConn(conn *net.TCPConn, fromWorld chan<- protocol.Message) (toWorldChannel chan<- protocol.Message) {
 	toWorld := make(chan protocol.Message, 1024)
 	offset := new(int32)
-	go bufferedWriter(conn, toWorld, offset)
-	go bufferedReader(conn, fromWorld, offset)
+	isClosed := new(int32)
+	go bufferedWriter(conn, toWorld, offset, isClosed)
+	go bufferedReader(conn, fromWorld, offset, isClosed)
 	return toWorld
 }
 
-func tcpWrite(conn *net.TCPConn, buffer []byte) {
+func tcpWrite(conn *net.TCPConn, buffer []byte, toWorld <-chan protocol.Message, isClosed *int32) (ok bool) {
 	for len(buffer) > 0 {
 		n, err := conn.Write(buffer)
 		if err != nil {
+			atomic.StoreInt32(isClosed, 1)
 			conn.Close()
-			log.Println(err)
+			if err != io.EOF {
+				log.Println("Buffered connection TCP write error", err)
+			}
+			for range toWorld {
+			}
+			return false
 		}
 		buffer = buffer[n:]
 	}
+	return true
 }
 
 //bufferedWriter will write to conn messages recieved by the channel
@@ -64,8 +73,9 @@ func tcpWrite(conn *net.TCPConn, buffer []byte) {
 //Close the channel to stop the infinite listening loop.
 //
 //This function blocks, typical usage will be "go bufferedWriter(...)""
-func bufferedWriter(conn *net.TCPConn, toWorld <-chan protocol.Message, offset *int32) {
+func bufferedWriter(conn *net.TCPConn, toWorld <-chan protocol.Message, offset *int32, isClosed *int32) {
 	ticker := time.NewTicker(windowTimeDuration)
+	defer ticker.Stop()
 	var tickerChannel <-chan time.Time
 
 	buffer := make([]byte, bufferSize)
@@ -80,7 +90,7 @@ func bufferedWriter(conn *net.TCPConn, toWorld <-chan protocol.Message, offset *
 		case m, ok := <-toWorld:
 			if !ok {
 				//Channel closed, stop loop
-				ticker.Stop()
+				atomic.StoreInt32(isClosed, 1)
 				conn.Close()
 				return
 			}
@@ -90,14 +100,18 @@ func bufferedWriter(conn *net.TCPConn, toWorld <-chan protocol.Message, offset *
 			if tooLong {
 				//Message too long for the buffer remaining space
 				//Flush old data on buffer
-				tcpWrite(conn, buffer[:index])
+				if !tcpWrite(conn, buffer[:index], toWorld, isClosed) {
+					return
+				}
 				index = 0
 				if msgSize > bufferSize {
 					//Too big message for the buffer (even if empty)
 					//Send this message
 					bigMsg := make([]byte, msgSize)
 					m.Marshal(bigMsg)
-					tcpWrite(conn, bigMsg)
+					if !tcpWrite(conn, bigMsg, toWorld, isClosed) {
+						return
+					}
 				} else {
 					//Fast path: add msg to the buffer
 					m.Marshal(buffer)
@@ -113,16 +127,22 @@ func bufferedWriter(conn *net.TCPConn, toWorld <-chan protocol.Message, offset *
 					//Activate fast path
 					tickerChannel = ticker.C
 				}
-				tcpWrite(conn, buffer[:msgSize])
+				if !tcpWrite(conn, buffer[:msgSize], toWorld, isClosed) {
+					return
+				}
 			}
 		case <-tickerChannel:
 			//Flush buffer
-			tcpWrite(conn, buffer[0:index])
+			if !tcpWrite(conn, buffer[0:index], toWorld, isClosed) {
+				return
+			}
 			index = 0
 			if sents < 2 {
 				//Deactivate fast path
 				tickerChannel = nil
-				tcpWrite(conn, buffer[0:index])
+				if !tcpWrite(conn, buffer[0:index], toWorld, isClosed) {
+					return
+				}
 				index = 0
 				sents = 0
 			}
@@ -135,7 +155,7 @@ func bufferedWriter(conn *net.TCPConn, toWorld <-chan protocol.Message, offset *
 //Close the socket to close the reader, the reader will close the channel afterwards
 //TCP errors will close the channel
 //This function blocks, typical usage: "go bufferedReader(...)"
-func bufferedReader(conn *net.TCPConn, fromWorld chan<- protocol.Message, offset *int32) error {
+func bufferedReader(conn *net.TCPConn, fromWorld chan<- protocol.Message, offset *int32, isClosed *int32) error {
 	//Ping-pong between buffers
 	var slices [2][]byte
 	slices[0] = make([]byte, bufferSize)
@@ -149,6 +169,10 @@ func bufferedReader(conn *net.TCPConn, fromWorld chan<- protocol.Message, offset
 			//Not enought bytes read to form a message, read more
 			n, err := conn.Read(buffer[index:])
 			if err != nil {
+				if err != io.EOF && atomic.LoadInt32(isClosed) == 0 {
+					log.Println("Buffcon TCP Read error", err)
+				}
+				atomic.StoreInt32(isClosed, 1)
 				close(fromWorld)
 				return err
 			}
@@ -165,6 +189,10 @@ func bufferedReader(conn *net.TCPConn, fromWorld chan<- protocol.Message, offset
 			for index < messageSize {
 				n, err := conn.Read(bigBuffer[index:])
 				if err != nil {
+					if err != io.EOF && atomic.LoadInt32(isClosed) == 0 {
+						log.Println("Buffcon TCP Read error", err)
+					}
+					atomic.StoreInt32(isClosed, 1)
 					close(fromWorld)
 					return err
 				}
@@ -179,6 +207,10 @@ func bufferedReader(conn *net.TCPConn, fromWorld chan<- protocol.Message, offset
 			//Not enought bytes read to form *this* message, read more
 			n, err := conn.Read(buffer[index:])
 			if err != nil {
+				if err != io.EOF && atomic.LoadInt32(isClosed) == 0 {
+					log.Println("Buffcon TCP Read error", err)
+				}
+				atomic.StoreInt32(isClosed, 1)
 				close(fromWorld)
 				return err
 			}

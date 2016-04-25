@@ -112,7 +112,7 @@ func (vs *vagrantServer) create(numChunks, redundancy int, verbose bool) string 
 	//Stop
 	vs.vagrantSSH("killall -q treeless; rm -f /home/vagrant/treeless.*")
 	//Start and create
-	vs.vagrantSSH(`start-stop-daemon -S -b --make-pidfile --pidfile /home/vagrant/treeless.pid --startas /bin/bash -- -c "exec /vagrant/treeless -create -localip 192.168.2.100 -port 9876 -dbpath /home/vagrant/db -size 2097152 -redundancy ` + fmt.Sprint(redundancy) + ` -chunks ` + fmt.Sprint(numChunks) + ` > /home/vagrant/treeless.log 2>&1"`)
+	vs.vagrantSSH(`start-stop-daemon -S -b --make-pidfile --pidfile /home/vagrant/treeless.pid --startas /bin/bash -- -c "exec /vagrant/treeless -create -localip 192.168.2.100 -port 9876 -dbpath /home/vagrant/db -size 2097152 -cpuprofile /vagrant/cpuv -redundancy ` + fmt.Sprint(redundancy) + ` -chunks ` + fmt.Sprint(numChunks) + ` > /home/vagrant/treeless.log 2>&1"`)
 	waitForServer(vs.addr())
 	return vs.addr()
 }
@@ -127,6 +127,7 @@ func (vs *vagrantServer) assoc(addr string, verbose bool) string {
 }
 
 func (vs *vagrantServer) kill() {
+	//vs.vagrantSSH("killall -q -s SIGINT treeless; rm -f /home/vagrant/treeless.pid")
 	vs.vagrantSSH("killall -q treeless; rm -f /home/vagrant/treeless.pid")
 }
 
@@ -134,10 +135,10 @@ func (vs *vagrantServer) restart() {
 	panic("Not implemented!")
 }
 func (vs *vagrantServer) disconnect() {
-	panic("Not implemented!")
+	vs.vagrantSSH("killall -s SIGSTOP -q treeless")
 }
 func (vs *vagrantServer) reconnect() {
-	panic("Not implemented!")
+	vs.vagrantSSH("killall -s SIGCONT -q treeless")
 }
 
 func (vs *vagrantServer) testCapability(c capability) bool {

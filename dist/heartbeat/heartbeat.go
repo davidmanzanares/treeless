@@ -15,7 +15,7 @@ import (
 )
 
 var heartbeatTimeout = time.Millisecond * 200
-var heartbeatSleep = time.Millisecond * 200
+var heartbeatSleep = time.Millisecond * 2000
 var timeoutRetries = 3
 
 //Heartbeater is used to discover changes in the DB topology by using a ping-pong protocol
@@ -50,11 +50,9 @@ func getaa(addr string) (*protocol.AmAlive, error) {
 	writech <- protocol.Message{Type: protocol.OpAmAliveRequest}
 	select {
 	case <-time.After(time.Second):
-		conn.Close()
 		close(writech)
 		return nil, errors.New("Reseponse timeout")
 	case m := <-readch:
-		conn.Close()
 		close(writech)
 		return protocol.AmAliveUnMarshal(m.Value)
 	}
@@ -122,7 +120,6 @@ func (h *Heartbeater) request(addr string) (ok bool) {
 			if h.timeouts[addr] > 3 {
 				delete(h.timeouts, addr)
 				//Server is dead
-				log.Println("Server is dead:", addr)
 				h.sg.DeadServer(addr)
 				h.addNews(addr, 0)
 			}
@@ -173,9 +170,9 @@ func Start(sg *servergroup.ServerGroup) *Heartbeater {
 						break
 					}
 				}
-				//fmt.Println(sg)
-				<-ticker.C
 			}
+			<-ticker.C
+			//fmt.Println(sg)
 		}
 	}()
 	return h

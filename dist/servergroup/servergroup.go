@@ -69,7 +69,7 @@ func Assoc(addr string) (*ServerGroup, error) {
 	defer c.Close()
 	serialization, err := c.GetAccessInfo()
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	return UnmarhalServerGroup(serialization)
 }
@@ -104,8 +104,12 @@ func (sg *ServerGroup) String() string {
 	sort.Strings(addrs)
 	for _, addr := range addrs {
 		s := sg.servers[addr]
+		dead := ""
+		if s.dead {
+			dead = "DEAD "
+		}
 		str += "\t Address: " + s.Phy +
-			"\n\t\tKnown chunks: " + fmt.Sprint(s.heldChunks) + " Last heartbeat: " + (t.Sub(s.lastHeartbeat)).String() + "\n"
+			"\n\t\t" + dead + "Known chunks: " + fmt.Sprint(s.heldChunks) + " Last heartbeat: " + (t.Sub(s.lastHeartbeat)).String() + "\n"
 	}
 
 	str += fmt.Sprint(sg.numChunks) + " chunks:\n"
@@ -248,7 +252,7 @@ func (sg *ServerGroup) SetServerChunks(addr string, cids []protocol.AmAliveChunk
 	if !ok {
 		return
 	}
-
+	s.dead = false
 	for _, c := range s.heldChunks {
 		i := 0
 		for ; i < len(cids); i++ {
@@ -318,7 +322,10 @@ func (sg *ServerGroup) DeadServer(addr string) error {
 		sg.mutex.Unlock()
 		return errors.New("Server not known")
 	}
-	sg.servers[addr].lastHeartbeat = time.Time{}
+	if !s.dead {
+		log.Println("Server is dead:", addr)
+		s.dead = true
+	}
 	for _, c := range s.heldChunks {
 		sg.chunks[c.ID].removeHolder(s)
 	}

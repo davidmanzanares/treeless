@@ -14,11 +14,11 @@ import (
 )
 
 func TestBenchParallelEachS1_Get(t *testing.T) {
-	testBenchParallel(t, false, 1.0, 0., 0.0, 1, 500000)
+	testBenchParallel(t, false, 1.0, 0., 0.0, 1, 100000)
 
 }
 func TestBenchParallelSharedS1_Get(t *testing.T) {
-	testBenchParallel(t, true, 1.0, 0.0, 0.0, 1, 5000000)
+	testBenchParallel(t, true, 1.0, 0.0, 0.0, 1, 1000000)
 }
 
 func testBenchParallel(t *testing.T, oneClient bool, pGet, pSet, pDel float32, servers int, operations int) {
@@ -31,6 +31,7 @@ func testBenchParallel(t *testing.T, oneClient bool, pGet, pSet, pDel float32, s
 	w.Add(vClients)
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	clients := make([]*client.DBClient, vClients)
+	time.Sleep(time.Millisecond * 300)
 	if oneClient {
 		c, err := client.Connect(addr)
 		if err != nil {
@@ -44,7 +45,7 @@ func testBenchParallel(t *testing.T, oneClient bool, pGet, pSet, pDel float32, s
 		for i := range clients {
 			c, err := client.Connect(addr)
 			if err != nil {
-				t.Fatal(err)
+				t.Fatal(i, err)
 			}
 			defer c.Close()
 			clients[i] = c

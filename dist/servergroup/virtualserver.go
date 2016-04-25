@@ -9,8 +9,9 @@ import (
 
 //VirtualServer stores generical server info
 type VirtualServer struct {
-	Phy           string                  //Physical address. READ-ONLY by external packages!!!
-	lastHeartbeat time.Time               //Last time a heartbeat was listened
+	Phy           string    //Physical address. READ-ONLY by external packages!!!
+	lastHeartbeat time.Time //Last time a heartbeat was listened
+	dead          bool
 	heldChunks    []protocol.AmAliveChunk //List of all chunks that this server holds
 	conn          *tlcom.Conn             //TCP connection, it may not exists
 	m             sync.RWMutex
@@ -41,9 +42,8 @@ func (s *VirtualServer) needConnection() (err error) {
 }
 func (s *VirtualServer) freeConn() {
 	//Close connetion now
-	//log.Println("FREECONN")
 	s.m.Lock()
-	//log.Println("FREECONN", s.conn)
+	//log.Println("Free connection", s.Phy)
 	if s.conn != nil {
 		s.conn.Close()
 		s.conn = nil

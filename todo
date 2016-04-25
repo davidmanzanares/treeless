@@ -17,7 +17,6 @@ Test:
 
 Others:
 	*Free non used communications
-	*treemon own package
 	Stats
 	Memprofile
 	Log rotation: max size
@@ -33,3 +32,16 @@ Memoria:
 	https://en.m.wikipedia.org/wiki/Lightning_Memory-Mapped_Database#
 	http://the-paper-trail.org/blog/consistency-and-availability-in-amazons-dynamo/
 	http://www.allthingsdistributed.com/2007/10/amazons_dynamo.html
+
+
+Pruebas de consistencia
+Pruebas con vagrant
+Reestructuracion del codigo
+Bugfixes
+Mejoras de rendimiento
+Operacion CAS añadida
+Uso de RAM de forma exclusiva
+Paquetes cortos de ping-pong
+Procolo gossip
+Checksums
+Reparación automatica

@@ -48,9 +48,9 @@ func listenRequests(conn *net.TCPConn, id int, worker func(protocol.Message) (re
 	//log.Println("New connection accepted. Connection ID:", id)
 	//tcpWriter will buffer TCP writes to send more message in less TCP packets
 	//this technique allows bigger throughtputs, but latency in increased a little
-	ch := make(chan protocol.Message, 1024)
-	toWorld := buffconn.NewBufferedConn(conn, ch)
 	go func() {
+		ch := make(chan protocol.Message, 1024)
+		toWorld := buffconn.NewBufferedConn(conn, ch)
 		for {
 			m, ok := <-ch
 			if ok {
