@@ -15,7 +15,7 @@ import (
 	"treeless/tlfmt"
 )
 
-func TestBasicRebalance(t *testing.T) {
+func TestMultiBasicRebalance(t *testing.T) {
 	//Server set-up
 	addr1 := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	waitForServer(addr1)
@@ -42,7 +42,7 @@ func TestBasicRebalance(t *testing.T) {
 	cluster[0].kill()
 	time.Sleep(time.Millisecond * 100)
 	//Get operation
-	value, _ := client.Get([]byte("hola"))
+	value, _, _ := client.Get([]byte("hola"))
 	if string(value) != "mundo" {
 		t.Fatal("Get failed, returned string: ", string(value))
 	}
@@ -50,13 +50,13 @@ func TestBasicRebalance(t *testing.T) {
 	//Del operation
 	client.Del([]byte("hola"))
 	//Get operation
-	value, _ = client.Get([]byte("hola"))
+	value, _, _ = client.Get([]byte("hola"))
 	if value != nil {
 		t.Fatal("Get failed, returned string: ", string(value))
 	}
 }
 
-func TestHotRebalance(t *testing.T) {
+func TestMultiHotRebalance(t *testing.T) {
 	var stop2 func()
 	//Server set-up
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
@@ -150,7 +150,7 @@ func TestHotRebalance(t *testing.T) {
 		if len(value) > 128 {
 			fmt.Println(123)
 		}
-		rval, _ := c.Get([]byte(key))
+		rval, _, _ := c.Get([]byte(key))
 		if !bytes.Equal(rval, value) {
 			fmt.Println("GET value differs. Correct value:", value, "Returned value:", rval, "Errors:", err, "ChunkID:", hashing.FNV1a64([]byte(key))%8)
 			t.Fail()
@@ -168,7 +168,7 @@ func TestHotRebalance(t *testing.T) {
 		if ok {
 			continue
 		}
-		v, _ := c.Get([]byte(key))
+		v, _, _ := c.Get([]byte(key))
 		dels++
 		if v != nil {
 			t.Fatal("Deleted key present on DB")
@@ -181,7 +181,7 @@ func TestHotRebalance(t *testing.T) {
 	cluster[1].kill()
 }
 
-func TestNodeRevival(t *testing.T) {
+func TestMultiNodeRevival(t *testing.T) {
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	c, err := client.Connect(addr)
 	if err != nil {
@@ -206,13 +206,13 @@ func TestNodeRevival(t *testing.T) {
 
 	//Read
 	time.Sleep(time.Millisecond * 100)
-	v, _ := c.Get([]byte("hello"))
+	v, _, _ := c.Get([]byte("hello"))
 	if string(v) != "world" {
 		t.Fatal("Mismatch:", v)
 	}
 }
 
-func TestConsistencyMulti(t *testing.T) {
+func TestMultiConsistency(t *testing.T) {
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	defer cluster[0].kill()
 	for i := 1; i < len(cluster); i++ {
@@ -223,7 +223,7 @@ func TestConsistencyMulti(t *testing.T) {
 	metaTestConsistency(t, addr, 20, 200)
 }
 
-func TestConsistencyAsyncSetMulti(t *testing.T) {
+func TestMultiConsistencyAsyncSet(t *testing.T) {
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	defer cluster[0].kill()
 	for i := 1; i < len(cluster); i++ {
@@ -234,7 +234,7 @@ func TestConsistencyAsyncSetMulti(t *testing.T) {
 	metaTestConsistencyAsyncSet(t, addr, 20, 200)
 }
 
-func TestCAS(t *testing.T) {
+func TestMultiCAS(t *testing.T) {
 	runtime.GOMAXPROCS(5)
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	defer cluster[0].kill()
@@ -245,7 +245,7 @@ func TestCAS(t *testing.T) {
 	time.Sleep(time.Second * 5)
 	c, err := client.Connect(addr)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatal(err, "Should increase sleep time?")
 	}
 	defer c.Close()
 
@@ -254,7 +254,7 @@ func TestCAS(t *testing.T) {
 	inc := func(c *client.DBClient, key []byte) {
 		written := false
 		for !written {
-			oldv, t := c.Get(key)
+			oldv, t, _ := c.Get(key)
 			//fmt.Println(oldv, t)
 			x := binary.LittleEndian.Uint32(oldv)
 			//fmt.Println(x)
@@ -278,7 +278,7 @@ func TestCAS(t *testing.T) {
 	if !written {
 		t.Fatal("Initial CAS failed", errs)
 	}
-	v, _ := c.Get(key)
+	v, _, _ := c.Get(key)
 	//fmt.Println(oldv, t)
 	n := binary.LittleEndian.Uint32(v)
 	if n != 0 {
@@ -306,15 +306,15 @@ func TestCAS(t *testing.T) {
 	//fmt.Println("SLEEEP")
 	//time.Sleep(time.Minute)
 	//Get & check
-	value, _ = c.Get(key)
-	x := int(binary.LittleEndian.Uint32(value))
+	v, _, _ = c.Get(key)
+	x := int(binary.LittleEndian.Uint32(v))
 	fmt.Println("Tries:", tries, "Total operations:", ops*clients, "Clients:", clients)
 	if x != ops*clients {
-		t.Fatal("Mismatch:", ops*clients, "!=", x, "Value:", value)
+		t.Fatal("Mismatch:", ops*clients, "!=", x, "Value:", v)
 	}
 }
 
-func TestReadRepair(t *testing.T) {
+func TestMultiReadRepair(t *testing.T) {
 	//Start A
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	c, err := client.Connect(addr)
@@ -346,13 +346,13 @@ func TestReadRepair(t *testing.T) {
 	time.Sleep(time.Second)
 
 	//GET and check
-	v, _ := c.Get([]byte("hola"))
+	v, _, _ := c.Get([]byte("hola"))
 	if string(v) != "mundo" {
 		t.Fatal("Mismatch", string(v))
 	}
 }
 
-func TestBackwardsRepair(t *testing.T) {
+func TestMultiBackwardsRepair(t *testing.T) {
 	//Start A
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	c, err := client.Connect(addr)
@@ -381,7 +381,7 @@ func TestBackwardsRepair(t *testing.T) {
 	time.Sleep(time.Second * 5)
 
 	//GET and check
-	v, _ := c.Get([]byte("hola"))
+	v, _, _ := c.Get([]byte("hola"))
 	if string(v) != "mundo" {
 		t.Fatal("Mismatch", string(v))
 	}

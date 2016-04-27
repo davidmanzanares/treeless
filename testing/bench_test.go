@@ -14,16 +14,31 @@ import (
 )
 
 func TestBenchParallelEachS1_Get(t *testing.T) {
-	testBenchParallel(t, false, 1.0, 0., 0.0, 1, 100000)
+	testBenchParallel(t, false, 1.0, 0., 0.0, 1, 1000000)
 
 }
 func TestBenchParallelSharedS1_Get(t *testing.T) {
-	testBenchParallel(t, true, 1.0, 0.0, 0.0, 1, 1000000)
+	testBenchParallel(t, true, 1.0, 0.0, 0.0, 1, 10000000)
+}
+func TestBenchParallelSharedS2_Get(t *testing.T) {
+	testBenchParallel(t, true, 1.0, 0.0, 0.0, 2, 10000000)
+}
+func TestBenchParallelSharedS3_Get(t *testing.T) {
+	testBenchParallel(t, true, 1.0, 0.0, 0.0, 3, 10000000)
+}
+func TestBenchParallelSharedS4_Get(t *testing.T) {
+	testBenchParallel(t, true, 1.0, 0.0, 0.0, 4, 10000000)
 }
 
 func testBenchParallel(t *testing.T, oneClient bool, pGet, pSet, pDel float32, servers int, operations int) {
-	vClients := 1024
-	addr := cluster[0].create(testingNumChunks, 1, ultraverbose)
+	vClients := 1024 * 16 * servers
+	if !oneClient {
+		vClients = 256
+	}
+	if servers > len(cluster) {
+		t.Skip("Cluster is too small")
+	}
+	addr := cluster[0].create(32, 1, ultraverbose)
 	for i := 1; i < servers; i++ {
 		cluster[i].assoc(addr, ultraverbose)
 	}
@@ -31,7 +46,6 @@ func testBenchParallel(t *testing.T, oneClient bool, pGet, pSet, pDel float32, s
 	w.Add(vClients)
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	clients := make([]*client.DBClient, vClients)
-	time.Sleep(time.Millisecond * 300)
 	if oneClient {
 		c, err := client.Connect(addr)
 		if err != nil {
@@ -51,8 +65,12 @@ func testBenchParallel(t *testing.T, oneClient bool, pGet, pSet, pDel float32, s
 			clients[i] = c
 		}
 	}
-	//time.Sleep(time.Second * 20)
+	if servers > 1 {
+		//Wait for rebalance
+		time.Sleep(time.Second * 35)
+	}
 	//p := tlfmt.NewProgress("Operating...", operations)
+	fmt.Println("RUN")
 	ops := int32(0)
 	runtime.Gosched()
 	runtime.GC()
@@ -70,7 +88,16 @@ func testBenchParallel(t *testing.T, oneClient bool, pGet, pSet, pDel float32, s
 				//fmt.Println(op, key, value)
 				switch {
 				case op < pGet:
-					c.Get(key)
+					for i := 0; ; i++ {
+						if i == 5 {
+							t.Error("5 timeouts")
+						}
+						_, _, r := c.Get(key)
+						if r {
+							break
+						}
+						time.Sleep(time.Millisecond * 500)
+					}
 				case op < pGet+pSet:
 					c.Set(key, value)
 				default:
@@ -125,7 +152,7 @@ func testBenchSequential(t *testing.T, servers int) {
 			c.Del(key)
 		case 2:
 			v2 := goMap[string(key)]
-			v1, _ := c.Get(key)
+			v1, _, _ := c.Get(key)
 			if !bytes.Equal(v1, v2) {
 				fmt.Println("Mismatch, server returned:", v1,
 					"gomap returned:", v2)

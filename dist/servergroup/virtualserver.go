@@ -17,6 +17,14 @@ type VirtualServer struct {
 	m             sync.RWMutex
 }
 
+func (s *VirtualServer) getChunk(cid int) *protocol.AmAliveChunk {
+	for _, c := range s.heldChunks {
+		if c.ID == cid {
+			return &c
+		}
+	}
+	return nil
+}
 func (s *VirtualServer) needConnection() (err error) {
 	s.m.RLock()
 	for i := 0; s.conn == nil; i++ {

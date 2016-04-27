@@ -17,6 +17,7 @@ Test:
 
 Others:
 	*Free non used communications
+	Logging
 	Stats
 	Memprofile
 	Log rotation: max size

@@ -56,7 +56,7 @@ func TestMain(m *testing.M) {
 }
 
 //Test just a few hard-coded operations with one server - one client
-func TestSimple(t *testing.T) {
+func TestSingleSimple(t *testing.T) {
 	//Server set-up
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	defer cluster[0].kill()
@@ -80,7 +80,7 @@ func TestSimple(t *testing.T) {
 	}
 
 	//Get operation
-	value, _ := client.Get([]byte("hola"))
+	value, _, _ := client.Get([]byte("hola"))
 	if string(value) != "mundo" {
 		t.Fatal("Get failed, returned string: ", string(value))
 	}
@@ -92,14 +92,14 @@ func TestSimple(t *testing.T) {
 	}
 
 	//Get operation
-	value, _ = client.Get([]byte("hola"))
+	value, _, _ = client.Get([]byte("hola"))
 	if value != nil {
 		t.Fatal("Get returned string: ", string(value))
 	}
 }
 
 //TestBigMessages, send 1MB GET, SET messages
-func TestBigMessages(t *testing.T) {
+func TestSingleBigMessages(t *testing.T) {
 	//Server set-up
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	defer cluster[0].kill()
@@ -122,14 +122,14 @@ func TestBigMessages(t *testing.T) {
 	}
 
 	//GET
-	value, _ := client.Get([]byte("hola"))
+	value, _, _ := client.Get([]byte("hola"))
 	if string(value) != string(bytes.Repeat([]byte("X"), 1024*1024)) {
 		t.Fatal("Get failed, returned string: ", string(value))
 	}
 }
 
 //TestBigMessages, send 128 GET, SET messages, server should deny the operation
-func TestSizeLimit(t *testing.T) {
+func TestSingleSizeLimit(t *testing.T) {
 	//Server set-up
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	defer cluster[0].kill()
@@ -160,7 +160,7 @@ func TestSizeLimit(t *testing.T) {
 	}
 
 	//GET
-	value, _ := client.Get([]byte("hola"))
+	value, _, _ := client.Get([]byte("hola"))
 	if value != nil {
 		t.Fatal("Get returned:", value)
 	}
@@ -173,14 +173,14 @@ func TestSizeLimit(t *testing.T) {
 	}
 
 	//GET
-	value, _ = client.Get([]byte("hola"))
+	value, _, _ = client.Get([]byte("hola"))
 	if string(value) != string(bytes.Repeat([]byte("X"), 1024*1024)) {
 		t.Fatal("Get failed, returned string: ", string(value))
 	}
 }
 
 //Test just a few hard-coded operations with one server - one client
-func TestTimeout(t *testing.T) {
+func TestSingleTimeout(t *testing.T) {
 	//Server set-up
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	defer cluster[0].kill()
@@ -199,7 +199,7 @@ func TestTimeout(t *testing.T) {
 	}
 
 	//Get operation
-	value, _ := client.Get([]byte("hola"))
+	value, _, _ := client.Get([]byte("hola"))
 	if string(value) != "mundo" {
 		t.Fatal("Get failed, returned string: ", string(value))
 	}
@@ -211,7 +211,7 @@ func TestTimeout(t *testing.T) {
 	//Get operation
 	tb := time.Now()
 	client.GetTimeout = time.Millisecond * 100
-	value, _ = client.Get([]byte("hola"))
+	value, _, _ = client.Get([]byte("hola"))
 	if value != nil {
 		t.Fatal("???", value)
 	}
@@ -219,7 +219,7 @@ func TestTimeout(t *testing.T) {
 }
 
 //Test lots of operations made by a single client against a single DB server
-func TestCmplx1_1(t *testing.T) {
+func TestSingleCmplx1_1(t *testing.T) {
 	//Server set-up
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	defer cluster[0].kill()
@@ -289,7 +289,7 @@ func metaTest(t *testing.T, addr string, numOperations, maxKeySize, maxValueSize
 		if len(value) > 128 {
 			fmt.Println(123)
 		}
-		rval, _ := c.Get([]byte(key))
+		rval, _, _ := c.Get([]byte(key))
 		if !bytes.Equal(rval, value) {
 			fmt.Println(rval, "ASDASDSAD", value, len(rval), len(value))
 			panic(1)
@@ -304,7 +304,7 @@ func metaTest(t *testing.T, addr string, numOperations, maxKeySize, maxValueSize
 		if ok {
 			continue
 		}
-		v, _ := c.Get([]byte(key))
+		v, _, _ := c.Get([]byte(key))
 		dels++
 		if v != nil {
 			t.Fatal("Deleted key present on DB")
@@ -316,14 +316,14 @@ func metaTest(t *testing.T, addr string, numOperations, maxKeySize, maxValueSize
 	}
 }
 
-func TestConsistency(t *testing.T) {
+func TestSingleConsistency(t *testing.T) {
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	defer cluster[0].kill()
 	waitForServer(addr)
 	metaTestConsistency(t, addr, 20, 200)
 }
 
-func TestConsistencyAsyncSet(t *testing.T) {
+func TestSingleConsistencyAsyncSet(t *testing.T) {
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	defer cluster[0].kill()
 	waitForServer(addr)
@@ -377,7 +377,7 @@ func metaTestConsistencyAsyncSet(t *testing.T, serverAddr string, numClients, it
 						if i > 1 {
 							time.Sleep(time.Millisecond * time.Duration(i))
 						}
-						v1, _ = c.Get(key)
+						v1, _, _ = c.Get(key)
 						if bytes.Equal(v1, v2) {
 							break
 						}
@@ -444,7 +444,7 @@ func metaTestConsistency(t *testing.T, serverAddr string, numClients, iterations
 					mutex.Unlock()
 				case 2:
 					v2 := goMap[string(key)]
-					v1, _ := c.Get(key)
+					v1, _, _ := c.Get(key)
 					if !bytes.Equal(v1, v2) {
 						fmt.Println("Mismatch, server returned:", v1,
 							"gomap returned:", v2)
@@ -463,7 +463,7 @@ func metaTestConsistency(t *testing.T, serverAddr string, numClients, iterations
 }
 
 //TestLatency tests latency between a SET operation and a GET operaton that sees the the SET written value
-func TestLatency(t *testing.T) {
+func TestSingleLatency(t *testing.T) {
 	//Server set-up
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	defer cluster[0].kill()
@@ -515,7 +515,7 @@ func TestLatency(t *testing.T) {
 	lk := 1.0
 	go func() {
 		for l := range ch {
-			v, _ := c2.Get([]byte(l.key))
+			v, _, _ := c2.Get([]byte(l.key))
 			if v == nil {
 				errors++
 				if oks/(oks+errors) < P {
@@ -536,7 +536,7 @@ func TestLatency(t *testing.T) {
 }
 
 //TestClock tests records timestamps synchronization
-func TestClock(t *testing.T) {
+func TestSingleClock(t *testing.T) {
 	//Server set-up
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	defer cluster[0].kill()
@@ -582,7 +582,7 @@ func TestClock(t *testing.T) {
 	var maxDiff time.Duration
 	var avgDiff time.Duration
 	for k, goTime := range timestampMap {
-		v, tlTime := c.Get([]byte(k))
+		v, tlTime, _ := c.Get([]byte(k))
 		if v == nil {
 			t.Error("Get returned nil value")
 		}
@@ -599,7 +599,7 @@ func TestClock(t *testing.T) {
 	fmt.Println("Max time difference: ", maxDiff, "\nAverage time difference:", avgDiff)
 }
 
-func TestDefrag(t *testing.T) {
+func TestSingleDefrag(t *testing.T) {
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	c, err := client.Connect(addr)
 	if err != nil {

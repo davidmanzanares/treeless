@@ -1,6 +1,7 @@
 package local
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -115,6 +116,7 @@ func (lh *Core) ChunkStatus(id int) ChunkStatus {
 
 func (lh *Core) ChunkSetStatus(cid int, st ChunkStatus) { //DELETE use SetSynched...
 	lh.mutex.Lock()
+	lh.chunks[cid].Lock()
 	if lh.chunks[cid].status == 0 && st != 0 {
 		lh.knownChunks++
 	} else if lh.chunks[cid].status != 0 && st == 0 {
@@ -137,6 +139,7 @@ func (lh *Core) ChunkSetStatus(cid int, st ChunkStatus) { //DELETE use SetSynche
 		}(cid, t)
 	}
 	lh.chunks[cid].status = st
+	lh.chunks[cid].Unlock()
 	lh.mutex.Unlock()
 }
 
@@ -151,18 +154,26 @@ func (lh *Core) Get(key []byte) ([]byte, error) {
 	chunkIndex := int((h >> 32) % uint64(len(lh.chunks)))
 	chunk := lh.chunks[chunkIndex]
 	chunk.Lock()
+	if lh.chunks[chunkIndex].status == ChunkNotPresent {
+		lh.chunks[chunkIndex].Unlock()
+		return nil, errors.New("ChunkNotPresent")
+	}
 	v, err := chunk.core.Get(uint32(h), key)
 	chunk.Unlock()
 	return v, err
 }
 
 //Set the value for the provided key
-func (lh *Core) Set(key, value []byte) error {
+func (lh *Core) Set(key, value []byte) (err error) {
 	h := hashing.FNV1a64(key)
 	//Opt: use AND operator
 	chunkIndex := int((h >> 32) % uint64(len(lh.chunks)))
 	lh.chunks[chunkIndex].Lock()
-	err := lh.chunks[chunkIndex].core.Set(h, key, value)
+	if lh.chunks[chunkIndex].status == ChunkNotPresent {
+		err = errors.New("ChunkNotPresent")
+	} else {
+		err = lh.chunks[chunkIndex].core.Set(h, key, value)
+	}
 	lh.chunks[chunkIndex].Unlock()
 	return err
 }
@@ -174,6 +185,10 @@ func (lh *Core) Delete(key, value []byte) error {
 	chunkIndex := int((h >> 32) % uint64(len(lh.chunks)))
 	chunk := lh.chunks[chunkIndex]
 	chunk.Lock()
+	if lh.chunks[chunkIndex].status == ChunkNotPresent {
+		chunk.Unlock()
+		return errors.New("ChunkNotPresent")
+	}
 	err := chunk.core.Del(h, key, value)
 	delP := float64(chunk.core.Deleted()) / float64(chunk.core.Used())
 	usedP := float64(chunk.core.Used()) / float64(chunk.core.Size())
@@ -189,6 +204,10 @@ func (lh *Core) CAS(key, value []byte) error {
 	//Opt: use AND operator
 	chunkIndex := int((h >> 32) % uint64(len(lh.chunks)))
 	lh.chunks[chunkIndex].Lock()
+	if lh.chunks[chunkIndex].status == ChunkNotPresent {
+		lh.chunks[chunkIndex].Unlock()
+		return errors.New("ChunkNotPresent")
+	}
 	err := lh.chunks[chunkIndex].core.CAS(h, key, value)
 	lh.chunks[chunkIndex].Unlock()
 	return err
@@ -197,6 +216,10 @@ func (lh *Core) CAS(key, value []byte) error {
 //Iterate all key-value pairs of a chunk, executing foreach for each key-value pair
 func (lh *Core) Iterate(chunkIndex int, foreach func(key, value []byte) bool) error {
 	lh.chunks[chunkIndex].Lock()
+	if lh.chunks[chunkIndex].status == ChunkNotPresent {
+		lh.chunks[chunkIndex].Unlock()
+		return errors.New("ChunkNotPresent")
+	}
 	err := lh.chunks[chunkIndex].core.Iterate(foreach)
 	lh.chunks[chunkIndex].Unlock()
 	return err
@@ -205,6 +228,10 @@ func (lh *Core) Iterate(chunkIndex int, foreach func(key, value []byte) bool) er
 //Iterate all key-value pairs of a chunk, executing foreach for each key-value pair
 func (lh *Core) BackwardsIterate(chunkIndex int, foreach func(key, value []byte) bool) error {
 	lh.chunks[chunkIndex].Lock()
+	if lh.chunks[chunkIndex].status == ChunkNotPresent {
+		lh.chunks[chunkIndex].Unlock()
+		return errors.New("ChunkNotPresent")
+	}
 	i := 0
 	err := lh.chunks[chunkIndex].core.Iterate(func(key, value []byte) bool {
 		if i%128 == 0 {
@@ -221,6 +248,9 @@ func (lh *Core) BackwardsIterate(chunkIndex int, foreach func(key, value []byte)
 func (lh *Core) LengthOfChunk(chunkIndex int) uint64 {
 	lh.chunks[chunkIndex].Lock()
 	defer lh.chunks[chunkIndex].Unlock()
+	if lh.chunks[chunkIndex].status == ChunkNotPresent {
+		return math.MaxUint64
+	}
 	if lh.chunks[chunkIndex].status <= ChunkPresent {
 		return math.MaxUint64
 	}

@@ -15,7 +15,7 @@ import (
 const bufferSize = 1450
 
 //High values favours throughput (in non-sequential workloads), low values favours low Latency
-const windowTimeDuration = time.Microsecond * 250
+const windowTimeDuration = time.Microsecond * 1 * 250
 
 const fastModeEnableProbability = 1 / 500.0
 
@@ -84,7 +84,7 @@ func bufferedWriter(conn *net.TCPConn, toWorld <-chan protocol.Message, offset *
 	sents := 0
 	for {
 		/*if rand.Float32() > 0.999 {
-			fmt.Println(tickerChannel)
+			log.Println("Ticker", tickerChannel)
 		}*/
 		select {
 		case m, ok := <-toWorld:

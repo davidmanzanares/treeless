@@ -110,7 +110,7 @@ func (vs *vagrantServer) vagrantSSH(cmd string) {
 
 func (vs *vagrantServer) create(numChunks, redundancy int, verbose bool) string {
 	//Stop
-	vs.vagrantSSH("killall -q treeless; rm -f /home/vagrant/treeless.*")
+	vs.vagrantSSH("killall -q treeless; rm -f /home/vagrant/treeless.pid")
 	//Start and create
 	vs.vagrantSSH(`start-stop-daemon -S -b --make-pidfile --pidfile /home/vagrant/treeless.pid --startas /bin/bash -- -c "exec /vagrant/treeless -create -localip 192.168.2.100 -port 9876 -dbpath /home/vagrant/db -size 2097152 -cpuprofile /vagrant/cpuv -redundancy ` + fmt.Sprint(redundancy) + ` -chunks ` + fmt.Sprint(numChunks) + ` > /home/vagrant/treeless.log 2>&1"`)
 	waitForServer(vs.addr())
@@ -119,10 +119,10 @@ func (vs *vagrantServer) create(numChunks, redundancy int, verbose bool) string 
 
 func (vs *vagrantServer) assoc(addr string, verbose bool) string {
 	//Stop
-	vs.vagrantSSH("killall -q treeless; rm -f /home/vagrant/treeless.*")
+	vs.vagrantSSH("killall -q treeless; rm -f /home/vagrant/treeless.pid")
 	//Start and assoc
-	vs.vagrantSSH(`start-stop-daemon -S -b --make-pidfile --pidfile /home/vagrant/treeless.pid --startas /bin/bash -- -c "exec /vagrant/treeless -assoc ` + addr + " -localip 192.168.2." + fmt.Sprint(100+vs.id) + ` -port 9876 -size 2097152 -dbpath /home/vagrant/db -cpuprofile /home/vagrant/cpu > /home/vagrant/treeless.log 2>&1"`)
-	waitForServer(vs.addr())
+	vs.vagrantSSH(`start-stop-daemon -S -b --make-pidfile --pidfile /home/vagrant/treeless.pid --startas /bin/bash -- -c "exec /vagrant/treeless -assoc ` + addr + " -localip 192.168.2." + fmt.Sprint(100+vs.id) + ` -port 9876 -cpuprofile /home/vagrant/cpuv -size 2097152 -dbpath /home/vagrant/db  >> /home/vagrant/treeless.log 2>&1"`)
+	waitForServer(vs.addr()) //-cpuprofile /home/vagrant/cpuv
 	return vs.addr()
 }
 

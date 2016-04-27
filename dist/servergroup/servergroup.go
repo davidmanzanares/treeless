@@ -256,7 +256,7 @@ func (sg *ServerGroup) SetServerChunks(addr string, cids []protocol.AmAliveChunk
 	for _, c := range s.heldChunks {
 		i := 0
 		for ; i < len(cids); i++ {
-			if cids[i] == c {
+			if cids[i].ID == c.ID {
 				break
 			}
 		}
@@ -274,6 +274,17 @@ func (sg *ServerGroup) SetServerChunks(addr string, cids []protocol.AmAliveChunk
 	}
 
 	s.heldChunks = cids
+	s.lastHeartbeat = time.Now()
+}
+
+func (sg *ServerGroup) ServerAlive(addr string) {
+	sg.mutex.Lock()
+	defer sg.mutex.Unlock()
+	s, ok := sg.servers[addr]
+	if !ok {
+		return
+	}
+	s.dead = false
 	s.lastHeartbeat = time.Now()
 }
 
@@ -342,9 +353,10 @@ func (sg *ServerGroup) IsSynched(cid int) bool {
 		sg.mutex.RUnlock()
 		return true
 	}
-	sum := c.holders[0].heldChunks[cid].Checksum
+	sum := c.holders[0].getChunk(cid).Checksum
 	for i := 1; i < len(c.holders); i++ {
-		sum2 := c.holders[i].heldChunks[cid].Checksum
+		h := c.holders[i]
+		sum2 := h.getChunk(cid).Checksum
 		if sum != sum2 {
 			//log.Println(c.holders[0].Phy, sum, c.holders[i].Phy, sum2)
 			sg.mutex.RUnlock()

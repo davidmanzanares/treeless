@@ -36,6 +36,9 @@ func StartRepairSystem(sg *servergroup.ServerGroup, lh *local.Core, ShouldStop f
 		for !ShouldStop() {
 			sg.SetServerChunks(lh.LocalhostIPPort, lh.ChunksList())
 			for cid := 0; cid < sg.NumChunks(); cid++ {
+				if lh.ChunkStatus(cid) == local.ChunkNotPresent {
+					continue
+				}
 				if sg.IsSynched(cid) {
 					delete(m, cid)
 				} else {

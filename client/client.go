@@ -37,7 +37,7 @@ func Connect(addr string) (*DBClient, error) {
 	return c, nil
 }
 
-func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
+func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time, read bool) {
 	//Last write wins policy
 	chunkID := hashing.GetChunkID(key, c.sg.NumChunks())
 	servers := c.sg.GetChunkHolders(chunkID)
@@ -53,6 +53,7 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 			}
 		}
 	}
+	read = false
 	for i := 0; i < len(servers); i++ {
 		if !chvalidarray[i] {
 			continue
@@ -63,6 +64,7 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 			continue
 		}
 		v := r.Value
+		read = true
 		if len(v) >= 8 {
 			t := time.Unix(0, int64(binary.LittleEndian.Uint64(v[:8])))
 			times[i] = t
@@ -73,7 +75,7 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 		}
 	}
 	if value == nil {
-		return nil, lastTime
+		return nil, lastTime, read
 	}
 	//Read-repair
 	for i, s := range servers {
@@ -83,7 +85,7 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time) {
 			s.Set(key, value, 0)
 		}
 	}
-	return value[8:], lastTime
+	return value[8:], lastTime, read
 }
 
 func (c *DBClient) Set(key, value []byte) (written bool, errs error) {

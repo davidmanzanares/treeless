@@ -279,7 +279,7 @@ func worker(s *DBServer) (work func(message protocol.Message) (response protocol
 				response.Type = protocol.OpOK
 			} else {
 				response.Type = protocol.OpErr
-				fmt.Println(s.lh.ChunkStatus(int(chunkID)), s.sg.NumHolders(int(chunkID)), s.sg.Redundancy(), s.sg.String())
+				//fmt.Println(s.lh.ChunkStatus(int(chunkID)), s.sg.NumHolders(int(chunkID)), s.sg.Redundancy(), s.sg.String())
 			}
 			return response
 		default:

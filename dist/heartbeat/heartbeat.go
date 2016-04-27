@@ -15,7 +15,7 @@ import (
 )
 
 var heartbeatTimeout = time.Millisecond * 200
-var heartbeatSleep = time.Millisecond * 2000
+var heartbeatSleep = time.Millisecond * 500
 var timeoutRetries = 3
 
 //Heartbeater is used to discover changes in the DB topology by using a ping-pong protocol
@@ -104,6 +104,7 @@ func (h *Heartbeater) request(addr string) (ok bool) {
 		}
 	}()
 	if saaerr == nil {
+		//h.sg.ServerAlive(addr)
 		var ourAA protocol.AmAlive
 		ourAA.KnownChunks = h.sg.GetServerChunks(addr)
 		ourAA.KnownServers = h.sg.KnownServers()
@@ -165,13 +166,9 @@ func Start(sg *servergroup.ServerGroup) *Heartbeater {
 				return
 			}
 			for _, qs := range queryList {
-				for i := 0; i < 5; i++ {
-					if h.request(qs.Phy) {
-						break
-					}
-				}
+				h.request(qs.Phy)
+				<-ticker.C
 			}
-			<-ticker.C
 			//fmt.Println(sg)
 		}
 	}()
