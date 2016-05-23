@@ -2,25 +2,14 @@ package pmap
 
 import "time"
 
-/*
-	newTime | newChecksum | mediumTime | mediumChecksum | oldTime | currentChecksum
-
-*/
-
 type syncChecksum struct {
-	newChecksum                  uint64
-	mediumChecksum               uint64
-	currentChecksum              uint64
-	newTime, mediumTime, oldTime time.Time
-	interval                     time.Duration
-}
-
-func (s *syncChecksum) SetInterval(i time.Duration) {
-	s.interval = i
+	newChecksum, mediumChecksum, oldChecksum uint64
+	newTime, mediumTime, oldTime             time.Time
 }
 
 func (s *syncChecksum) Checksum() uint64 {
-	return s.currentChecksum
+	s.Sum(0, time.Now())
+	return s.oldChecksum
 }
 
 func (s *syncChecksum) Sub(el uint64, t time.Time) {
@@ -32,18 +21,15 @@ func (s *syncChecksum) Sum(el uint64, t time.Time) {
 		//Move forward the time
 		s.oldTime = s.mediumTime
 		s.mediumTime = s.newTime
-		s.newTime = time.Unix(int64((time.Now().Unix()))+1, 0)
-		s.currentChecksum = s.mediumChecksum
+		s.newTime = time.Unix(t.Unix()+1, 0)
+		s.oldChecksum = s.mediumChecksum
 		s.mediumChecksum = s.newChecksum
 	}
-	if t.Before(s.newTime) {
-		s.newChecksum += el
-	}
+	s.newChecksum += el
 	if t.Before(s.mediumTime) {
 		s.mediumChecksum += el
 	}
 	if t.Before(s.oldTime) {
-		s.currentChecksum += el
+		s.oldChecksum += el
 	}
-
 }

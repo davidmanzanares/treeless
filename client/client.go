@@ -89,6 +89,14 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time, read bool)
 }
 
 func (c *DBClient) Set(key, value []byte) (written bool, errs error) {
+	return c.set(key, value, c.SetTimeout)
+}
+
+func (c *DBClient) SetAsync(key, value []byte) (written bool, errs error) {
+	return c.set(key, value, 0)
+}
+
+func (c *DBClient) set(key, value []byte, timeout time.Duration) (written bool, errs error) {
 	chunkID := hashing.GetChunkID(key, c.sg.NumChunks())
 	servers := c.sg.GetChunkHolders(chunkID)
 	valueWithTime := make([]byte, 8+len(value))
@@ -99,22 +107,22 @@ func (c *DBClient) Set(key, value []byte) (written bool, errs error) {
 		if s == nil {
 			continue
 		}
-		c, err := s.Set(key, valueWithTime, c.SetTimeout)
+		c, err := s.Set(key, valueWithTime, timeout)
 		if err != nil {
 			errs = err //TODO return only written
 		} else {
 			charray[i] = &c
 		}
 	}
-	if c.SetTimeout > 0 {
+	if timeout > 0 {
 		for i, _ := range servers {
 			if charray[i] != nil {
 				err := charray[i].Wait()
 				if err != nil {
 					errs = err //TODO return only written
+				} else {
+					written = true
 				}
-			} else {
-				written = true
 			}
 		}
 	}
@@ -209,6 +217,29 @@ func (c *DBClient) Del(key []byte) (errs error) {
 		}
 	}
 	return errs
+}
+
+type BufferingMode int
+
+const (
+	DynamicBuffering = iota
+	Buffered
+	NoDelay
+)
+
+func (c *DBClient) SetBufferingMode(mode BufferingMode) (errs error) {
+	servers := c.sg.Servers()
+	for _, s := range servers {
+		switch mode {
+		case DynamicBuffering:
+			s.SetDynamicBuffering()
+		case Buffered:
+			s.SetBuffered()
+		case NoDelay:
+			s.SetNoDelay()
+		}
+	}
+	return nil
 }
 
 func (c *DBClient) Close() {

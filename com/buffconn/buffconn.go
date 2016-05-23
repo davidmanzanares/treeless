@@ -82,6 +82,8 @@ func bufferedWriter(conn *net.TCPConn, toWorld <-chan protocol.Message, offset *
 	index := 0 //buffer write index
 
 	sents := 0
+
+	mode := protocol.OpSetDynamicBuffering
 	for {
 		/*if rand.Float32() > 0.999 {
 			log.Println("Ticker", tickerChannel)
@@ -93,6 +95,10 @@ func bufferedWriter(conn *net.TCPConn, toWorld <-chan protocol.Message, offset *
 				atomic.StoreInt32(isClosed, 1)
 				conn.Close()
 				return
+			}
+			if m.Type == protocol.OpSetBuffered || m.Type == protocol.OpSetNoDelay ||
+				m.Type == protocol.OpSetDynamicBuffering {
+				mode = m.Type
 			}
 			atomic.AddInt32(offset, 1)
 			//Append message to buffer
@@ -123,7 +129,7 @@ func bufferedWriter(conn *net.TCPConn, toWorld <-chan protocol.Message, offset *
 				sents++
 			} else {
 				//Slow path
-				if fastModeEnableProbability > 0 && (atomic.LoadInt32(offset) > 1 || rand.Float32() < fastModeEnableProbability) {
+				if mode == protocol.OpSetBuffered || (mode == protocol.OpSetDynamicBuffering && (atomic.LoadInt32(offset) > 1 || rand.Float32() < fastModeEnableProbability)) {
 					//Activate fast path
 					tickerChannel = ticker.C
 				}
@@ -137,7 +143,7 @@ func bufferedWriter(conn *net.TCPConn, toWorld <-chan protocol.Message, offset *
 				return
 			}
 			index = 0
-			if sents < 2 {
+			if mode == protocol.OpSetNoDelay || (sents < 2 && mode != protocol.OpSetBuffered) {
 				//Deactivate fast path
 				tickerChannel = nil
 				if !tcpWrite(conn, buffer[0:index], toWorld, isClosed) {

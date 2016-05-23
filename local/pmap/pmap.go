@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"log"
 	"time"
 	"treeless/hashing"
@@ -48,12 +49,11 @@ func New(path string, size uint64) *PMap {
 	c.path = path
 	c.hm = newHashMap(defaultHashMapInitialLog2Size, defaultHashMapSizeLimit)
 	c.st = newStore(c.path, size)
-	c.checksum.SetInterval(defaultCheckSumInterval)
+	//c.checksum.SetInterval(defaultCheckSumInterval)
 	return c
 }
 
 func (c *PMap) Checksum() uint64 {
-	c.checksum.Sum(0, time.Now())
 	return c.checksum.Checksum()
 }
 
@@ -153,6 +153,7 @@ func (c *PMap) Set(h64 uint64, key, value []byte) error {
 
 	h := hashReMap(uint32(h64))
 	index := h & c.hm.sizeMask
+	col := 0
 	for {
 		storedHash := c.hm.getHash(index)
 		if storedHash == emptyBucket {
@@ -165,10 +166,15 @@ func (c *PMap) Set(h64 uint64, key, value []byte) error {
 			c.hm.setStoreIndex(index, storeIndex)
 			c.hm.numStoredKeys++
 			t := time.Unix(0, int64(binary.LittleEndian.Uint64(value[:8])))
-			c.checksum.Sum(h64^hashing.FNV1a64(value), t)
+			c.checksum.Sum(h64^binary.LittleEndian.Uint64(value[:8]), t)
 			return nil
 		}
+
 		if h == storedHash {
+			col++
+			if col > 2 {
+				fmt.Println("COL", col)
+			}
 			//Same hash: perform full key comparison
 			stIndex := c.hm.getStoreIndex(index)
 			storedKey := c.st.key(uint64(stIndex))
@@ -183,15 +189,15 @@ func (c *PMap) Set(h64 uint64, key, value []byte) error {
 					//fmt.Println("Discarded", key, value, t)
 					return nil
 				}
+				c.st.del(stIndex)
 				storeIndex, err := c.st.put(key, value)
 				if err != nil {
 					return err
 				}
-				c.checksum.Sub(h64^hashing.FNV1a64(v), t)
-				c.st.del(stIndex)
+				c.checksum.Sub(h64^binary.LittleEndian.Uint64(v[:8]), t)
 				c.hm.setHash(index, h)
 				c.hm.setStoreIndex(index, storeIndex)
-				c.checksum.Sum(h64^hashing.FNV1a64(value), t)
+				c.checksum.Sum(h64^binary.LittleEndian.Uint64(value[:8]), t)
 				return nil
 			}
 		}
@@ -238,7 +244,7 @@ func (c *PMap) CAS(h64 uint64, key, value []byte) error {
 			c.hm.setHash(index, h)
 			c.hm.setStoreIndex(index, storeIndex)
 			c.hm.numStoredKeys++
-			c.checksum.Sum(h64^hashing.FNV1a64(value[16:]), t)
+			c.checksum.Sum(h64^binary.LittleEndian.Uint64(value[16:24]), t)
 			return nil
 		}
 		if h == storedHash {
@@ -259,7 +265,7 @@ func (c *PMap) CAS(h64 uint64, key, value []byte) error {
 					log.Println("hash mismatch!")
 					return errors.New("CAS failed: hash mismatch")
 				}
-				c.checksum.Sub(h64^hashing.FNV1a64(v), t)
+				c.checksum.Sub(h64^binary.LittleEndian.Uint64(v[:8]), t)
 				c.st.del(stIndex)
 				storeIndex, err := c.st.put(key, value[16:])
 				if err != nil {
@@ -267,7 +273,7 @@ func (c *PMap) CAS(h64 uint64, key, value []byte) error {
 				}
 				c.hm.setHash(index, h)
 				c.hm.setStoreIndex(index, storeIndex)
-				c.checksum.Sum(h64^hashing.FNV1a64(value[16:]), t)
+				c.checksum.Sum(h64^binary.LittleEndian.Uint64(value[16:24]), t)
 				return nil
 			}
 		}
@@ -303,7 +309,7 @@ func (c *PMap) Del(h64 uint64, key, value []byte) error {
 					//Stored pair is newer than the provided pair
 					return nil
 				}
-				c.checksum.Sub(h64^hashing.FNV1a64(v), t)
+				c.checksum.Sub(h64^binary.LittleEndian.Uint64(v[:8]), t)
 				c.st.del(stIndex)
 				c.hm.setHash(index, deletedBucket)
 				return nil
@@ -314,7 +320,7 @@ func (c *PMap) Del(h64 uint64, key, value []byte) error {
 }
 
 //Iterate calls foreach for each stored pair, it will stop iterating if the call returns false
-func (c *PMap) Iterate(foreach func(key, value []byte) (continuE bool)) error {
+func (c *PMap) BackwardsIterate(foreach func(key, value []byte) (continuE bool)) error {
 	for index := uint64(0); index < c.st.length; {
 		if c.st.isPresent(index) {
 			key := c.st.key(index)

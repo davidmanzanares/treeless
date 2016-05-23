@@ -22,7 +22,7 @@ type hashmap struct {
 }
 
 const defaultHashMapInitialLog2Size = 16
-const defaultHashMapSizeLimit = 1024 * 1024
+const defaultHashMapSizeLimit = 1024 * 1024 * 64
 const defaultHashMapMaxLoadFactor = 0.7
 
 const (

@@ -10,6 +10,7 @@ const (
 	//Primitives
 	OpGet Operation = iota + 1
 	OpSet
+	OpSetAsync
 	OpDel
 	OpCAS
 	//Advanced ops
@@ -19,10 +20,14 @@ const (
 	OpProtect
 	OpTransfer
 	OpAmAliveRequest
+	OpSetDynamicBuffering
+	OpSetBuffered
+	OpSetNoDelay
 	//Responses
 	OpOK
 	OpErr
 	OpResponse
+	NumOperations
 )
 
 //Message stores a DB message that can be sent and recieved using a network connection

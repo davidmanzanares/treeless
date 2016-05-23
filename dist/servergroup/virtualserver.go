@@ -146,3 +146,30 @@ func (s *VirtualServer) GetChunkInfo(chunkID int) (size uint64) {
 	s.m.RUnlock()
 	return v
 }
+
+func (s *VirtualServer) SetBuffered() (ok bool) {
+	if err := s.needConnection(); err != nil {
+		return false
+	}
+	s.conn.SetBuffered()
+	s.m.RUnlock()
+	return true
+}
+
+func (s *VirtualServer) SetDynamicBuffering() (ok bool) {
+	if err := s.needConnection(); err != nil {
+		return false
+	}
+	s.conn.SetDynamicBuffering()
+	s.m.RUnlock()
+	return true
+}
+
+func (s *VirtualServer) SetNoDelay() (ok bool) {
+	if err := s.needConnection(); err != nil {
+		return false
+	}
+	s.conn.SetNoDelay()
+	s.m.RUnlock()
+	return true
+}

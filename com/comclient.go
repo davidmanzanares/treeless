@@ -49,6 +49,7 @@ func CreateConnection(addr string, onClose func()) (*Conn, error) {
 
 	var c Conn
 	c.conn = tcpconn.(*net.TCPConn)
+	//c.conn.SetNoDelay(false)
 
 	c.responseChannel = make(chan ResponserMsg, 1024)
 	c.rchPool = sync.Pool{New: func() interface{} {
@@ -380,7 +381,11 @@ func (c *Conn) Get(key []byte, timeout time.Duration) GetOperation {
 
 //Set a new key/value pair
 func (c *Conn) Set(key []byte, value []byte, timeout time.Duration) SetOperation {
-	ch := c.send(protocol.OpSet, key, value, timeout)
+	op := protocol.OpSet
+	if timeout == 0 {
+		op = protocol.OpSetAsync
+	}
+	ch := c.send(op, key, value, timeout)
 	return SetOperation{rch: ch, c: c}
 }
 
@@ -396,6 +401,18 @@ func (c *Conn) CAS(key []byte, value []byte, timeout time.Duration) CASOperation
 	}
 	ch := c.send(protocol.OpCAS, key, value, timeout)
 	return CASOperation{rch: ch, c: c}
+}
+
+func (c *Conn) SetNoDelay() {
+	c.send(protocol.OpSetNoDelay, nil, nil, 0)
+}
+
+func (c *Conn) SetDynamicBuffering() {
+	c.send(protocol.OpSetDynamicBuffering, nil, nil, 0)
+}
+
+func (c *Conn) SetBuffered() {
+	c.send(protocol.OpSetBuffered, nil, nil, 0)
 }
 
 //Transfer a chunk

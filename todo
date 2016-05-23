@@ -1,4 +1,4 @@
-Core:
+Core: 1w
 	Store cache alignment
 	IO error?
 	MurmurHash
@@ -6,21 +6,24 @@ Core:
 Com:
 
 Dist:
-	Del assurance
-	*Open closed store
+	Del assurance 1w
+	*Open closed store 1w
 
 Test:
-	*Real test: test consitency with lots of servers, network problems and server shutdowns:
+	*Real test: test consitency with lots of servers, network problems and server shutdowns: 1w
+	1w:
 	gors
     Add more benchmarks
 	Space per chunk tests (hash quality tests)
 
-Others:
+Others:1w
 	*Free non used communications
 	Logging
 	Stats
 	Memprofile
 	Log rotation: max size
+
+	1w:
     Procedures: TTL procedure,...
 
 
@@ -46,3 +49,38 @@ Paquetes cortos de ping-pong
 Procolo gossip
 Checksums
 Reparación automatica
+
+
+
+68K	/mnt/dbs/testDB0/chunks/10_rev0.dat
+68K	/mnt/dbs/testDB0/chunks/2_rev0.dat
+68K	/mnt/dbs/testDB0/chunks/9_rev0.dat
+72K	/mnt/dbs/testDB0/chunks/1_rev0.dat
+72K	/mnt/dbs/testDB0/chunks/21_rev0.dat
+72K	/mnt/dbs/testDB0/chunks/22_rev0.dat
+72K	/mnt/dbs/testDB0/chunks/3_rev0.dat
+72K	/mnt/dbs/testDB0/chunks/8_rev0.dat
+76K	/mnt/dbs/testDB0/chunks/0_rev0.dat
+76K	/mnt/dbs/testDB0/chunks/11_rev0.dat
+76K	/mnt/dbs/testDB0/chunks/15_rev0.dat
+76K	/mnt/dbs/testDB0/chunks/16_rev0.dat
+76K	/mnt/dbs/testDB0/chunks/17_rev0.dat
+76K	/mnt/dbs/testDB0/chunks/18_rev0.dat
+76K	/mnt/dbs/testDB0/chunks/19_rev0.dat
+76K	/mnt/dbs/testDB0/chunks/20_rev0.dat
+76K	/mnt/dbs/testDB0/chunks/23_rev0.dat
+76K	/mnt/dbs/testDB0/chunks/24_rev0.dat
+76K	/mnt/dbs/testDB0/chunks/26_rev0.dat
+76K	/mnt/dbs/testDB0/chunks/27_rev0.dat
+76K	/mnt/dbs/testDB0/chunks/28_rev0.dat
+76K	/mnt/dbs/testDB0/chunks/29_rev0.dat
+76K	/mnt/dbs/testDB0/chunks/30_rev0.dat
+76K	/mnt/dbs/testDB0/chunks/4_rev0.dat
+76K	/mnt/dbs/testDB0/chunks/5_rev0.dat
+76K	/mnt/dbs/testDB0/chunks/7_rev0.dat
+80K	/mnt/dbs/testDB0/chunks/12_rev0.dat
+80K	/mnt/dbs/testDB0/chunks/13_rev0.dat
+80K	/mnt/dbs/testDB0/chunks/14_rev0.dat
+80K	/mnt/dbs/testDB0/chunks/25_rev0.dat
+80K	/mnt/dbs/testDB0/chunks/31_rev0.dat
+80K	/mnt/dbs/testDB0/chunks/6_rev0.dat

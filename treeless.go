@@ -18,12 +18,12 @@ import (
 )
 import _ "net/http/pprof"
 
-const DefaultDBSize = 1024 * 1024 * 16
+const DefaultDBSize = 1024 * 1024 * 1024
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
 	runtime.GOMAXPROCS(runtime.NumCPU())
-	log.Println("CPUS:", runtime.NumCPU())
+	log.Println("CPUS:", runtime.NumCPU(), runtime.GOMAXPROCS(-1))
 	//Operations
 	log.Println("Treeless args:", os.Args)
 	create := flag.Bool("create", false, "Create a new DB server group")

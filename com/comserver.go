@@ -48,14 +48,18 @@ func listenRequests(conn *net.TCPConn, id int, worker func(protocol.Message) (re
 	//log.Println("New connection accepted. Connection ID:", id)
 	//tcpWriter will buffer TCP writes to send more message in less TCP packets
 	//this technique allows bigger throughtputs, but latency in increased a little
+	//conn.SetNoDelay(false)
 	go func() {
 		ch := make(chan protocol.Message, 1024)
 		toWorld := buffconn.NewBufferedConn(conn, ch)
+
 		for {
 			m, ok := <-ch
 			if ok {
 				response := worker(m)
-				toWorld <- response
+				if response.Type > 0 {
+					toWorld <- response
+				}
 			} else {
 				//log.Println("Server: connection closed", conn.RemoteAddr())
 				close(toWorld)

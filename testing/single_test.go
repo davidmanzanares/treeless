@@ -128,7 +128,7 @@ func TestSingleBigMessages(t *testing.T) {
 	}
 }
 
-//TestBigMessages, send 128 GET, SET messages, server should deny the operation
+//TestBigMessages, send 128MB GET, SET messages, server should deny the operation
 func TestSingleSizeLimit(t *testing.T) {
 	//Server set-up
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
@@ -148,6 +148,7 @@ func TestSingleSizeLimit(t *testing.T) {
 	//SET
 	{
 		_, err = client.Set([]byte("hola"), bytes.Repeat([]byte("X"), 128*1024*1024))
+		//fmt.Println(err)
 	}
 	/*runtime.GC()
 	debug.FreeOSMemory()

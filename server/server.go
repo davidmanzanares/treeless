@@ -121,6 +121,7 @@ func (s *DBServer) LogInfo() {
 func worker(s *DBServer) (work func(message protocol.Message) (response protocol.Message)) {
 	return func(message protocol.Message) (response protocol.Message) {
 		//fmt.Println("Server", "message recieved", string(message.Key), string(message.Value), message.Type)
+		response.Type = 0
 		switch message.Type {
 		case protocol.OpGet:
 			rval, _ := s.lh.Get(message.Key)
@@ -150,6 +151,11 @@ func worker(s *DBServer) (work func(message protocol.Message) (response protocol
 				response.Value = []byte(err.Error())
 			}
 			return response
+		case protocol.OpSetAsync:
+			if len(message.Value) < 8 {
+				log.Println("Error: message value len < 8")
+			}
+			s.lh.Set(message.Key, message.Value)
 		case protocol.OpCAS:
 			var response protocol.Message
 			if len(message.Value) < 24 {
@@ -276,17 +282,28 @@ func worker(s *DBServer) (work func(message protocol.Message) (response protocol
 			response.ID = message.ID
 			chunkID := binary.LittleEndian.Uint32(message.Key)
 			if s.lh.ChunkStatus(int(chunkID)) == local.ChunkSynched && s.sg.NumHolders(int(chunkID)) > s.sg.Redundancy() {
+				s.lh.ChunkSetStatus(int(chunkID), local.ChunkProtected)
 				response.Type = protocol.OpOK
 			} else {
 				response.Type = protocol.OpErr
 				//fmt.Println(s.lh.ChunkStatus(int(chunkID)), s.sg.NumHolders(int(chunkID)), s.sg.Redundancy(), s.sg.String())
 			}
 			return response
+		case protocol.OpSetBuffered:
+			response.ID = message.ID
+			response.Type = protocol.OpSetBuffered
+		case protocol.OpSetDynamicBuffering:
+			response.ID = message.ID
+			response.Type = protocol.OpSetDynamicBuffering
+		case protocol.OpSetNoDelay:
+			response.ID = message.ID
+			response.Type = protocol.OpSetNoDelay
 		default:
 			var response protocol.Message
 			response.ID = message.ID
 			response.Type = protocol.OpErr
 			response.Value = []byte("Operation not supported")
+			log.Println("Operation not supported", message.Type)
 			return response
 		}
 		return response
