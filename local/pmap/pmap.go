@@ -57,20 +57,6 @@ func (c *PMap) Checksum() uint64 {
 	return c.checksum.Checksum()
 }
 
-func (c *PMap) Restore(path string) {
-	c.st.open(path)
-	c.hm.alloc()
-	for index := uint64(0); index < c.st.length; {
-		if c.st.isPresent(index) {
-			key := c.st.key(index)
-			val := c.st.val(index)
-			h64 := hashing.FNV1a64(key)
-			c.restorePair(h64, key, val, uint32(index))
-		}
-		index += 8 + uint64(c.st.totalLen(index))
-	}
-}
-
 //Close closes a PMap. The hashmap is destroyed and the store is disk synched.
 //Close will panic if it is called 2 times.
 func (c *PMap) Close() {
@@ -189,7 +175,6 @@ func (c *PMap) Set(h64 uint64, key, value []byte) error {
 					//fmt.Println("Discarded", key, value, t)
 					return nil
 				}
-				c.st.del(stIndex)
 				storeIndex, err := c.st.put(key, value)
 				if err != nil {
 					return err
@@ -266,7 +251,6 @@ func (c *PMap) CAS(h64 uint64, key, value []byte) error {
 					return errors.New("CAS failed: hash mismatch")
 				}
 				c.checksum.Sub(h64^binary.LittleEndian.Uint64(v[:8]), t)
-				c.st.del(stIndex)
 				storeIndex, err := c.st.put(key, value[16:])
 				if err != nil {
 					return err
@@ -310,7 +294,6 @@ func (c *PMap) Del(h64 uint64, key, value []byte) error {
 					return nil
 				}
 				c.checksum.Sub(h64^binary.LittleEndian.Uint64(v[:8]), t)
-				c.st.del(stIndex)
 				c.hm.setHash(index, deletedBucket)
 				return nil
 			}
@@ -319,10 +302,21 @@ func (c *PMap) Del(h64 uint64, key, value []byte) error {
 	}
 }
 
+func (c *PMap) isPresent(index uint64) bool {
+	key := c.st.key(index)
+	h32 := uint32(hashing.FNV1a64(key))
+	value, err := c.Get(h32, key)
+	if value == nil || err != nil {
+		return false
+	}
+	storeValue := c.st.val(index)
+	return bytes.Compare(value[0:8], storeValue[0:8]) == 0
+}
+
 //Iterate calls foreach for each stored pair, it will stop iterating if the call returns false
 func (c *PMap) BackwardsIterate(foreach func(key, value []byte) (continuE bool)) error {
-	for index := uint64(0); index < c.st.length; {
-		if c.st.isPresent(index) {
+	for index := c.st.length; index >= 0; {
+		if c.isPresent(index) {
 			key := c.st.key(index)
 			val := c.st.val(index)
 			kc := make([]byte, len(key))
@@ -334,7 +328,30 @@ func (c *PMap) BackwardsIterate(foreach func(key, value []byte) (continuE bool))
 				break
 			}
 		}
-		index += 8 + uint64(c.st.totalLen(index))
+		prev := c.st.prev(index)
+		if prev < 0 {
+			break
+		}
+		index = uint64(prev)
+	}
+	return nil
+}
+
+func (c *PMap) Iterate(foreach func(key, value []byte) (continuE bool)) error {
+	for index := uint64(0); index < c.st.length; {
+		if c.isPresent(index) {
+			key := c.st.key(index)
+			val := c.st.val(index)
+			kc := make([]byte, len(key))
+			vc := make([]byte, len(val))
+			copy(kc, key)
+			copy(vc, val)
+			ok := foreach(kc, vc)
+			if !ok {
+				break
+			}
+		}
+		index += 12 + uint64(c.st.totalLen(index))
 	}
 	return nil
 }

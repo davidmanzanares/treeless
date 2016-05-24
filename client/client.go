@@ -92,8 +92,9 @@ func (c *DBClient) Set(key, value []byte) (written bool, errs error) {
 	return c.set(key, value, c.SetTimeout)
 }
 
-func (c *DBClient) SetAsync(key, value []byte) (written bool, errs error) {
-	return c.set(key, value, 0)
+func (c *DBClient) SetAsync(key, value []byte) (errs error) {
+	_, errs = c.set(key, value, 0)
+	return errs
 }
 
 func (c *DBClient) set(key, value []byte, timeout time.Duration) (written bool, errs error) {

@@ -233,7 +233,7 @@ func (lh *Core) BackwardsIterate(chunkIndex int, foreach func(key, value []byte)
 		return errors.New("ChunkNotPresent")
 	}
 	i := 0
-	err := lh.chunks[chunkIndex].core.Iterate(func(key, value []byte) bool {
+	err := lh.chunks[chunkIndex].core.BackwardsIterate(func(key, value []byte) bool {
 		if i%128 == 0 {
 			lh.chunks[chunkIndex].Unlock()
 			runtime.Gosched()

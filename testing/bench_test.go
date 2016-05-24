@@ -16,54 +16,54 @@ import (
 )
 
 func TestBenchParallelEachS1_Get(t *testing.T) {
-	testBenchParallel(t, 256, 256, 1.0, 0., 0.0, 0, 0, 1, 1000000, 0, "")
+	testBenchParallel(t, 256, 256, 1.0, 0., 0.0, 0, 0, 0, 1, 1000000, 0, "", 1000000)
 }
 
 func TestBenchParallelSharedS1_Get(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 1.0, 0.0, 0.0, 0, 0, 1, 10000000, 0, "")
+	testBenchParallel(t, 10000, 10, 1.0, 0.0, 0.0, 0, 0, 0, 1, 10000000, 0, "", 1000000)
 }
 func TestBenchParallelSharedS1_GetFilled(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 1.0, 0.0, 0.0, 0, 0, 1, 10000000, 1000000, "")
+	testBenchParallel(t, 10000, 10, 1.0, 0.0, 0.0, 0, 0, 0, 1, 10000000, 1000000, "", 1000000)
 }
 
 func TestBenchParallelSharedS1_GetClients(t *testing.T) {
 	for i := 100; i < 4000; i += 200 {
-		testBenchParallel(t, i, 1, 1.0, 0.0, 0.0, 0, 0, 1, 1000000, 0, "")
+		testBenchParallel(t, i, 1, 1.0, 0.0, 0.0, 0, 0, 0, 1, 1000000, 0, "", 1000000)
 	}
 }
 
 func TestBenchParallelSharedS1_MixGet60Del10AsyncSet30(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 0.6, 0.0, 0.1, 0, 0.3, 1, 10000000, 1000000, "")
+	testBenchParallel(t, 10000, 10, 0.6, 0.0, 0.1, 0, 0.3, 0, 1, 1000000, 1000000, "", 1000000)
 }
 
 func TestBenchParallelSharedS1_Set(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 0.0, 1.0, 0.0, 0, 0, 1, 10000000, 0, "")
+	testBenchParallel(t, 10000, 10, 0.0, 1.0, 0.0, 0, 0, 0, 1, 10000000, 0, "", 1000000)
 }
 func TestBenchParallelSharedS1_SetFilled(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 0.0, 1.0, 0.0, 0, 0, 1, 10000000, 1000000, "")
+	testBenchParallel(t, 10000, 10, 0.0, 1.0, 0.0, 0, 0, 0, 1, 10000000, 1000000, "", 1000000)
 }
 func TestBenchParallelSharedS1_Del(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 0.0, 0.0, 1.0, 0, 0, 1, 10000000, 0, "")
+	testBenchParallel(t, 10000, 10, 0.0, 0.0, 1.0, 0, 0, 0, 1, 10000000, 0, "", 1000000)
 }
 func TestBenchParallelSharedS1_DelFilled(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 0.0, 0.0, 1.0, 0, 0, 1, 10000000, 1000000, "")
+	testBenchParallel(t, 10000, 10, 0.0, 0.0, 1.0, 0, 0, 0, 1, 10000000, 1000000, "", 1000000)
 }
 func TestBenchParallelSharedS1_CAS(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 0.0, 0.0, 0., 1, 0, 1, 10000000, 0, "")
+	testBenchParallel(t, 10000, 10, 0.0, 0.0, 0., 1, 0, 0, 1, 10000000, 0, "", 1000000)
 }
 func TestBenchParallelSharedS1_CASFilled(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 0.0, 0.0, 0., 1, 0, 1, 10000000, 1000000, "")
+	testBenchParallel(t, 10000, 10, 0.0, 0.0, 0., 1, 0, 0, 1, 10000000, 1000000, "", 1000000)
 }
 func TestBenchParallelSharedS1_AsyncSet(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 0.0, 0.0, 0.0, 0, 1, 1, 10000000, 0, "")
+	testBenchParallel(t, 10000, 10, 0.0, 0.0, 0.0, 0, 1, 0, 1, 10000000, 0, "", 1000000)
 }
 func TestBenchParallelSharedS1_AsyncSetFilled(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 0.0, 0.0, 0.0, 0, 1, 1, 10000000, 1000000, "")
+	testBenchParallel(t, 10000, 10, 0.0, 0.0, 0.0, 0, 1, 0, 1, 10000000, 1000000, "", 1000000)
 }
 
 func TestBenchParallelSharedSX_GetFilled(t *testing.T) {
 	for i := 1; i <= len(cluster); i++ {
-		testBenchParallel(t, 10000, 10, 1.0, 0.0, 0.0, 0, 0, i, 10000000, 0, "")
+		testBenchParallel(t, 10000, 10, 1.0, 0.0, 0.0, 0, 0, 0, i, 10000000, 0, "", 1000000)
 	}
 }
 
@@ -73,19 +73,29 @@ func TestBenchParallelSharedSX_GetFilled(t *testing.T) {
 	}
 }*/
 func TestBenchParallelSharedS1_SetFilledDisk(t *testing.T) {
-	for i := 20000; i < 80000; i += 4000 {
-		addr := cluster[0].create(16, 1, ultraverbose)
-		//testBenchParallel(t, 1000, 10, 1.0, 0.0, 0.0, 0, 0, 1, 500000, 0)
-		testBenchParallel(t, 1000, 10, 1.0, 0.0, 0.0, 0, 0, 1, 50000, i*1000, addr)
-		testBenchParallel(t, 1000, 10, 0.0, 1.0, 0.0, 0, 0, 1, 50000, 0, addr)
+	for i := 1; i < 180000; i += 4000 {
+		addr := cluster[0].create(32, 1, ultraverbose)
+		ops := 10000000
+		if i > 16000 {
+			ops = 800000
+		}
+		if i > 20000 {
+			ops = 200000
+		}
+		testBenchParallel(t, 10000, 10, 1.0, 0.0, 0.0, 0, 0, 0, 1, ops, i*1000, addr, i*1000)
+		testBenchParallel(t, 10000, 10, 0.0, 1.0, 0.0, 0, 0, 0, 1, ops, 0, addr, i*1000)
+		testBenchParallel(t, 10000, 10, 0.0, 0.0, 0.0, 0, 0, 1, 1, 4000000, 0, addr, i*1000)
 		cluster[0].kill()
 		fmt.Println("\n\n\n")
+		if i == 1 {
+			i = 0
+		}
 		//testBenchParallel(t, 1000, 10, 0.5, 0.5, 0.0, 0, 0, 1, 500000, 0)
 	}
 }
 
-func testBenchParallel(t *testing.T, threads int, numClients int, pGet, pSet, pDel, pCAS, pAsyncSet float32,
-	servers int, operations int, fill int, addr string) {
+func testBenchParallel(t *testing.T, threads int, numClients int, pGet, pSet, pDel, pCAS, pAsyncSet, pSetNew float32,
+	servers int, operations int, fill int, addr string, space int) {
 	if servers > len(cluster) {
 		t.Skip("Cluster is too small")
 	}
@@ -103,7 +113,7 @@ func testBenchParallel(t *testing.T, threads int, numClients int, pGet, pSet, pD
 	//addr := "127.0.0.1:10000"
 
 	fmt.Println("NumClients:", numClients, "Numthreads", threads, "Servers", servers, "Preconditioning", fill, "Operations", operations)
-	fmt.Printf("pGet=%v pSet=%v pDel=%v pCAS=%v pAsyncSet=%v\n", pGet, pSet, pDel, pCAS, pAsyncSet)
+	fmt.Printf("pGet=%v pSet=%v pDel=%v pCAS=%v pAsyncSet=%v pSetNew=%v\n", pGet, pSet, pDel, pCAS, pAsyncSet, pSetNew)
 
 	var w, wpre sync.WaitGroup
 	w.Add(threads)
@@ -145,8 +155,6 @@ func testBenchParallel(t *testing.T, threads int, numClients int, pGet, pSet, pD
 			}(i)
 		}
 		wpre.Wait()
-	} else {
-		fill = 1000 * 1000
 	}
 	//time.Sleep(time.Second * 5)
 	p := tlfmt.NewProgress("Operating...", operations)
@@ -162,7 +170,7 @@ func testBenchParallel(t *testing.T, threads int, numClients int, pGet, pSet, pD
 			value := make([]byte, 4)
 			opID := atomic.AddInt32(&ops, 1)
 			for opID < int32(operations) {
-				binary.LittleEndian.PutUint32(key, uint32(rand.Int31n(int32(fill))))
+				binary.LittleEndian.PutUint32(key, uint32(rand.Int31n(int32(space))))
 				p.Inc()
 				//Operate
 				op := rand.Float32()
@@ -189,8 +197,14 @@ func testBenchParallel(t *testing.T, threads int, numClients int, pGet, pSet, pD
 					c.Del(key)
 				case op < pGet+pSet+pDel+pCAS:
 					c.CAS(key, value, time.Time{}, value)
-				default:
+				case op < pGet+pSet+pDel+pCAS+pAsyncSet:
 					c.SetAsync(key, value)
+				default:
+					binary.LittleEndian.PutUint32(key, uint32(int32(80000*1000)+rand.Int31n(10000*1000)))
+					wr, err := c.Set(key, value)
+					if !wr || err != nil {
+						fmt.Println(wr, err)
+					}
 				}
 				latencies[opID] = time.Now().Sub(t1).Seconds()
 				opID = atomic.AddInt32(&ops, 1)

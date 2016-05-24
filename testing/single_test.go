@@ -13,7 +13,6 @@ import (
 	"runtime"
 	"runtime/debug"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 	"treeless/client"
@@ -461,79 +460,6 @@ func metaTestConsistency(t *testing.T, serverAddr string, numClients, iterations
 		}(i)
 	}
 	w.Wait()
-}
-
-//TestLatency tests latency between a SET operation and a GET operaton that sees the the SET written value
-func TestSingleLatency(t *testing.T) {
-	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
-	defer cluster[0].kill()
-	//Client set-up
-	c, err := client.Connect(addr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer c.Close()
-	c2, err2 := client.Connect(addr)
-	if err2 != nil {
-		t.Fatal(err2)
-	}
-	defer c2.Close()
-
-	type lat struct {
-		key string
-		t   time.Time
-	}
-
-	maxKeySize := 4
-	maxValueSize := 4
-	numOperations := 30000
-	runtime.GOMAXPROCS(runtime.NumCPU())
-	var w sync.WaitGroup
-	ch := make(chan lat)
-	w.Add(2)
-	c.SetTimeout = 0
-	var k atomic.Value
-	k.Store(1.0)
-	go func() {
-		rNext := randKVOpGenerator(1, maxKeySize, maxValueSize, 0, 64, 0)
-		for i := 0; i < numOperations; i++ {
-			_, key, value := rNext()
-			t := time.Now()
-			c.Set(key, value)
-			time.Sleep(time.Duration(k.Load().(float64)) * time.Microsecond)
-			if i >= 0 {
-				ch <- lat{string(key), t}
-				runtime.Gosched()
-			}
-		}
-		close(ch)
-		w.Done()
-	}()
-	oks := 0.
-	errors := 0.
-	P := 0.999
-	lk := 1.0
-	go func() {
-		for l := range ch {
-			v, _, _ := c2.Get([]byte(l.key))
-			if v == nil {
-				errors++
-				if oks/(oks+errors) < P {
-					lk = lk * 1.05
-					k.Store(lk)
-					oks = 0
-					errors = 0.
-					//fmt.Println(lk)
-				}
-			} else {
-				oks++
-			}
-		}
-		w.Done()
-	}()
-	w.Wait()
-	fmt.Println("Latency", time.Duration(lk*float64(time.Microsecond)), "at percentile:", oks/(oks+errors)*100.0, "% with", oks+errors, " operations")
 }
 
 //TestClock tests records timestamps synchronization

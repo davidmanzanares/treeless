@@ -131,11 +131,8 @@ func (st *store) deleteStore() {
 /*
 	Store access utility functions
 */
-func (st *store) isPresent(index uint64) bool {
-	return (binary.LittleEndian.Uint32(st.file[index:]) & 0x80000000) == 0
-}
 func (st *store) keyLen(index uint64) uint32 {
-	return binary.LittleEndian.Uint32(st.file[index:]) & 0x7FFFFFFF
+	return binary.LittleEndian.Uint32(st.file[index+headerKeyOffset:])
 }
 func (st *store) valLen(index uint64) uint32 {
 	return binary.LittleEndian.Uint32(st.file[index+headerValueOffset:])
@@ -144,10 +141,17 @@ func (st *store) totalLen(index uint64) uint32 {
 	return st.keyLen(index) + st.valLen(index)
 }
 func (st *store) setKeyLen(index uint64, x uint32) {
-	binary.LittleEndian.PutUint32(st.file[index:index+4], x)
+	binary.LittleEndian.PutUint32(st.file[index:], x)
 }
 func (st *store) setValLen(index uint64, x uint32) {
 	binary.LittleEndian.PutUint32(st.file[index+headerValueOffset:], x)
+}
+
+func (st *store) prev(index uint64) int64 {
+	if int64(index)-4 > 0 {
+		return int64(index) - 12 - int64(binary.LittleEndian.Uint32(st.file[index-4:]))
+	}
+	return -1
 }
 
 //Returns a slice to the selected key
@@ -162,36 +166,21 @@ func (st *store) val(index uint64) []byte { //TODO use uint32 instead of uint64
 
 //Inserts a new pair at the end of the store, it can fail (with a returning error) if the store size limit is reached
 func (st *store) put(key, val []byte) (uint32, error) {
-	size := uint64(headerSize + len(key) + len(val))
+	size := uint64(4 + 4 + 4 + len(key) + len(val))
 	//Cache-alignment
 	//if size <= 64 && st.length%64 >= 32 && (64-st.length%64) < size {
 	//st.length += 64 - st.length%64
 	//}
-	index := st.length
 	for st.length+size >= st.size {
 		log.Println("store size limit reached: denied put operation", st.length, st.size, size)
 		return 0, errors.New("store size limit reached: denied put operation")
 	}
+	index := st.length
 	st.length += size
 	st.setKeyLen(index, uint32(len(key)))
 	st.setValLen(index, uint32(len(val)))
 	copy(st.key(index), key)
 	copy(st.val(index), val)
-	if st.key(index)[0] == 255 {
-		if st.key(index)[0] == 254 {
-			fmt.Println("asd")
-		}
-	}
+	binary.LittleEndian.PutUint32(st.file[int(index)+8+len(key)+len(val):], uint32(len(key)+len(val)))
 	return uint32(index), nil
-}
-
-//Mark a pair as deleted, it wont free its space
-func (st *store) del(index uint32) error {
-	st.deleted += uint64(st.totalLen(uint64(index)))
-	l := 0x80000000 | st.keyLen(uint64(index))
-	if l == 0 {
-		fmt.Println("ASD")
-	}
-	st.setKeyLen(uint64(index), l)
-	return nil
 }
