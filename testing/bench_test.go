@@ -67,11 +67,22 @@ func TestBenchParallelSharedSX_GetFilled(t *testing.T) {
 	}
 }
 
-/*func TestBenchParallelSharedS1_GetFilledDisk(t *testing.T) {
+func TestBenchParallelSharedS1_GetFilledDisk(t *testing.T) {
 	for i := 100; i < 80000; i += 4000 {
-		testBenchParallel(t, 10000, 10, 1.0, 0.0, 0.0, 0, 0, 1, 500000, i*1000)
+		testBenchParallel(t, 10000, 10, 1.0, 0.0, 0.0, 0, 0, 0, 1, 500000, i*1000, "", 1000000)
 	}
-}*/
+}
+
+func TestBenchParallelSharedS1_GetFilledDiskParallelism(t *testing.T) {
+	addr := cluster[0].create(32, 1, ultraverbose)
+	testBenchParallel(t, 10000, 10, 1.0, 0.0, 0.0, 0, 0, 0, 1, 1, 50*1000*1000, addr, 50*1000*1000)
+	for i := 10; i < 4100; i *= 2 {
+		fmt.Println("\n\n\n")
+		testBenchParallel(t, i, 10, 1.0, 0.0, 0.0, 0, 0, 0, 1, 400*1000, 0, addr, 50*1000*1000)
+	}
+	cluster[0].kill()
+}
+
 func TestBenchParallelSharedS1_SetFilledDisk(t *testing.T) {
 	for i := 1; i < 180000; i += 4000 {
 		addr := cluster[0].create(32, 1, ultraverbose)

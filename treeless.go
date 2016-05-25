@@ -18,7 +18,7 @@ import (
 )
 import _ "net/http/pprof"
 
-const DefaultDBSize = 1024 * 1024 * 1024
+const DefaultDBSize = 1024 * 1024 * 128
 
 func main() {
 	rand.Seed(time.Now().UnixNano())

@@ -27,6 +27,8 @@ type DBServer struct {
 	sg *servergroup.ServerGroup
 	//Heartbeat
 	hb *heartbeat.Heartbeater
+
+	stopped bool
 }
 
 const serverWorkers = 4
@@ -95,9 +97,9 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 	//Heartbeat start
 	s.hb = heartbeat.Start(s.sg)
 	//Rebalancer start
-	rebalance.StartRebalance(s.sg, s.lh, func() bool { return false })
+	rebalance.StartRebalance(s.sg, s.lh, func() bool { return s.stopped })
 
-	repair.StartRepairSystem(s.sg, s.lh, func() bool { return false })
+	repair.StartRepairSystem(s.sg, s.lh, func() bool { return s.stopped })
 
 	//Init server
 	s.s = tlcom.Start(addr, localIP, localport, worker(&s), s.hb.ListenReply(s.lh))
@@ -107,10 +109,13 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 
 //Stop the server, close all TCP/UDP connections
 func (s *DBServer) Stop() {
+	log.Println("Server close initiated")
+	s.stopped = true
 	s.hb.Stop()
 	s.s.Stop()
 	s.sg.Stop()
 	s.lh.Close()
+	log.Println("Server closed")
 }
 
 func (s *DBServer) LogInfo() {
@@ -122,6 +127,9 @@ func worker(s *DBServer) (work func(message protocol.Message) (response protocol
 	return func(message protocol.Message) (response protocol.Message) {
 		//fmt.Println("Server", "message recieved", string(message.Key), string(message.Value), message.Type)
 		response.Type = 0
+		if s.stopped {
+			return response
+		}
 		switch message.Type {
 		case protocol.OpGet:
 			rval, _ := s.lh.Get(message.Key)

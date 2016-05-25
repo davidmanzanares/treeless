@@ -132,5 +132,5 @@ func (ps *procServer) reconnect() {
 }
 
 func (ps *procServer) testCapability(c capability) bool {
-	return c == capKill
+	return c == capKill || c == capDisconnect
 }

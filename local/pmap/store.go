@@ -149,7 +149,7 @@ func (st *store) setValLen(index uint64, x uint32) {
 
 func (st *store) prev(index uint64) int64 {
 	if int64(index)-4 > 0 {
-		return int64(index) - 12 - int64(binary.LittleEndian.Uint32(st.file[index-4:]))
+		return int64(index) - 12 - int64(binary.LittleEndian.Uint32(st.file[index-4:index]))
 	}
 	return -1
 }

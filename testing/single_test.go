@@ -183,7 +183,6 @@ func TestSingleSizeLimit(t *testing.T) {
 func TestSingleTimeout(t *testing.T) {
 	//Server set-up
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
-	defer cluster[0].kill()
 	waitForServer(addr)
 	//Client set-up
 	client, err := client.Connect(addr)

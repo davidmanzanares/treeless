@@ -315,6 +315,9 @@ func TestMultiCAS(t *testing.T) {
 }
 
 func TestMultiReadRepair(t *testing.T) {
+	if !cluster[0].testCapability(capDisconnect) {
+		t.Skip("Cluster doesn't support disconnections")
+	}
 	//Start A
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	c, err := client.Connect(addr)
@@ -353,6 +356,9 @@ func TestMultiReadRepair(t *testing.T) {
 }
 
 func TestMultiBackwardsRepair(t *testing.T) {
+	if !cluster[0].testCapability(capDisconnect) {
+		t.Skip("Cluster doesn't support disconnections")
+	}
 	//Start A
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
 	c, err := client.Connect(addr)

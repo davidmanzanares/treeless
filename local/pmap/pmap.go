@@ -315,7 +315,16 @@ func (c *PMap) isPresent(index uint64) bool {
 
 //Iterate calls foreach for each stored pair, it will stop iterating if the call returns false
 func (c *PMap) BackwardsIterate(foreach func(key, value []byte) (continuE bool)) error {
-	for index := c.st.length; index >= 0; {
+	index := c.st.length
+	if index <= 0 {
+		return nil
+	}
+	prev := uint64(c.st.prev(index))
+	if prev < 0 {
+		return nil
+	}
+	index = uint64(prev)
+	for index >= 0 {
 		if c.isPresent(index) {
 			key := c.st.key(index)
 			val := c.st.val(index)
