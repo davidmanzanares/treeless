@@ -46,7 +46,7 @@ func StartRebalance(sg *servergroup.ServerGroup, lh *local.Core, ShouldStop func
 					duplicate(i)
 				}
 			}
-			if known+1 < avg*0.95 { //REB-Duplicate
+			if known+1 < avg { //REB-Duplicate
 				//Local server hass less work than it should
 				//Try to download a random chunk
 				c := int(rand.Int31n(int32(sg.NumChunks())))

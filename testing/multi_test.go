@@ -242,7 +242,7 @@ func TestMultiCAS(t *testing.T) {
 		cluster[i].assoc(addr, ultraverbose)
 		defer cluster[i].kill()
 	}
-	time.Sleep(time.Second * 5)
+	time.Sleep(time.Second * 8)
 	c, err := client.Connect(addr)
 	if err != nil {
 		t.Fatal(err, "Should increase sleep time?")
@@ -269,7 +269,6 @@ func TestMultiCAS(t *testing.T) {
 			}
 		}
 	}
-
 	key := make([]byte, 1)
 	key[0] = byte(1)
 	value := make([]byte, 4)

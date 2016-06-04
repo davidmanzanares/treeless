@@ -56,7 +56,9 @@ func listenRequests(conn *net.TCPConn, id int, worker func(protocol.Message) (re
 		for {
 			m, ok := <-ch
 			if ok {
+				//runtime.LockOSThread()
 				response := worker(m)
+				//runtime.UnlockOSThread()
 				if response.Type > 0 {
 					toWorld <- response
 				}

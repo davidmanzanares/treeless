@@ -15,7 +15,7 @@ import (
 const bufferSize = 1450
 
 //High values favours throughput (in non-sequential workloads), low values favours low Latency
-const windowTimeDuration = time.Microsecond * 1 * 250
+const windowTimeDuration = time.Microsecond * 4 * 250
 
 const fastModeEnableProbability = 1 / 500.0
 

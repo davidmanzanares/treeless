@@ -18,11 +18,11 @@ import (
 )
 import _ "net/http/pprof"
 
-const DefaultDBSize = 1024 * 1024 * 128
+const DefaultDBSize = 1024 * 1024 * 1024
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
-	runtime.GOMAXPROCS(runtime.NumCPU())
+	runtime.GOMAXPROCS(1)
 	log.Println("CPUS:", runtime.NumCPU(), runtime.GOMAXPROCS(-1))
 	//Operations
 	log.Println("Treeless args:", os.Args)

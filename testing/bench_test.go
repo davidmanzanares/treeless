@@ -1,7 +1,6 @@
 package test
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"math/rand"
@@ -15,13 +14,205 @@ import (
 	"treeless/tlfmt"
 )
 
+//scalability
+
+type benchCluster struct {
+	precondition int
+	servers      int
+	addr         string
+}
+
+type benchOpMix struct {
+	pGet, pSet, pDel, pCAS, pAsyncSet, pSetNew float32
+}
+
+type benchDef struct {
+	threads, clients  int
+	mix               benchOpMix
+	operations, space int
+	bufferingMode     client.BufferingMode
+}
+
+func TestBenchOpGet(t *testing.T) {
+	c := testBenchPrepareCluster(t, 1000*1000, 4, 1)
+	bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
+	bdef.mix = benchOpMix{pGet: 1}
+	testBenchParallel(t, c, bdef)
+}
+
+func TestBenchOpSet(t *testing.T) {
+	c := testBenchPrepareCluster(t, 1000*1000, 4, 1)
+	bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
+	bdef.mix = benchOpMix{pSet: 1}
+	testBenchParallel(t, c, bdef)
+}
+
+func TestBenchOpDel(t *testing.T) {
+	c := testBenchPrepareCluster(t, 1000*1000, 4, 1)
+	bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
+	bdef.mix = benchOpMix{pDel: 1}
+	testBenchParallel(t, c, bdef)
+}
+
+func TestBenchOpCAS(t *testing.T) {
+	c := testBenchPrepareCluster(t, 1000*1000, 4, 1)
+	bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
+	bdef.mix = benchOpMix{pCAS: 1}
+	testBenchParallel(t, c, bdef)
+}
+
+func TestBenchOpSetNew(t *testing.T) {
+	c := testBenchPrepareCluster(t, 1000*1000, 4, 1)
+	bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
+	bdef.mix = benchOpMix{pSetNew: 1}
+	testBenchParallel(t, c, bdef)
+}
+
+func TestBenchOpAsyncSet(t *testing.T) {
+	c := testBenchPrepareCluster(t, 3000*1000, 4, 1)
+	bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
+	bdef.mix = benchOpMix{pAsyncSet: 1}
+	testBenchParallel(t, c, bdef)
+}
+
+func TestBenchSequential(t *testing.T) {
+	c := testBenchPrepareCluster(t, 1000*1000, 4, 1)
+	bdef := benchDef{threads: 1, clients: 1, operations: 150 * 1000, space: 1000 * 1000, bufferingMode: client.NoDelay}
+	bdef.mix = benchOpMix{pGet: 1}
+	testBenchParallel(t, c, bdef)
+}
+
+func TestBenchClientParallelism(t *testing.T) {
+	c := testBenchPrepareCluster(t, 1000*1000, 4, 1)
+	for i := 1; i < 2000; i *= 2 {
+		fmt.Println(i, "clients")
+		bdef := benchDef{threads: 4000, clients: i, operations: 2500 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
+		bdef.mix = benchOpMix{pGet: 1}
+		testBenchParallel(t, c, bdef)
+	}
+}
+
+func TestBenchThreadParallelism(t *testing.T) {
+	c := testBenchPrepareCluster(t, 1000*1000, 4, 1)
+	for i := 64; i < 30000; i *= 2 {
+		fmt.Println(i, "threads")
+		bdef := benchDef{threads: i, clients: 10, operations: 3000 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
+		bdef.mix = benchOpMix{pGet: 1}
+		testBenchParallel(t, c, bdef)
+	}
+}
+
+func TestBenchDiskParallelism(t *testing.T) {
+	c := testBenchPrepareCluster(t, 50*1000*1000, 220, 1)
+	for i := 1; i < 1000; i *= 2 {
+		fmt.Println(i, "clients")
+		bdef := benchDef{threads: 2000, clients: i, operations: 150 * 1000, space: 50 * 1000 * 1000, bufferingMode: client.Buffered}
+		bdef.mix = benchOpMix{pGet: 1}
+		testBenchParallel(t, c, bdef)
+	}
+}
+
+func TestBenchDiskVsRAM(t *testing.T) {
+	for i := 1; i < 120; i += 10 {
+		fmt.Println(float64(i*(220+4+8))/1024.0, "GB")
+		c := testBenchPrepareCluster(t, i*1024*1024, 220, 1)
+		bdef := benchDef{threads: 2000, clients: 128, operations: 350 * 1000, space: i * 1024 * 1024, bufferingMode: client.Buffered}
+		bdef.mix = benchOpMix{pGet: 1}
+		testBenchParallel(t, c, bdef)
+	}
+}
+
+func TestBenchValueSize(t *testing.T) {
+	for i := 4; i < 4*1024; i *= 2 {
+		fmt.Println(i, "bytes")
+		c := testBenchPrepareCluster(t, 1000*1000, i, 1)
+		bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
+		bdef.mix = benchOpMix{pGet: 1}
+		testBenchParallel(t, c, bdef)
+	}
+}
+
+func TestBenchScalability(t *testing.T) {
+	if len(cluster) < 2 {
+		t.Skip("Cluster is too small")
+	}
+	for i := 1; i <= len(cluster); i++ {
+		fmt.Println(i, "servers")
+		c := testBenchPrepareCluster(t, 1000*1000, 4, i)
+		bdef := benchDef{threads: 4000, clients: 4, operations: 2 * 1000 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
+		bdef.mix = benchOpMix{pGet: 1}
+		testBenchParallel(t, c, bdef)
+	}
+}
+
+func testBenchPrepareCluster(t *testing.T, precondition, preconditionValueSize, servers int) benchCluster {
+	if servers > len(cluster) {
+		t.Skip("Cluster is too small")
+	}
+	bc := benchCluster{precondition: precondition, servers: servers}
+	bc.addr = cluster[0].create(16, 1, ultraverbose)
+	for i := 1; i < servers; i++ {
+		cluster[i].assoc(bc.addr, ultraverbose)
+	}
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	if servers > 1 {
+		//Wait for rebalance
+		time.Sleep(time.Second * 35)
+	}
+	//Preconditioning
+	if precondition < 1 {
+		return bc
+	}
+	c, err := client.Connect(bc.addr)
+	c.SetTimeout = time.Second * 5
+	c.SetBufferingMode(client.Buffered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	var w sync.WaitGroup
+	threads := 1000
+	w.Add(threads)
+	t1 := time.Now()
+	p := tlfmt.NewProgress(fmt.Sprint("Preconditioning ", precondition, " x ", preconditionValueSize, "bytes"), precondition)
+	index := uint32(0)
+	for i := 0; i < threads; i++ {
+		go func(i int) {
+			key := make([]byte, 4)
+			value := make([]byte, preconditionValueSize)
+			for {
+				p.Inc()
+				k := atomic.AddUint32(&index, 1)
+				if k >= uint32(precondition) {
+					break
+				}
+				binary.LittleEndian.PutUint32(key, k)
+				if true {
+					wr, err := c.Set(key, value)
+					if !wr || err != nil {
+						fmt.Println("Error at preconditioning", wr, err)
+					}
+				} else {
+					c.SetAsync(key, value)
+				}
+			}
+			w.Done()
+		}(i)
+	}
+	w.Wait()
+	fmt.Println("Precondition time", time.Now().Sub(t1))
+	return bc
+}
+
+/*
 func TestBenchParallelEachS1_Get(t *testing.T) {
-	testBenchParallel(t, 256, 256, 1.0, 0., 0.0, 0, 0, 0, 1, 1000000, 0, "", 1000000)
+	testBenchParallel(t, 10000, 256, 1.0, 0., 0.0, 0, 0, 0, 1, 1000000, 0, "", 1000000)
 }
 
 func TestBenchParallelSharedS1_Get(t *testing.T) {
 	testBenchParallel(t, 10000, 10, 1.0, 0.0, 0.0, 0, 0, 0, 1, 10000000, 0, "", 1000000)
 }
+
 func TestBenchParallelSharedS1_GetFilled(t *testing.T) {
 	testBenchParallel(t, 10000, 10, 1.0, 0.0, 0.0, 0, 0, 0, 1, 10000000, 1000000, "", 1000000)
 }
@@ -61,6 +252,8 @@ func TestBenchParallelSharedS1_AsyncSetFilled(t *testing.T) {
 	testBenchParallel(t, 10000, 10, 0.0, 0.0, 0.0, 0, 1, 0, 1, 10000000, 1000000, "", 1000000)
 }
 
+//fio --name=randread --ioengine=sync --rw=randread --bs=4k --direct=1 --size=1G --numjobs=32 --runtime=240 --group_reporting
+
 func TestBenchParallelSharedSX_GetFilled(t *testing.T) {
 	for i := 1; i <= len(cluster); i++ {
 		testBenchParallel(t, 10000, 10, 1.0, 0.0, 0.0, 0, 0, 0, i, 10000000, 0, "", 1000000)
@@ -74,11 +267,11 @@ func TestBenchParallelSharedS1_GetFilledDisk(t *testing.T) {
 }
 
 func TestBenchParallelSharedS1_GetFilledDiskParallelism(t *testing.T) {
-	addr := cluster[0].create(32, 1, ultraverbose)
-	testBenchParallel(t, 10000, 10, 1.0, 0.0, 0.0, 0, 0, 0, 1, 1, 50*1000*1000, addr, 50*1000*1000)
-	for i := 10; i < 4100; i *= 2 {
+	addr := cluster[0].create(256, 1, ultraverbose)
+	testBenchParallel(t, 10000, 32, 1.0, 0.0, 0.0, 0, 0, 0, 1, 1, 50*1000*1000, addr, 50*1000*1000)
+	for i := 2; i < 500; i *= 2 {
 		fmt.Println("\n\n\n")
-		testBenchParallel(t, i, 10, 1.0, 0.0, 0.0, 0, 0, 0, 1, 400*1000, 0, addr, 50*1000*1000)
+		testBenchParallel(t, 1000, i, 1.0, 0.0, 0.0, 0, 0, 0, 1, 400*1000, 0, addr, 50*1000*1000)
 	}
 	cluster[0].kill()
 }
@@ -103,92 +296,48 @@ func TestBenchParallelSharedS1_SetFilledDisk(t *testing.T) {
 		}
 		//testBenchParallel(t, 1000, 10, 0.5, 0.5, 0.0, 0, 0, 1, 500000, 0)
 	}
-}
+}*/
 
-func testBenchParallel(t *testing.T, threads int, numClients int, pGet, pSet, pDel, pCAS, pAsyncSet, pSetNew float32,
-	servers int, operations int, fill int, addr string, space int) {
-	if servers > len(cluster) {
-		t.Skip("Cluster is too small")
-	}
-	if addr == "" {
-		addr = cluster[0].create(32, 1, ultraverbose)
-		for i := 1; i < servers; i++ {
-			cluster[i].assoc(addr, ultraverbose)
-		}
-	}
-	//addr := "169.254.9.58:9876"
-	/*addr := "127.0.0.1:9876"
-	fmt.Println("START THE SERVER")
-	time.Sleep(time.Second * 5)
-	fmt.Println("SERVER STARTED?")*/
-	//addr := "127.0.0.1:10000"
+func testBenchParallel(t *testing.T, cluster benchCluster, bdef benchDef) {
+	mix := bdef.mix
+	fmt.Println("\tNumClients:", bdef.clients, "Numthreads", bdef.threads,
+		"Servers", cluster.servers, "Preconditioning", cluster.precondition, "Operations", bdef.operations)
+	fmt.Printf("\tpGet=%v pSet=%v pDel=%v pCAS=%v pAsyncSet=%v pSetNew=%v\n",
+		mix.pGet, mix.pSet, mix.pDel, mix.pCAS, mix.pAsyncSet, mix.pSetNew)
 
-	fmt.Println("NumClients:", numClients, "Numthreads", threads, "Servers", servers, "Preconditioning", fill, "Operations", operations)
-	fmt.Printf("pGet=%v pSet=%v pDel=%v pCAS=%v pAsyncSet=%v pSetNew=%v\n", pGet, pSet, pDel, pCAS, pAsyncSet, pSetNew)
-
-	var w, wpre sync.WaitGroup
-	w.Add(threads)
-	runtime.GOMAXPROCS(runtime.NumCPU())
-	clients := make([]*client.DBClient, numClients)
+	var w sync.WaitGroup
+	clients := make([]*client.DBClient, bdef.clients)
 	for i := range clients {
-		c, err := client.Connect(addr)
-		c.SetBufferingMode(client.Buffered)
+		c, err := client.Connect(cluster.addr)
+		c.SetBufferingMode(bdef.bufferingMode)
 		if err != nil {
 			t.Fatal(i, err)
 		}
-		c.SetTimeout = time.Second * 4
-		c.GetTimeout = time.Second * 4
 		defer c.Close()
 		clients[i] = c
 	}
-	if servers > 1 {
-		//Wait for rebalance
-		time.Sleep(time.Second * 35)
-	}
-	if fill > 0 {
-		wpre.Add(1000)
-		pp := tlfmt.NewProgress("Preconditioning...", fill)
-
-		for i := 0; fill > 0 && i < fill; i += fill / 1000 {
-			go func(i int) {
-				key := make([]byte, 4)
-				value := make([]byte, 220)
-				c := clients[0]
-				for j := i; j < i+fill/1000; j++ {
-					pp.Inc()
-					binary.LittleEndian.PutUint32(key, uint32(j))
-					wr, err := c.Set(key, value)
-					if !wr || err != nil {
-						fmt.Println(wr, err)
-					}
-				}
-				wpre.Done()
-			}(i)
-		}
-		wpre.Wait()
-	}
-	//time.Sleep(time.Second * 5)
-	p := tlfmt.NewProgress("Operating...", operations)
-	latencies := make([]float64, operations)
+	w.Add(bdef.threads)
+	p := tlfmt.NewProgress("\tOperating...", bdef.operations)
+	latencies := make([]float64, bdef.operations)
 	ops := int32(0)
 	runtime.Gosched()
 	runtime.GC()
 	t1 := time.Now()
-	for i := 0; i < threads; i++ {
-		go func(thread int) {
-			c := clients[thread%numClients]
+	for i := 0; i < bdef.threads; i++ {
+		go func(gorID int) {
+			c := clients[gorID%bdef.clients]
 			key := make([]byte, 4)
 			value := make([]byte, 4)
 			opID := atomic.AddInt32(&ops, 1)
-			for opID < int32(operations) {
-				binary.LittleEndian.PutUint32(key, uint32(rand.Int31n(int32(space))))
+			for opID < int32(bdef.operations) {
+				binary.LittleEndian.PutUint32(key, uint32(rand.Int31n(int32(bdef.space))))
 				p.Inc()
 				//Operate
 				op := rand.Float32()
 				//fmt.Println(op, key, value)
 				t1 := time.Now()
 				switch {
-				case op < pGet:
+				case op < mix.pGet:
 					for i := 0; ; i++ {
 						if i == 5 {
 							t.Error("5 timeouts")
@@ -199,16 +348,16 @@ func testBenchParallel(t *testing.T, threads int, numClients int, pGet, pSet, pD
 						}
 						time.Sleep(time.Millisecond * 500)
 					}
-				case op < pGet+pSet:
+				case op < mix.pGet+mix.pSet:
 					wr, err := c.Set(key, value)
 					if !wr || err != nil {
 						fmt.Println(wr, err)
 					}
-				case op < pGet+pSet+pDel:
+				case op < mix.pGet+mix.pSet+mix.pDel:
 					c.Del(key)
-				case op < pGet+pSet+pDel+pCAS:
+				case op < mix.pGet+mix.pSet+mix.pDel+mix.pCAS:
 					c.CAS(key, value, time.Time{}, value)
-				case op < pGet+pSet+pDel+pCAS+pAsyncSet:
+				case op < mix.pGet+mix.pSet+mix.pDel+mix.pCAS+mix.pAsyncSet:
 					c.SetAsync(key, value)
 				default:
 					binary.LittleEndian.PutUint32(key, uint32(int32(80000*1000)+rand.Int31n(10000*1000)))
@@ -220,7 +369,7 @@ func testBenchParallel(t *testing.T, threads int, numClients int, pGet, pSet, pD
 				latencies[opID] = time.Now().Sub(t1).Seconds()
 				opID = atomic.AddInt32(&ops, 1)
 			}
-			if pCAS > 0 {
+			if mix.pCAS > 0 {
 				c.Set(key, value)
 			}
 			w.Done()
@@ -229,62 +378,9 @@ func testBenchParallel(t *testing.T, threads int, numClients int, pGet, pSet, pD
 	w.Wait()
 	t2 := time.Now()
 	//Print stats
-	fmt.Println("Throughput:", float64(operations)/(t2.Sub(t1).Seconds()), "ops/s", "Execution time:", t2.Sub(t1).Seconds(), "s")
+	fmt.Println("\tThroughput:", float64(bdef.operations)/(t2.Sub(t1).Seconds()), "ops/s", "\tTime:", t2.Sub(t1).Seconds(), "s")
 	sort.Float64Slice(latencies).Sort()
-	fmt.Println("50%", latencies[operations*50/100]*1000.0, "ms", "\t99%", latencies[operations*99/100]*1000.0, "ms",
-		"\n99.9%", latencies[operations*999/1000]*1000.0, "ms", "\t100%", latencies[operations-1]*1000.0, "ms\n")
+	fmt.Println("\t50%", latencies[bdef.operations*50/100]*1000.0, "ms", "\t99%", latencies[bdef.operations*99/100]*1000.0, "ms",
+		"\t99.9%", latencies[bdef.operations*999/1000]*1000.0, "ms")
 
-}
-
-func TestBenchSequentialS1(t *testing.T) {
-	testBenchSequential(t, 1)
-}
-
-//Test sequential throughtput and consistency
-func testBenchSequential(t *testing.T, servers int) {
-	addr := cluster[0].create(testingNumChunks, 2, false)
-	for i := 1; i < servers; i++ {
-		cluster[i].assoc(addr, false)
-	}
-
-	//Initialize vars
-	goMap := make(map[string][]byte)
-
-	//Sequential workload simulation
-	operations := 50000
-	c, err := client.Connect(addr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer c.Close()
-	t1 := time.Now()
-	for i := 0; i < operations; i++ {
-		//Operate
-		op := int(rand.Int31n(int32(3)))
-		key := make([]byte, 1)
-		key[0] = byte(1)
-		value := make([]byte, 4)
-		binary.LittleEndian.PutUint32(value, uint32(rand.Int63()))
-		//fmt.Println(op, key, value)
-		switch op {
-		case 0:
-			goMap[string(key)] = value
-			c.Set(key, value)
-		case 1:
-			delete(goMap, string(key))
-			c.Del(key)
-		case 2:
-			v2 := goMap[string(key)]
-			v1, _, _ := c.Get(key)
-			if !bytes.Equal(v1, v2) {
-				fmt.Println("Mismatch, server returned:", v1,
-					"gomap returned:", v2)
-				t.Error("Mismatch, server returned:", v1,
-					"gomap returned:", v2)
-			}
-		}
-	}
-	t2 := time.Now()
-	//Print stats
-	fmt.Println("Throughput:", float64(operations)/(t2.Sub(t1).Seconds()), "ops/s")
 }
