@@ -47,12 +47,17 @@ func Request(addr string, timeout time.Duration) (response *protocol.AmAlive, er
 	conn.SetDeadline(time.Now().Add(timeout))
 	conn.WriteTo([]byte("ping"), destAddr)
 	for {
-		message := make([]byte, protocol.MaxShortHeartbeatSize)
+		message := make([]byte, protocol.MaxHeartbeatSize)
 		n, readAddr, err := conn.ReadFromUDP(message)
 		if err != nil {
 			return nil, err
 		} else if readAddr.IP.Equal(destAddr.IP) {
-			return protocol.AmAliveUnMarshal(message[:n])
+			aa, err := protocol.AmAliveUnMarshal(message[:n])
+			if err != nil {
+				log.Println(err)
+			}
+			return aa, err
+
 		}
 	}
 }
