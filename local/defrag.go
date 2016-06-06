@@ -20,6 +20,7 @@ func newDefragmenter(lh *Core) chan<- defragOp {
 			chunk := lh.chunks[op.chunkID]
 			log.Println("Defrag id: ", op.chunkID, " Deleted: ", chunk.core.Deleted(), " Length: ", chunk.core.Used())
 
+			chunk.defragMutex.Lock()
 			chunk.Lock()
 
 			old := chunk.core
@@ -41,6 +42,7 @@ func newDefragmenter(lh *Core) chan<- defragOp {
 			old.CloseAndDelete()
 
 			lh.chunks[op.chunkID].Unlock()
+			chunk.defragMutex.Unlock()
 			if op.status != nil {
 				op.status <- true
 			}

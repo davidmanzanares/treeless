@@ -2,11 +2,9 @@ package heartbeat
 
 import (
 	"log"
-	"net"
 	"sync"
 	"sync/atomic"
 	"time"
-	"treeless/com/buffconn"
 	"treeless/com/protocol"
 	"treeless/com/udpconn"
 	"treeless/dist/servergroup"
@@ -15,22 +13,23 @@ import (
 
 var heartbeatTimeout = time.Millisecond * 250
 var heartbeatSleep = time.Millisecond * 500
+var GossipNewsExpirationTime = time.Second * 10
 var timeoutRetries = 3
 
 //Heartbeater is used to discover changes in the DB topology by using a ping-pong protocol
 //Exported fields are used to configure various parameters
 type Heartbeater struct {
-	Sleep          time.Duration
-	SleepOnFail    time.Duration
-	Timeout        time.Duration
-	TimeoutRetries time.Duration
-	stop           int32
-	timeouts       map[string]int
-	sg             *servergroup.ServerGroup
-	core           *local.Core
-	news           []protocol.Gossip
-	newsTime       []time.Time
-	newsMutex      sync.Mutex
+	Sleep                time.Duration
+	SleepOnFail          time.Duration
+	Timeout              time.Duration
+	TimeoutRetries       time.Duration
+	stop                 int32
+	timeouts             map[string]int
+	sg                   *servergroup.ServerGroup
+	core                 *local.Core
+	recentlyAddedServers map[string]time.Time
+	recentlyDeadServers  map[string]time.Time
+	newsMutex            sync.Mutex
 }
 
 //Stop requesting and listening to heartbeats
@@ -38,100 +37,41 @@ func (h *Heartbeater) Stop() {
 	atomic.StoreInt32(&h.stop, 1)
 }
 
-func getaa(addr string) (*protocol.AmAlive, error) {
-	d := &net.Dialer{Timeout: time.Second}
-	conn, err := d.Dial("tcp", addr)
-	if err != nil {
-		return nil, err
-	}
-	bconn := buffconn.New(conn.(*net.TCPConn))
-	defer bconn.Close()
-	bconn.Write(protocol.Message{Type: protocol.OpAmAliveRequest})
-	msg, err := bconn.Read()
-	if err != nil {
-		return nil, err
-	}
-	return protocol.AmAliveUnMarshal(msg.Value)
+func (h *Heartbeater) GossipAdded(addr string) {
+	h.cleanNews()
+	h.newsMutex.Lock()
+	h.recentlyAddedServers[addr] = time.Now()
+	h.newsMutex.Unlock()
 }
 
-func (h *Heartbeater) addNews(addr string, hash uint64) {
+func (h *Heartbeater) GossipDead(addr string) {
 	h.cleanNews()
-	if h.core != nil && addr == h.core.LocalhostIPPort {
-		return
-	}
 	h.newsMutex.Lock()
-	for i := 0; i < len(h.news); i++ {
-		if h.news[i].ServerAddr == addr {
-			h.newsTime[i] = time.Now()
-			h.newsMutex.Unlock()
-			return
-		}
-	}
-	h.newsTime = append(h.newsTime, time.Now())
-	h.news = append(h.news, protocol.Gossip{ServerAddr: addr, ServerHash: hash})
+	h.recentlyDeadServers[addr] = time.Now()
 	h.newsMutex.Unlock()
 }
 
 func (h *Heartbeater) cleanNews() {
 	t := time.Now()
 	h.newsMutex.Lock()
-	for i := 0; i < len(h.news); i++ {
-		if h.newsTime[i].Add(time.Minute).Before(t) {
-			h.news = h.news[1:]
-			h.newsTime = h.newsTime[1:]
-		} else {
-			break
+	for k, v := range h.recentlyAddedServers {
+		if v.Add(GossipNewsExpirationTime).Before(t) {
+			delete(h.recentlyAddedServers, k)
+		}
+	}
+	for k, v := range h.recentlyDeadServers {
+		if v.Add(GossipNewsExpirationTime).Before(t) {
+			delete(h.recentlyDeadServers, k)
 		}
 	}
 	h.newsMutex.Unlock()
 }
 
-func (h *Heartbeater) request(addr string, recursive bool) (ok bool) {
+func (h *Heartbeater) request(addr string) (ok bool) {
 	if h.core != nil && addr == h.core.LocalhostIPPort {
-		return false
-	}
-	saa, saaerr := udpconn.Request(addr, heartbeatTimeout)
-	defer func() {
-		//Gossip protocol
-		if saaerr == nil && recursive {
-			for _, g := range saa.News {
-				gaddr := g.ServerAddr
-				var ourAA protocol.AmAlive
-				ourAA.KnownChunks = h.sg.GetServerChunks(gaddr)
-				ourAA.KnownServers = h.sg.KnownServers()
-				if g.ServerHash != ourAA.Short().Hash {
-					//Mismatch detected, request more info
-					log.Println("Gossip", addr, gaddr, h.request(gaddr, false))
-				}
-			}
-		}
-	}()
-	if saaerr == nil {
-		//h.sg.ServerAlive(addr)
-		var ourAA protocol.AmAlive
-		ourAA.KnownChunks = h.sg.GetServerChunks(addr)
-		ourAA.KnownServers = h.sg.KnownServers()
-		if saa.Hash == ourAA.Short().Hash {
-			//Fast path
-			return false
-		}
-	} else {
-		log.Println(addr, "timeout", saaerr)
-		if h.sg.IsServerOnGroup(addr) {
-			h.timeouts[addr] = h.timeouts[addr] + 1
-			if h.timeouts[addr] > 3 {
-				delete(h.timeouts, addr)
-				//Server is dead
-				h.sg.DeadServer(addr)
-				h.addNews(addr, 0)
-			}
-		} else {
-			delete(h.timeouts, addr)
-		}
 		return true
 	}
-	//Slow path
-	aa, err := getaa(addr)
+	aa, err := udpconn.Request(addr, heartbeatTimeout)
 	if err != nil {
 		if h.sg.IsServerOnGroup(addr) {
 			h.timeouts[addr] = h.timeouts[addr] + 1
@@ -139,28 +79,35 @@ func (h *Heartbeater) request(addr string, recursive bool) (ok bool) {
 				delete(h.timeouts, addr)
 				//Server is dead
 				h.sg.DeadServer(addr)
-				h.addNews(addr, 0)
+				h.GossipDead(addr)
 			}
 		} else {
 			delete(h.timeouts, addr)
 		}
-		return true
+		return false
 	}
+	//Process
 	delete(h.timeouts, addr)
 	if !h.sg.IsServerOnGroup(addr) {
 		h.sg.AddServerToGroup(addr)
+		h.GossipAdded(addr)
 	}
 	h.sg.SetServerChunks(addr, aa.KnownChunks)
-	//Detect added servers
-	for _, s := range aa.KnownServers {
-		if !h.sg.IsServerOnGroup(s) {
-			h.request(s, false)
+	//Gossip
+	if err == nil {
+		for _, new := range aa.RecentlyAddedServers {
+			if !h.sg.IsServerOnGroup(new) {
+				//Mismatch detected, request more info
+				log.Println("Gossip (add)", addr, new, h.request(new))
+			}
+		}
+		for _, new := range aa.RecentlyDeadServers {
+			if h.sg.IsServerOnGroup(new) {
+				//Mismatch detected, request more info
+				log.Println("Gossip (dead)", addr, new, h.request(new))
+			}
 		}
 	}
-	var ourAA protocol.AmAlive
-	ourAA.KnownChunks = h.sg.GetServerChunks(addr)
-	ourAA.KnownServers = h.sg.KnownServers()
-	h.addNews(addr, ourAA.Short().Hash)
 	return true
 }
 
@@ -169,9 +116,11 @@ func (h *Heartbeater) request(addr string, recursive bool) (ok bool) {
 func Start(sg *servergroup.ServerGroup) *Heartbeater {
 	h := new(Heartbeater)
 	h.timeouts = make(map[string]int)
+	h.recentlyAddedServers = make(map[string]time.Time)
+	h.recentlyDeadServers = make(map[string]time.Time)
 	h.sg = sg
 	for _, s := range sg.Servers() {
-		h.request(s.Phy, false)
+		h.request(s.Phy)
 	}
 	go func() {
 		ticker := time.NewTicker(heartbeatSleep)
@@ -180,32 +129,33 @@ func Start(sg *servergroup.ServerGroup) *Heartbeater {
 			queryList := sg.Servers()
 			if len(queryList) == 0 {
 				log.Println("Heartbeat querylist empty")
-				return
 			}
 			for _, qs := range queryList {
-				h.request(qs.Phy, true)
+				h.request(qs.Phy)
 				<-ticker.C
 			}
-			//fmt.Println(sg)
 		}
 	}()
 	return h
 }
 
 //ListenReply starts listening and repling to UDP heartbeat requests
-func (h *Heartbeater) ListenReply(c *local.Core) func() protocol.ShortAmAlive {
+func (h *Heartbeater) ListenReply(c *local.Core) func() protocol.AmAlive {
 	h.core = c
-	return func() protocol.ShortAmAlive {
+	return func() (r protocol.AmAlive) {
 		h.cleanNews()
-		var r protocol.AmAlive
 		r.KnownChunks = c.ChunksList()
-		r.KnownServers = h.sg.KnownServers()
-		s := r.Short()
+		h.cleanNews()
 		h.newsMutex.Lock()
-		s.News = make([]protocol.Gossip, len(h.news))
-		copy(s.News, h.news)
+		r.RecentlyAddedServers = make([]string, 0, len(h.recentlyAddedServers))
+		for k := range h.recentlyAddedServers {
+			r.RecentlyAddedServers = append(r.RecentlyAddedServers, k)
+		}
+		r.RecentlyDeadServers = make([]string, 0, len(h.recentlyDeadServers))
+		for k := range h.recentlyDeadServers {
+			r.RecentlyDeadServers = append(r.RecentlyDeadServers, k)
+		}
 		h.newsMutex.Unlock()
-		//log.Println("UDP AA", r)
-		return s
+		return r
 	}
 }

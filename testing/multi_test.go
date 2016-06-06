@@ -42,9 +42,9 @@ func TestMultiBasicRebalance(t *testing.T) {
 	cluster[0].kill()
 	time.Sleep(time.Millisecond * 100)
 	//Get operation
-	value, _, _ := client.Get([]byte("hola"))
+	value, ts, g := client.Get([]byte("hola"))
 	if string(value) != "mundo" {
-		t.Fatal("Get failed, returned string: ", string(value))
+		t.Fatal("Get failed, returned string: ", (value), ts, g)
 	}
 
 	//Del operation
@@ -52,7 +52,7 @@ func TestMultiBasicRebalance(t *testing.T) {
 	//Get operation
 	value, _, _ = client.Get([]byte("hola"))
 	if value != nil {
-		t.Fatal("Get failed, returned string: ", string(value))
+		t.Fatal("Get failed 2, returned string: ", string(value))
 	}
 }
 

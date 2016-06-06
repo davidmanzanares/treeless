@@ -261,19 +261,12 @@ func worker(s *DBServer) (work func(message protocol.Message) (response protocol
 			}
 			response.Value = b
 			return response
-		case protocol.OpAmAliveRequest:
-			var response protocol.Message
-			response.ID = message.ID
-			response.Type = protocol.OpResponse
-			var aa protocol.AmAlive
-			aa.KnownChunks = s.lh.ChunksList()
-			aa.KnownServers = s.sg.KnownServers()
-			response.Value = aa.Marshal()
-			return response
 		case protocol.OpAddServerToGroup:
 			var response protocol.Message
 			response.ID = message.ID
-			s.sg.AddServerToGroup(string(message.Key))
+			addr := string(message.Key)
+			s.sg.AddServerToGroup(addr)
+			s.hb.GossipAdded(addr)
 			response.Type = protocol.OpOK
 			return response
 		case protocol.OpGetChunkInfo:

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"runtime"
 	"sync"
 	"time"
 	"treeless/com/protocol"
@@ -30,6 +29,7 @@ type metaChunk struct {
 	revision       int64
 	protectionTime time.Time
 	sync.Mutex
+	defragMutex sync.Mutex
 }
 
 type ChunkStatus int64
@@ -232,16 +232,12 @@ func (lh *Core) BackwardsIterate(chunkIndex int, foreach func(key, value []byte)
 		lh.chunks[chunkIndex].Unlock()
 		return errors.New("ChunkNotPresent")
 	}
-	i := 0
+	lh.chunks[chunkIndex].Unlock()
+	lh.chunks[chunkIndex].defragMutex.Lock()
 	err := lh.chunks[chunkIndex].core.BackwardsIterate(func(key, value []byte) bool {
-		if i%128 == 0 {
-			lh.chunks[chunkIndex].Unlock()
-			runtime.Gosched()
-			lh.chunks[chunkIndex].Lock()
-		}
 		return foreach(key, value)
 	})
-	lh.chunks[chunkIndex].Unlock()
+	lh.chunks[chunkIndex].defragMutex.Unlock()
 	return err
 }
 

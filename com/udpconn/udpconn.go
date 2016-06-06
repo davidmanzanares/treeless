@@ -8,7 +8,7 @@ import (
 )
 
 //ReplyCallback is a function type that should return an AmAlive message
-type ReplyCallback func() protocol.ShortAmAlive
+type ReplyCallback func() protocol.AmAlive
 
 //Reply listens and response to UDP requests
 func Reply(callback ReplyCallback, udpPort int) net.Conn {
@@ -34,7 +34,7 @@ func Reply(callback ReplyCallback, udpPort int) net.Conn {
 }
 
 //Request sends a UDP request to ip with a timeout, it waits until the timeout for a response
-func Request(addr string, timeout time.Duration) (response *protocol.ShortAmAlive, err error) {
+func Request(addr string, timeout time.Duration) (response *protocol.AmAlive, err error) {
 	conn, err := net.ListenUDP("udp", nil)
 	if err != nil {
 		return nil, err
@@ -52,7 +52,7 @@ func Request(addr string, timeout time.Duration) (response *protocol.ShortAmAliv
 		if err != nil {
 			return nil, err
 		} else if readAddr.IP.Equal(destAddr.IP) {
-			return protocol.ShortAmAliveUnMarshal(message[:n])
+			return protocol.AmAliveUnMarshal(message[:n])
 		}
 	}
 }

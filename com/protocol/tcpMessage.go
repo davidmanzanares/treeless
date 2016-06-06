@@ -34,7 +34,6 @@ const (
 	OpGetChunkInfo
 	OpProtect
 	OpTransfer
-	OpAmAliveRequest
 	OpSetDynamicBuffering
 	OpSetBuffered
 	OpSetNoDelay
@@ -44,7 +43,7 @@ const (
 	OpOK Operation = iota + 200
 	OpErr
 	OpResponse
-	)
+)
 
 //Message stores a DB message that can be sent and recieved using a network connection
 type Message struct {
