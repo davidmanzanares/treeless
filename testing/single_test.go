@@ -67,11 +67,6 @@ func TestSingleSimple(t *testing.T) {
 	}
 	defer client.Close()
 
-	/*time.Sleep(time.Second * 5)
-	fmt.Println("GO!")
-	cluster[1].assoc(addr, ultraverbose)
-	time.Sleep(time.Second * 5)*/
-
 	//Set operation
 	_, err = client.Set([]byte("hola"), []byte("mundo"))
 	if err != nil {
@@ -434,14 +429,20 @@ func metaTestConsistency(t *testing.T, serverAddr string, numClients, iterations
 				}
 				switch op {
 				case 0:
+					///fmt.Println("SET", value)
 					goMap[string(key)] = value
 					c.Set(key, value)
 					mutex.Unlock()
 				case 1:
+					//fmt.Println("DEL")
 					delete(goMap, string(key))
-					c.Del(key)
+					errs := c.Del(key)
+					if errs != nil {
+						fmt.Println("Errors:", errs)
+					}
 					mutex.Unlock()
 				case 2:
+					//fmt.Println("GET")
 					v2 := goMap[string(key)]
 					v1, _, _ := c.Get(key)
 					if !bytes.Equal(v1, v2) {

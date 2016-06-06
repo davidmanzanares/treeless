@@ -15,7 +15,7 @@ type procServer struct {
 	cmd    *exec.Cmd
 }
 
-var ramonly = false
+var ramonly = true
 
 var localIP = "127.0.0.1"
 
@@ -68,7 +68,7 @@ func (ps *procServer) create(numChunks, redundancy int, verbose bool) string {
 	exec.Command("killall", "-q", "treeless").Run()
 	ps.cmd = exec.Command("./treeless", "-create", "-port",
 		fmt.Sprint(10000+ps.id), "-dbpath", ps.dbpath, "-localip", localIP,
-		"-redundancy", fmt.Sprint(redundancy), "-chunks", fmt.Sprint(numChunks))
+		"-redundancy", fmt.Sprint(redundancy), "-procs", "1", "-chunks", fmt.Sprint(numChunks))
 	if verbose {
 		ps.cmd.Stdout = os.Stdout
 		ps.cmd.Stderr = os.Stderr

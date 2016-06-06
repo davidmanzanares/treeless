@@ -18,12 +18,10 @@ import (
 )
 import _ "net/http/pprof"
 
-const DefaultDBSize = 1024 * 1024 * 1024
+const DefaultDBSize = 1024 * 1024 * 128
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
-	runtime.GOMAXPROCS(1)
-	log.Println("CPUS:", runtime.NumCPU(), runtime.GOMAXPROCS(-1))
 	//Operations
 	log.Println("Treeless args:", os.Args)
 	create := flag.Bool("create", false, "Create a new DB server group")
@@ -33,6 +31,7 @@ func main() {
 	port := flag.Int("port", 9876, "Use this port as the localhost server port")
 	redundancy := flag.Int("redundancy", 2, "Redundancy of the new DB server group")
 	chunks := flag.Int("chunks", 2, "Number of chunks")
+	procs := flag.Int("procs", runtime.NumCPU(), "GOMAXPROCS")
 	size := flag.Int64("size", DefaultDBSize, "DB chunk size")
 	dbpath := flag.String("dbpath", "", "Filesystem path to store DB info")
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
@@ -41,6 +40,8 @@ func main() {
 	logToFile := flag.String("logtofile", "", "set logging to file")
 
 	flag.Parse()
+	runtime.GOMAXPROCS(*procs)
+
 	if *logToFile != "" {
 		f, err := os.OpenFile(*logToFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 		if err != nil {

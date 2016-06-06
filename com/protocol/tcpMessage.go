@@ -2,6 +2,19 @@ package protocol
 
 import "encoding/binary"
 
+/*
+	TCP treeless protocol
+
+	Each message is composed by:
+		0:4 bytes:						message size
+		4:8 bytes:						message ID
+		8:12 bytes:						message key len
+		12 byte:						operation type
+		13:13+key len bytes:			key
+		13+key len:message size bytes:	value
+
+*/
+
 //Operation represents a DB operation or result, the Message type
 type Operation uint8
 
@@ -13,8 +26,10 @@ const (
 	OpSetAsync
 	OpDel
 	OpCAS
+)
+const (
 	//Advanced ops
-	OpAddServerToGroup
+	OpAddServerToGroup Operation = iota + 100
 	OpGetConf
 	OpGetChunkInfo
 	OpProtect
@@ -23,12 +38,13 @@ const (
 	OpSetDynamicBuffering
 	OpSetBuffered
 	OpSetNoDelay
+)
+const (
 	//Responses
-	OpOK
+	OpOK Operation = iota + 200
 	OpErr
 	OpResponse
-	NumOperations
-)
+	)
 
 //Message stores a DB message that can be sent and recieved using a network connection
 type Message struct {

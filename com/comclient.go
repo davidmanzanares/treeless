@@ -149,8 +149,7 @@ func (q *queue) forall(callback func(tm *timeoutMsg)) {
 }
 
 func broker(c *Conn, onClose func()) {
-	fromWorld := make(chan protocol.Message, 1024)
-	toWorld := buffconn.NewBufferedConn(c.conn, fromWorld)
+	bconn := buffconn.New(c.conn)
 	waits := make(map[uint32]chan<- Result)
 	pq := createQueue()
 	tickerActivation := make(chan bool)
@@ -168,7 +167,6 @@ func broker(c *Conn, onClose func()) {
 					w, ok := waits[tm.tid]
 					if ok {
 						delete(waits, tm.tid)
-						//fmt.Println("Timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))
 						w <- Result{nil, errors.New("Timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
 					}
 				})
@@ -203,14 +201,13 @@ func broker(c *Conn, onClose func()) {
 						w <- Result{nil, errors.New("Connection closed => fast timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
 					}
 				})
-				//log.Println(errors.New(fmt.Sprint("Broker: Connection closed", "Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr())))
-				close(toWorld)
+				bconn.Close()
 				mutex.Unlock()
 				return
 			}
 			msg.mess.ID = tid
 			if msg.timeout > 0 {
-				//Send and *Recieve*
+				//Send and *Receive*
 				if msg.rch == nil {
 					panic("msg rch == nil")
 				}
@@ -225,8 +222,8 @@ func broker(c *Conn, onClose func()) {
 					panic("msg rch != nil")
 				}
 			}
-			toWorld <- msg.mess
 			mutex.Unlock()
+			bconn.Write(msg.mess)
 			tid++
 			if msg.timeout > 0 {
 				select {
@@ -240,9 +237,9 @@ func broker(c *Conn, onClose func()) {
 	go func() {
 		//From world
 		for {
-			m, ok := <-fromWorld
+			m, err := bconn.Read()
 			mutex.Lock()
-			if !ok {
+			if err != nil {
 				//Connection closed
 				mutex.Unlock()
 				onClose()

@@ -5,7 +5,7 @@ import (
 	"treeless/hashing"
 )
 
-const MaxShortHeartbeatSize = 128
+const MaxShortHeartbeatSize = 1400
 
 type AmAliveChunk struct {
 	ID       int
