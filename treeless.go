@@ -29,6 +29,7 @@ func main() {
 	monitor := flag.String("monitor", "", "Monitor an existing DB")
 	//Options
 	port := flag.Int("port", 9876, "Use this port as the localhost server port")
+	open := flag.Bool("open", false, "Open an existing DB folder")
 	redundancy := flag.Int("redundancy", 2, "Redundancy of the new DB server group")
 	chunks := flag.Int("chunks", 2, "Number of chunks")
 	procs := flag.Int("procs", runtime.NumCPU(), "GOMAXPROCS")
@@ -96,7 +97,7 @@ func main() {
 		}
 		fmt.Println(s)*/
 	} else if *create {
-		s := server.Start("", *localIP, *port, *chunks, *redundancy, *dbpath, uint64(*size))
+		s := server.Start("", *localIP, *port, *chunks, *redundancy, *dbpath, uint64(*size), *open)
 		go func() {
 			c := make(chan os.Signal, 1)
 			signal.Notify(c, os.Interrupt)
@@ -115,7 +116,7 @@ func main() {
 		}()
 		select {}
 	} else if *assoc != "" {
-		s := server.Start(*assoc, *localIP, *port, *chunks, *redundancy, *dbpath, uint64(*size))
+		s := server.Start(*assoc, *localIP, *port, *chunks, *redundancy, *dbpath, uint64(*size), *open)
 		go func() {
 			c := make(chan os.Signal, 1)
 			signal.Notify(c, os.Interrupt)

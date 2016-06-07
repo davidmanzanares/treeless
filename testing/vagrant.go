@@ -101,6 +101,10 @@ func (vs *vagrantServer) addr() string {
 	return "192.168.2." + fmt.Sprint(100+vs.id) + ":9876"
 }
 
+func (vs *vagrantServer) close() {
+	panic("Not implemented!")
+}
+
 func (vs *vagrantServer) vagrantSSH(cmd string) {
 	c := exec.Command("vagrant", "ssh", "vm"+fmt.Sprint(vs.id), "-c", cmd)
 	c.Stderr = os.Stderr
@@ -108,7 +112,7 @@ func (vs *vagrantServer) vagrantSSH(cmd string) {
 	c.Run()
 }
 
-func (vs *vagrantServer) create(numChunks, redundancy int, verbose bool) string {
+func (vs *vagrantServer) create(numChunks, redundancy int, verbose bool, open bool) string {
 	//Stop
 	vs.vagrantSSH("killall -q treeless; rm -f /home/vagrant/treeless.pid")
 	//Start and create
@@ -117,7 +121,7 @@ func (vs *vagrantServer) create(numChunks, redundancy int, verbose bool) string 
 	return vs.addr()
 }
 
-func (vs *vagrantServer) assoc(addr string, verbose bool) string {
+func (vs *vagrantServer) assoc(addr string, verbose, open bool) string {
 	//Stop
 	vs.vagrantSSH("killall -q treeless; rm -f /home/vagrant/treeless.pid")
 	//Start and assoc

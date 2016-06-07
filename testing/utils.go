@@ -20,10 +20,11 @@ const (
 type testServer interface {
 	//Node address
 	addr() string
+	close()
 
 	//For node failure simulation
-	create(numChunks, redundancy int, verbose bool) string
-	assoc(addr string, verbose bool) string
+	create(numChunks, redundancy int, verbose bool, open bool) string
+	assoc(addr string, verbose bool, open bool) string
 	kill()
 	//For network failure simulation
 	disconnect()

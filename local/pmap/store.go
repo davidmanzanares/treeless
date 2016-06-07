@@ -57,7 +57,7 @@ func newStore(path string, size uint64) *store {
 	st := new(store)
 	st.size = size
 	if path != "" {
-		st.osFile, err = os.OpenFile(path+".dat", os.O_RDWR|os.O_CREATE|os.O_TRUNC, FilePerms)
+		st.osFile, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, FilePerms)
 		if err != nil {
 			w, _ := os.Getwd()
 			fmt.Println(w)
@@ -84,12 +84,18 @@ func newStore(path string, size uint64) *store {
 	return st
 }
 
-func (st *store) open(path string) {
+func openStore(path string) *store {
+	st := new(store)
 	var err error
-	st.osFile, err = os.OpenFile(path+".dat", os.O_RDWR, FilePerms)
+	st.osFile, err = os.OpenFile(path, os.O_RDWR, FilePerms)
 	if err != nil {
 		panic(err)
 	}
+	fi, err := st.osFile.Stat()
+	if err != nil {
+		panic("Could not obtain stat")
+	}
+	st.size = uint64(fi.Size())
 	st.file, err = gommap.Map(st.osFile.Fd(), gommap.PROT_READ|gommap.PROT_WRITE, gommap.MAP_SHARED)
 	if err != nil {
 		panic(err)
@@ -98,6 +104,7 @@ func (st *store) open(path string) {
 	if err != nil {
 		panic(err)
 	}
+	return st
 }
 
 //Close the store unmmaping the file and syncing to disk

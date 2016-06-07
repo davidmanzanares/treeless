@@ -1,10 +1,6 @@
 package test
 
-import (
-	"fmt"
-	"os/exec"
-)
-
+/*
 type sshServer struct {
 	address string
 }
@@ -70,3 +66,4 @@ func (ss *sshServer) reconnect() {
 func (ss *sshServer) testCapability(c capability) bool {
 	return c == capKill
 }
+*/

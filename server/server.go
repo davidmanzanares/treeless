@@ -35,7 +35,7 @@ const serverWorkers = 4
 const channelUpdateBufferSize = 1024
 
 //Start a Treeless server
-func Start(addr string, localIP string, localport int, numChunks, redundancy int, dbpath string, size uint64) *DBServer {
+func Start(addr string, localIP string, localport int, numChunks, redundancy int, dbpath string, size uint64, open bool) *DBServer {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.SetPrefix(localIP + ":" + fmt.Sprint(localport) + " ")
 	//Recover: log and quit
@@ -53,9 +53,12 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 	if addr == "" {
 		//Launch core
 		s.lh = local.NewCore(dbpath, size, numChunks, localIP+":"+fmt.Sprint(localport))
-		for i := 0; i < numChunks; i++ {
-			s.lh.ChunkSetSynched(i)
-			//if -open
+		if open {
+			s.lh.Open()
+		} else {
+			for i := 0; i < numChunks; i++ {
+				s.lh.ChunkSetSynched(i)
+			}
 		}
 
 		//New DB group
@@ -77,7 +80,9 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 
 		//Launch core
 		s.lh = local.NewCore(dbpath, size, numChunks, localIP+":"+fmt.Sprint(localport))
-		//if -open
+		if open {
+			s.lh.Open()
+		}
 
 		//Add to external servergroup instances
 		//For each other server: add localhost

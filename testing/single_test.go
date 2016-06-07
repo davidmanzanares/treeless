@@ -57,7 +57,7 @@ func TestMain(m *testing.M) {
 //Test just a few hard-coded operations with one server - one client
 func TestSingleSimple(t *testing.T) {
 	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
 	defer cluster[0].kill()
 	waitForServer(addr)
 	//Client set-up
@@ -92,10 +92,53 @@ func TestSingleSimple(t *testing.T) {
 	}
 }
 
+//Test just a few hard-coded operations to test the persistence
+func TestSingleOpen(t *testing.T) {
+	//Server set-up
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
+	defer cluster[0].kill()
+	waitForServer(addr)
+	//Client set-up
+	client, err := client.Connect(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	//Set operation
+	_, err = client.Set([]byte("hola"), []byte("mundo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cluster[0].close()
+	addr = cluster[0].create(testingNumChunks, 2, ultraverbose, true)
+
+	//Get operation
+	value, _, _ := client.Get([]byte("hola"))
+	if string(value) != "mundo" {
+		t.Fatal("Get failed, returned string: ", string(value))
+	}
+
+	//Del operation
+	err = client.Del([]byte("hola"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cluster[0].close()
+	addr = cluster[0].create(testingNumChunks, 2, ultraverbose, true)
+
+	//Get operation
+	value, _, _ = client.Get([]byte("hola"))
+	if value != nil {
+		t.Fatal("Get 2 returned string: ", string(value))
+	}
+}
+
 //TestBigMessages, send 1MB GET, SET messages
 func TestSingleBigMessages(t *testing.T) {
 	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
 	defer cluster[0].kill()
 	waitForServer(addr)
 
@@ -125,7 +168,7 @@ func TestSingleBigMessages(t *testing.T) {
 //TestBigMessages, send 128MB GET, SET messages, server should deny the operation
 func TestSingleSizeLimit(t *testing.T) {
 	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
 	defer cluster[0].kill()
 	waitForServer(addr)
 
@@ -177,7 +220,7 @@ func TestSingleSizeLimit(t *testing.T) {
 //Test just a few hard-coded operations with one server - one client
 func TestSingleTimeout(t *testing.T) {
 	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
 	waitForServer(addr)
 	//Client set-up
 	client, err := client.Connect(addr)
@@ -215,7 +258,7 @@ func TestSingleTimeout(t *testing.T) {
 //Test lots of operations made by a single client against a single DB server
 func TestSingleCmplx1_1(t *testing.T) {
 	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
 	defer cluster[0].kill()
 	waitForServer(addr)
 	metaTest(t, addr, 10*1000, 4, 8, 10, 1024)
@@ -311,14 +354,14 @@ func metaTest(t *testing.T, addr string, numOperations, maxKeySize, maxValueSize
 }
 
 func TestSingleConsistency(t *testing.T) {
-	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
 	defer cluster[0].kill()
 	waitForServer(addr)
 	metaTestConsistency(t, addr, 20, 200)
 }
 
 func TestSingleConsistencyAsyncSet(t *testing.T) {
-	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
 	defer cluster[0].kill()
 	waitForServer(addr)
 	metaTestConsistencyAsyncSet(t, addr, 20, 200)
@@ -465,7 +508,7 @@ func metaTestConsistency(t *testing.T, serverAddr string, numClients, iterations
 //TestClock tests records timestamps synchronization
 func TestSingleClock(t *testing.T) {
 	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
 	defer cluster[0].kill()
 	//Client set-up
 	c, err := client.Connect(addr)
@@ -527,14 +570,14 @@ func TestSingleClock(t *testing.T) {
 }
 
 func TestSingleDefrag(t *testing.T) {
-	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
 	c, err := client.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer c.Close()
 
-	ops := 16
+	ops := 64
 	key := make([]byte, 1)
 	value := make([]byte, 1024*1024)
 	for i := 0; i < ops; i++ {

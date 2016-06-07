@@ -63,12 +63,24 @@ func (ps *procServer) addr() string {
 	return ps.phy
 }
 
-func (ps *procServer) create(numChunks, redundancy int, verbose bool) string {
+func (ps *procServer) close() {
+	if ps.cmd != nil {
+		ps.cmd.Process.Signal(os.Interrupt)
+		//log.Println("Interrupted", ps.dbpath)
+		time.Sleep(time.Millisecond * 500)
+	}
+}
+
+func (ps *procServer) create(numChunks, redundancy int, verbose bool, open bool) string {
 	ps.kill()
 	exec.Command("killall", "-q", "treeless").Run()
+	openstr := ""
+	if open {
+		openstr = "-open"
+	}
 	ps.cmd = exec.Command("./treeless", "-create", "-port",
 		fmt.Sprint(10000+ps.id), "-dbpath", ps.dbpath, "-localip", localIP,
-		"-redundancy", fmt.Sprint(redundancy), "-procs", "1", "-chunks", fmt.Sprint(numChunks))
+		"-redundancy", fmt.Sprint(redundancy), "-procs", "1", "-chunks", fmt.Sprint(numChunks), openstr)
 	if verbose {
 		ps.cmd.Stdout = os.Stdout
 		ps.cmd.Stderr = os.Stderr
@@ -85,9 +97,13 @@ func (ps *procServer) create(numChunks, redundancy int, verbose bool) string {
 	return ps.phy
 }
 
-func (ps *procServer) assoc(addr string, verbose bool) string {
+func (ps *procServer) assoc(addr string, verbose bool, open bool) string {
+	openstr := ""
+	if open {
+		openstr = "-open"
+	}
 	ps.cmd = exec.Command("./treeless", "-assoc", addr, "-port",
-		fmt.Sprint(10000+ps.id), "-dbpath", ps.dbpath, "-localip", localIP)
+		fmt.Sprint(10000+ps.id), "-dbpath", ps.dbpath, "-localip", localIP, openstr)
 	if verbose {
 		ps.cmd.Stdout = os.Stdout
 		ps.cmd.Stderr = os.Stderr

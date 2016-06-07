@@ -17,7 +17,7 @@ import (
 
 func TestMultiBasicRebalance(t *testing.T) {
 	//Server set-up
-	addr1 := cluster[0].create(testingNumChunks, 2, ultraverbose)
+	addr1 := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
 	waitForServer(addr1)
 
 	//Client set-up
@@ -32,7 +32,7 @@ func TestMultiBasicRebalance(t *testing.T) {
 		t.Fatal(err)
 	}
 	//Second server set-up
-	cluster[1].assoc(addr1, ultraverbose)
+	cluster[1].assoc(addr1, ultraverbose, false)
 	defer cluster[1].kill()
 	//Wait for rebalance
 	fmt.Println("Server 1 shut down soon...")
@@ -59,7 +59,7 @@ func TestMultiBasicRebalance(t *testing.T) {
 func TestMultiHotRebalance(t *testing.T) {
 	var stop2 func()
 	//Server set-up
-	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
 	waitForServer(addr)
 	//Client set-up
 	c, err := client.Connect(addr)
@@ -111,7 +111,7 @@ func TestMultiHotRebalance(t *testing.T) {
 					time.Sleep(time.Second * 1)
 					fmt.Println("Server 2 power up")
 					//Second server set-up
-					cluster[1].assoc(addr, ultraverbose)
+					cluster[1].assoc(addr, ultraverbose, false)
 					//Wait for rebalance
 					time.Sleep(time.Second * 5)
 					//First server shut down
@@ -183,7 +183,7 @@ func TestMultiHotRebalance(t *testing.T) {
 }
 
 func TestMultiNodeRevival(t *testing.T) {
-	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
 	c, err := client.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
@@ -193,13 +193,13 @@ func TestMultiNodeRevival(t *testing.T) {
 	//Write
 	c.Set([]byte("hello"), []byte("world"))
 
-	addr2 := cluster[1].assoc(addr, ultraverbose)
+	addr2 := cluster[1].assoc(addr, ultraverbose, false)
 	time.Sleep(time.Second * 6)
 
 	fmt.Println("Server 0 down")
 	cluster[0].kill()
 
-	cluster[0].assoc(addr2, ultraverbose)
+	cluster[0].assoc(addr2, ultraverbose, false)
 	time.Sleep(time.Second * 9)
 
 	fmt.Println("Server 1 down")
@@ -214,10 +214,10 @@ func TestMultiNodeRevival(t *testing.T) {
 }
 
 func TestMultiConsistency(t *testing.T) {
-	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
 	defer cluster[0].kill()
 	for i := 1; i < len(cluster); i++ {
-		cluster[i].assoc(addr, ultraverbose)
+		cluster[i].assoc(addr, ultraverbose, false)
 		defer cluster[i].kill()
 	}
 	waitForServer(addr)
@@ -225,10 +225,10 @@ func TestMultiConsistency(t *testing.T) {
 }
 
 func TestMultiConsistencyAsyncSet(t *testing.T) {
-	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
 	defer cluster[0].kill()
 	for i := 1; i < len(cluster); i++ {
-		cluster[i].assoc(addr, ultraverbose)
+		cluster[i].assoc(addr, ultraverbose, false)
 		defer cluster[i].kill()
 	}
 	waitForServer(addr)
@@ -237,10 +237,10 @@ func TestMultiConsistencyAsyncSet(t *testing.T) {
 
 func TestMultiCAS(t *testing.T) {
 	runtime.GOMAXPROCS(5)
-	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
 	defer cluster[0].kill()
 	for i := 1; i < len(cluster); i++ {
-		cluster[i].assoc(addr, ultraverbose)
+		cluster[i].assoc(addr, ultraverbose, false)
 		defer cluster[i].kill()
 	}
 	time.Sleep(time.Second * 8)
@@ -319,14 +319,14 @@ func TestMultiReadRepair(t *testing.T) {
 		t.Skip("Cluster doesn't support disconnections")
 	}
 	//Start A
-	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
 	c, err := client.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer c.Close()
 	//Start B
-	cluster[1].assoc(addr, ultraverbose)
+	cluster[1].assoc(addr, ultraverbose, false)
 	time.Sleep(time.Second * 8)
 
 	fmt.Println("Disconnect A")
@@ -360,14 +360,14 @@ func TestMultiBackwardsRepair(t *testing.T) {
 		t.Skip("Cluster doesn't support disconnections")
 	}
 	//Start A
-	addr := cluster[0].create(testingNumChunks, 2, ultraverbose)
+	addr := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
 	c, err := client.Connect(addr)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer c.Close()
 	//Start B
-	cluster[1].assoc(addr, ultraverbose)
+	cluster[1].assoc(addr, ultraverbose, false)
 	time.Sleep(time.Second * 8)
 
 	fmt.Println("Disconnect A")
@@ -390,5 +390,53 @@ func TestMultiBackwardsRepair(t *testing.T) {
 	v, _, _ := c.Get([]byte("hola"))
 	if string(v) != "mundo" {
 		t.Fatal("Mismatch", string(v))
+	}
+}
+
+//Test just a few hard-coded operations to test the persistence
+func TestMultiOpen(t *testing.T) {
+	//Server set-up
+	addr := cluster[0].create(testingNumChunks, 1, ultraverbose, false)
+	cluster[1].assoc(addr, ultraverbose, false)
+	defer cluster[0].kill()
+	waitForServer(addr)
+	//Client set-up
+	client, err := client.Connect(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+
+	//Set operation
+	_, err = client.Set([]byte("hola"), []byte("mundo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cluster[0].close()
+	cluster[1].close()
+	addr = cluster[0].create(testingNumChunks, 1, ultraverbose, true)
+	cluster[1].assoc(addr, ultraverbose, true)
+
+	//Get operation
+	value, _, _ := client.Get([]byte("hola"))
+	if string(value) != "mundo" {
+		t.Fatal("Get failed, returned string: ", string(value))
+	}
+
+	//Del operation
+	err = client.Del([]byte("hola"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cluster[0].close()
+	cluster[1].close()
+	addr = cluster[0].create(testingNumChunks, 1, ultraverbose, true)
+	cluster[1].assoc(addr, ultraverbose, true)
+
+	//Get operation
+	value, _, _ = client.Get([]byte("hola"))
+	if value != nil {
+		t.Fatal("Get 2 returned string: ", string(value))
 	}
 }

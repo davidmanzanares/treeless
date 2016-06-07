@@ -1,5 +1,5 @@
 /*
-Package pmap provides persistent dicctionaries with high-performance access and specific timestamp semantics.
+Package pmap provides persistent dictionaries with high-performance access and specific timestamp semantics.
 */
 package pmap
 
@@ -51,6 +51,89 @@ func New(path string, size uint64) *PMap {
 	c.st = newStore(c.path, size)
 	//c.checksum.SetInterval(defaultCheckSumInterval)
 	return c
+}
+
+func Open(path string) *PMap {
+	c := new(PMap)
+	c.path = path
+	c.hm = newHashMap(defaultHashMapInitialLog2Size, defaultHashMapSizeLimit)
+	c.st = openStore(c.path)
+	//Restore every pair, introduce all pairs into the hashmap and calculate deleted bytes and length of the opened store
+	for index := uint64(0); ; {
+		if c.st.keyLen(index) <= 0 {
+			break
+		}
+		//if not 2 totallen => corrupt=> break
+		key := c.st.key(index)
+		val := c.st.val(index)
+		c.restorePair(key, val, uint32(index))
+
+		if len(val) > 0 {
+		} else {
+			c.st.deleted += uint64(12 + len(key))
+		}
+
+		index += 12 + uint64(c.st.totalLen(index))
+		c.st.length = index
+	}
+	//c.checksum.SetInterval(defaultCheckSumInterval)
+	return c
+}
+
+//This function is only used to restore the PMap after a DB close
+func (c *PMap) restorePair(key, value []byte, storeIndex uint32) error {
+	//Check for available space
+	if c.hm.numStoredKeys >= c.hm.numKeysToExpand {
+		err := c.hm.expand()
+		if err != nil {
+			return err
+		}
+	}
+	h64 := hashing.FNV1a64(key)
+	h := hashReMap(uint32(h64))
+	index := h & c.hm.sizeMask
+	col := 0
+	for {
+		storedHash := c.hm.getHash(index)
+		if storedHash == emptyBucket {
+			//Empty bucket: put the pair
+			c.hm.setHash(index, h)
+			c.hm.setStoreIndex(index, storeIndex)
+			c.hm.numStoredKeys++
+			t := time.Unix(0, int64(binary.LittleEndian.Uint64(value[:8])))
+			//fmt.Println("Sum", value)
+			c.checksum.Sum(h64^binary.LittleEndian.Uint64(value[:8]), t)
+			return nil
+		}
+		if h == storedHash {
+			col++
+			if col > 2 {
+				fmt.Println("COL", col)
+			}
+			//Same hash: perform full key comparison
+			stIndex := c.hm.getStoreIndex(index)
+			storedKey := c.st.key(uint64(stIndex))
+			if bytes.Equal(storedKey, key) {
+				//Full match, the key was in the map
+				//Last write wins
+				v := c.st.val(uint64(stIndex))
+				t := time.Unix(0, int64(binary.LittleEndian.Uint64(value[:8])))
+				c.checksum.Sub(h64^binary.LittleEndian.Uint64(v[:8]), t)
+				//fmt.Println("Sub", v)
+				c.st.deleted += uint64(12 + len(key) + len(v))
+				if len(value) > 0 {
+					c.hm.setHash(index, h)
+					c.hm.setStoreIndex(index, storeIndex)
+					c.checksum.Sum(h64^binary.LittleEndian.Uint64(value[:8]), t)
+					//fmt.Println("Sum2", value)
+				} else {
+					c.hm.setHash(index, deletedBucket)
+				}
+				return nil
+			}
+		}
+		index = (index + 1) & c.hm.sizeMask
+	}
 }
 
 func (c *PMap) Checksum() uint64 {
@@ -286,9 +369,12 @@ func (c *PMap) Del(h64 uint64, key, value []byte) error {
 					//Stored pair is newer than the provided pair
 					return nil
 				}
+				c.st.deleted += uint64(12 + len(key) + len(v))
 				c.checksum.Sub(h64^binary.LittleEndian.Uint64(v[:8]), t)
 				c.hm.setHash(index, deletedBucket)
-				return nil
+				//Tombstone
+				_, err := c.st.put(key, nil)
+				return err
 			}
 		}
 		index = (index + 1) & c.hm.sizeMask
@@ -356,30 +442,4 @@ func (c *PMap) Iterate(foreach func(key, value []byte) (continuE bool)) error {
 		index += 12 + uint64(c.st.totalLen(index))
 	}
 	return nil
-}
-
-//This function is only used to restore the PMap after a DB close
-func (c *PMap) restorePair(h64 uint64, key, value []byte, storeIndex uint32) error {
-	h := hashReMap(uint32(h64))
-	index := h & c.hm.sizeMask
-	for {
-		storedHash := c.hm.getHash(index)
-		if storedHash == emptyBucket {
-			//Empty bucket: put the pair
-			c.hm.setHash(index, h)
-			c.hm.setStoreIndex(index, storeIndex)
-			c.hm.numStoredKeys++
-			return nil
-		}
-		if h == storedHash {
-			//Same hash: perform full key comparison
-			stIndex := c.hm.getStoreIndex(index)
-			storedKey := c.st.key(uint64(stIndex))
-			if bytes.Equal(storedKey, key) {
-				//Full match, the key was in the map: DB corrupted!
-				panic("Key already in the map")
-			}
-		}
-		index = (index + 1) & c.hm.sizeMask
-	}
 }

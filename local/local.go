@@ -3,8 +3,11 @@ package local
 import (
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"log"
 	"math"
 	"os"
+	"strings"
 	"sync"
 	"time"
 	"treeless/com/protocol"
@@ -72,11 +75,42 @@ func NewCore(dbpath string, size uint64, numChunks int,
 	return lh
 }
 
+func (lh *Core) getPathToOpen(chunkID int) string {
+	if lh.dbpath == "" {
+		return ""
+	}
+	files, _ := ioutil.ReadDir(lh.dbpath + "/chunks/")
+	for _, f := range files {
+		name := f.Name()
+		if strings.HasPrefix(name, fmt.Sprint(chunkID, "_rev")) {
+			return lh.dbpath + "/chunks/" + name
+		}
+	}
+	return ""
+}
+
+func (lh *Core) Open() {
+	log.Println("Opening...")
+	for i, c := range lh.chunks {
+		c.Lock()
+		path := lh.getPathToOpen(i)
+		if path != "" {
+			log.Println("Opening", path)
+			c.core = pmap.Open(path)
+			c.status = ChunkSynched
+		}
+		c.Unlock()
+	}
+	log.Println("Opening finished")
+}
+
 func (lh *Core) Close() {
-	for i := 0; i < len(lh.chunks); i++ {
-		lh.chunks[i].Lock()
-		lh.chunks[i].core.Close()
-		lh.chunks[i].Unlock()
+	for _, c := range lh.chunks {
+		c.Lock()
+		if c.core != nil {
+			c.core.Close()
+		}
+		c.Unlock()
 	}
 }
 

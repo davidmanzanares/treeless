@@ -34,7 +34,7 @@ type benchDef struct {
 }
 
 func TestBenchOpGet(t *testing.T) {
-	c := testBenchPrepareCluster(t, 1000*1000, 4, 2)
+	c := testBenchPrepareCluster(t, 1000*1000, 4, 1)
 	bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
 	bdef.mix = benchOpMix{pGet: 1}
 	testBenchParallel(t, c, bdef)
@@ -150,9 +150,9 @@ func testBenchPrepareCluster(t *testing.T, precondition, preconditionValueSize, 
 		t.Skip("Cluster is too small")
 	}
 	bc := benchCluster{precondition: precondition, servers: servers}
-	bc.addr = cluster[0].create(16, 1, ultraverbose)
+	bc.addr = cluster[0].create(16, 1, ultraverbose, false)
 	for i := 1; i < servers; i++ {
-		cluster[i].assoc(bc.addr, ultraverbose)
+		cluster[i].assoc(bc.addr, ultraverbose, false)
 	}
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	if servers > 1 {
