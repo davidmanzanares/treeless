@@ -54,7 +54,8 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 		//Launch core
 		s.lh = local.NewCore(dbpath, size, numChunks, localIP+":"+fmt.Sprint(localport))
 		for i := 0; i < numChunks; i++ {
-			s.lh.ChunkSetStatus(i, local.ChunkSynched)
+			s.lh.ChunkSetSynched(i)
+			//if -open
 		}
 
 		//New DB group
@@ -76,6 +77,7 @@ func Start(addr string, localIP string, localport int, numChunks, redundancy int
 
 		//Launch core
 		s.lh = local.NewCore(dbpath, size, numChunks, localIP+":"+fmt.Sprint(localport))
+		//if -open
 
 		//Add to external servergroup instances
 		//For each other server: add localhost
@@ -283,7 +285,7 @@ func worker(s *DBServer) (work func(message protocol.Message) (response protocol
 			response.ID = message.ID
 			chunkID := binary.LittleEndian.Uint32(message.Key)
 			if s.lh.ChunkStatus(int(chunkID)) == local.ChunkSynched && s.sg.NumHolders(int(chunkID)) > s.sg.Redundancy() {
-				s.lh.ChunkSetStatus(int(chunkID), local.ChunkProtected)
+				s.lh.ChunkSetProtected(int(chunkID))
 				response.Type = protocol.OpOK
 			} else {
 				response.Type = protocol.OpErr

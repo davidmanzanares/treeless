@@ -124,13 +124,13 @@ func duplicator(sg *servergroup.ServerGroup, lh *local.Core,
 			return
 		}
 
-		lh.ChunkSetStatus(cid, local.ChunkPresent)
+		lh.ChunkSetPresent(cid)
 		if length == 0 {
 			go func() {
 				//Heartbeat must be propagated before transfer initialization
 				time.Sleep(time.Second * 2)
 				log.Println("Duplication completed: 0 sized", s.Phy, cid)
-				lh.ChunkSetStatus(cid, local.ChunkSynched)
+				lh.ChunkSetSynched(cid)
 				sg.SetServerChunks(lh.LocalhostIPPort, lh.ChunksList())
 			}()
 		} else {
@@ -162,7 +162,7 @@ func duplicator(sg *servergroup.ServerGroup, lh *local.Core,
 					continue
 				} else {
 					//Set chunk as ready
-					lh.ChunkSetStatus(cid, local.ChunkSynched)
+					lh.ChunkSetSynched(cid)
 					sg.SetServerChunks(lh.LocalhostIPPort, lh.ChunksList())
 					log.Println("Chunk duplication completed", cid)
 					transferred = true
@@ -220,7 +220,7 @@ func releaser(sg *servergroup.ServerGroup, lh *local.Core) (release func(cid int
 				continue
 			}
 			//Release
-			lh.ChunkSetStatus(c, 0)
+			lh.ChunkSetNoPresent(c)
 			sg.SetServerChunks(lh.LocalhostIPPort, lh.ChunksList())
 			log.Println("Remove completed", c)
 		}

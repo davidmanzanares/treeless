@@ -46,6 +46,9 @@ const (
 */
 
 func getChunkPath(dbpath string, chunkID int, revision int64) string {
+	if dbpath == "" {
+		return ""
+	}
 	return fmt.Sprint(dbpath, "/chunks/", chunkID, "_rev", revision)
 }
 
@@ -62,13 +65,8 @@ func NewCore(dbpath string, size uint64, numChunks int,
 	lh.dbpath = dbpath
 	lh.size = size
 	lh.chunks = make([]*metaChunk, numChunks)
-	for i := 0; i < numChunks; i++ {
+	for i := 0; i < len(lh.chunks); i++ {
 		lh.chunks[i] = new(metaChunk)
-		if dbpath == "" {
-			lh.chunks[i].core = pmap.New("", size)
-		} else {
-			lh.chunks[i].core = pmap.New(getChunkPath(dbpath, i, 0), size)
-		}
 	}
 	lh.defragChannel = newDefragmenter(lh)
 	return lh
@@ -114,33 +112,70 @@ func (lh *Core) ChunkStatus(id int) ChunkStatus {
 	Setters
 */
 
-func (lh *Core) ChunkSetStatus(cid int, st ChunkStatus) { //DELETE use SetSynched...
+func (lh *Core) ChunkSetNoPresent(cid int) {
 	lh.mutex.Lock()
-	lh.chunks[cid].Lock()
-	if lh.chunks[cid].status == 0 && st != 0 {
-		lh.knownChunks++
-	} else if lh.chunks[cid].status != 0 && st == 0 {
-		lh.chunks[cid].core.Wipe()
+	chunk := lh.chunks[cid]
+	chunk.Lock()
+	defer chunk.Unlock()
+	defer lh.mutex.Unlock()
+	if chunk.status != ChunkNotPresent {
+		lh.chunks[cid].core.CloseAndDelete()
+		lh.chunks[cid].core = nil
 		lh.knownChunks--
 	}
-	if st == ChunkProtected {
-		t := time.Now()
-		lh.chunks[cid].protectionTime = t
-		go func(cid int, t time.Time) {
-			time.Sleep(time.Second * 10)
-			lh.mutex.Lock()
-			defer lh.mutex.Unlock()
-			if lh.chunks[cid].protectionTime == t {
-				lh.chunks[cid].protectionTime = time.Time{}
-				if lh.chunks[cid].status == ChunkProtected {
-					lh.chunks[cid].status = ChunkSynched
-				}
-			}
-		}(cid, t)
+	chunk.status = ChunkNotPresent
+}
+func (lh *Core) ChunkSetPresent(cid int) {
+	lh.mutex.Lock()
+	chunk := lh.chunks[cid]
+	chunk.Lock()
+	defer chunk.Unlock()
+	defer lh.mutex.Unlock()
+	if chunk.status == ChunkNotPresent {
+		lh.chunks[cid].core = pmap.New(getChunkPath(lh.dbpath, cid, 0), lh.size)
+		lh.knownChunks++
 	}
-	lh.chunks[cid].status = st
-	lh.chunks[cid].Unlock()
-	lh.mutex.Unlock()
+	chunk.status = ChunkPresent
+}
+func (lh *Core) ChunkSetSynched(cid int) {
+	lh.mutex.Lock()
+	chunk := lh.chunks[cid]
+	chunk.Lock()
+	defer chunk.Unlock()
+	defer lh.mutex.Unlock()
+	if chunk.status == ChunkNotPresent {
+		lh.chunks[cid].core = pmap.New(getChunkPath(lh.dbpath, cid, 0), lh.size)
+		lh.knownChunks++
+	}
+	chunk.status = ChunkSynched
+}
+func (lh *Core) ChunkSetProtected(cid int) {
+	lh.mutex.Lock()
+	chunk := lh.chunks[cid]
+	chunk.Lock()
+	defer chunk.Unlock()
+	defer lh.mutex.Unlock()
+	if chunk.status == ChunkNotPresent {
+		lh.chunks[cid].core = pmap.New(getChunkPath(lh.dbpath, cid, 0), lh.size)
+		lh.knownChunks++
+	}
+	t := time.Now()
+	chunk.protectionTime = t
+	go func(cid int, t time.Time) {
+		time.Sleep(time.Second * 10)
+		lh.mutex.Lock()
+		defer lh.mutex.Unlock()
+		chunk := lh.chunks[cid]
+		chunk.Lock()
+		defer chunk.Unlock()
+		if chunk.protectionTime == t {
+			chunk.protectionTime = time.Time{}
+			if chunk.status == ChunkProtected {
+				chunk.status = ChunkSynched
+			}
+		}
+	}(cid, t)
+	chunk.status = ChunkProtected
 }
 
 /*

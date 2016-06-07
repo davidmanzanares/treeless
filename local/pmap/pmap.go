@@ -69,13 +69,6 @@ func (c *PMap) CloseAndDelete() {
 	c.st.deleteStore()
 }
 
-//Wipe deletes
-func (c *PMap) Wipe() {
-	c.st.close()
-	c.hm = newHashMap(defaultHashMapInitialLog2Size, defaultHashMapSizeLimit)
-	c.st = newStore(c.path, c.st.size)
-}
-
 //Deleted returns the number of bytes deleted
 func (c *PMap) Deleted() int {
 	return int(c.st.deleted)

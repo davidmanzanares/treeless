@@ -15,7 +15,7 @@ type procServer struct {
 	cmd    *exec.Cmd
 }
 
-var ramonly = true
+var ramonly = false
 
 var localIP = "127.0.0.1"
 
@@ -110,7 +110,7 @@ func (ps *procServer) kill() {
 		//log.Println("Killed", ps.dbpath)
 		time.Sleep(time.Millisecond * 10)
 		if ps.dbpath != "" {
-			os.RemoveAll(ps.dbpath)
+			//os.RemoveAll(ps.dbpath)
 		}
 	}
 }

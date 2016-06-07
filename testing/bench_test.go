@@ -34,7 +34,7 @@ type benchDef struct {
 }
 
 func TestBenchOpGet(t *testing.T) {
-	c := testBenchPrepareCluster(t, 1000*1000, 4, 1)
+	c := testBenchPrepareCluster(t, 1000*1000, 4, 2)
 	bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
 	bdef.mix = benchOpMix{pGet: 1}
 	testBenchParallel(t, c, bdef)
