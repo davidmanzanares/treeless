@@ -92,7 +92,7 @@ func (c *DBClient) Set(key, value []byte) (written bool, errs error) {
 	return c.set(key, value, c.SetTimeout)
 }
 
-func (c *DBClient) SetAsync(key, value []byte) (errs error) {
+func (c *DBClient) AsyncSet(key, value []byte) (errs error) {
 	_, errs = c.set(key, value, 0)
 	return errs
 }
@@ -223,17 +223,14 @@ func (c *DBClient) Del(key []byte) (errs error) {
 type BufferingMode int
 
 const (
-	DynamicBuffering = iota
+	NoDelay = iota
 	Buffered
-	NoDelay
 )
 
 func (c *DBClient) SetBufferingMode(mode BufferingMode) (errs error) {
 	servers := c.sg.Servers()
 	for _, s := range servers {
 		switch mode {
-		case DynamicBuffering:
-			s.SetDynamicBuffering()
 		case Buffered:
 			s.SetBuffered()
 		case NoDelay:

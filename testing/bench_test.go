@@ -193,7 +193,7 @@ func testBenchPrepareCluster(t *testing.T, precondition, preconditionValueSize, 
 						fmt.Println("Error at preconditioning", wr, err)
 					}
 				} else {
-					c.SetAsync(key, value)
+					c.AsyncSet(key, value)
 				}
 			}
 			w.Done()
@@ -358,7 +358,7 @@ func testBenchParallel(t *testing.T, cluster benchCluster, bdef benchDef) {
 				case op < mix.pGet+mix.pSet+mix.pDel+mix.pCAS:
 					c.CAS(key, value, time.Time{}, value)
 				case op < mix.pGet+mix.pSet+mix.pDel+mix.pCAS+mix.pAsyncSet:
-					c.SetAsync(key, value)
+					c.AsyncSet(key, value)
 				default:
 					binary.LittleEndian.PutUint32(key, uint32(int32(80000*1000)+rand.Int31n(10000*1000)))
 					wr, err := c.Set(key, value)

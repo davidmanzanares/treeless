@@ -166,7 +166,7 @@ func worker(s *DBServer) (work func(message protocol.Message) (response protocol
 				response.Value = []byte(err.Error())
 			}
 			return response
-		case protocol.OpSetAsync:
+		case protocol.OpAsyncSet:
 			if len(message.Value) < 8 {
 				log.Println("Error: message value len < 8")
 			}
@@ -300,9 +300,6 @@ func worker(s *DBServer) (work func(message protocol.Message) (response protocol
 		case protocol.OpSetBuffered:
 			response.ID = message.ID
 			response.Type = protocol.OpSetBuffered
-		case protocol.OpSetDynamicBuffering:
-			response.ID = message.ID
-			response.Type = protocol.OpSetDynamicBuffering
 		case protocol.OpSetNoDelay:
 			response.ID = message.ID
 			response.Type = protocol.OpSetNoDelay

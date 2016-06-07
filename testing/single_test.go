@@ -48,9 +48,9 @@ func TestMain(m *testing.M) {
 	//CLUSTER INITIALIZATION
 	cluster = procStartCluster(2)
 	code := m.Run()
-	for _, s := range cluster {
+	/*for _, s := range cluster {
 		s.kill()
-	}
+	}*/
 	os.Exit(code)
 }
 

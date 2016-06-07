@@ -398,7 +398,6 @@ func TestMultiOpen(t *testing.T) {
 	//Server set-up
 	addr := cluster[0].create(testingNumChunks, 1, ultraverbose, false)
 	cluster[1].assoc(addr, ultraverbose, false)
-	defer cluster[0].kill()
 	waitForServer(addr)
 	//Client set-up
 	client, err := client.Connect(addr)
@@ -439,4 +438,7 @@ func TestMultiOpen(t *testing.T) {
 	if value != nil {
 		t.Fatal("Get 2 returned string: ", string(value))
 	}
+
+	cluster[0].close()
+	cluster[1].close()
 }

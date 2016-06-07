@@ -23,7 +23,7 @@ const (
 	//Primitives
 	OpGet Operation = iota + 1
 	OpSet
-	OpSetAsync
+	OpAsyncSet
 	OpDel
 	OpCAS
 )
@@ -34,9 +34,10 @@ const (
 	OpGetChunkInfo
 	OpProtect
 	OpTransfer
-	OpSetDynamicBuffering
 	OpSetBuffered
 	OpSetNoDelay
+	OpDefrag
+	OpForgetNode
 )
 const (
 	//Responses

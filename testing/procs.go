@@ -72,11 +72,12 @@ func (ps *procServer) close() {
 }
 
 func (ps *procServer) create(numChunks, redundancy int, verbose bool, open bool) string {
-	ps.kill()
 	exec.Command("killall", "-q", "treeless").Run()
 	openstr := ""
 	if open {
 		openstr = "-open"
+	} else {
+		ps.kill()
 	}
 	ps.cmd = exec.Command("./treeless", "-create", "-port",
 		fmt.Sprint(10000+ps.id), "-dbpath", ps.dbpath, "-localip", localIP,
@@ -101,6 +102,8 @@ func (ps *procServer) assoc(addr string, verbose bool, open bool) string {
 	openstr := ""
 	if open {
 		openstr = "-open"
+	} else {
+		os.RemoveAll(ps.dbpath)
 	}
 	ps.cmd = exec.Command("./treeless", "-assoc", addr, "-port",
 		fmt.Sprint(10000+ps.id), "-dbpath", ps.dbpath, "-localip", localIP, openstr)
@@ -126,7 +129,7 @@ func (ps *procServer) kill() {
 		//log.Println("Killed", ps.dbpath)
 		time.Sleep(time.Millisecond * 10)
 		if ps.dbpath != "" {
-			//os.RemoveAll(ps.dbpath)
+			os.RemoveAll(ps.dbpath)
 		}
 	}
 }

@@ -380,7 +380,7 @@ func (c *Conn) Get(key []byte, timeout time.Duration) GetOperation {
 func (c *Conn) Set(key []byte, value []byte, timeout time.Duration) SetOperation {
 	op := protocol.OpSet
 	if timeout == 0 {
-		op = protocol.OpSetAsync
+		op = protocol.OpAsyncSet
 	}
 	ch := c.send(op, key, value, timeout)
 	return SetOperation{rch: ch, c: c}
@@ -402,10 +402,6 @@ func (c *Conn) CAS(key []byte, value []byte, timeout time.Duration) CASOperation
 
 func (c *Conn) SetNoDelay() {
 	c.send(protocol.OpSetNoDelay, nil, nil, 0)
-}
-
-func (c *Conn) SetDynamicBuffering() {
-	c.send(protocol.OpSetDynamicBuffering, nil, nil, 0)
 }
 
 func (c *Conn) SetBuffered() {
