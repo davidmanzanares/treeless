@@ -61,6 +61,7 @@ func TestSingleSimple(t *testing.T) {
 	waitForServer(addr)
 	//Client set-up
 	client, err := client.Connect(addr)
+	client.SetNoDelay()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,6 +100,7 @@ func TestSingleOpen(t *testing.T) {
 	waitForServer(addr)
 	//Client set-up
 	client, err := client.Connect(addr)
+	client.SetNoDelay()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,6 +145,7 @@ func TestSingleBigMessages(t *testing.T) {
 
 	//Client set-up
 	client, err := client.Connect(addr)
+	client.SetNoDelay()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,6 +176,7 @@ func TestSingleSizeLimit(t *testing.T) {
 
 	//Client set-up
 	client, err := client.Connect(addr)
+	client.SetNoDelay()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,6 +227,7 @@ func TestSingleTimeout(t *testing.T) {
 	waitForServer(addr)
 	//Client set-up
 	client, err := client.Connect(addr)
+	client.SetNoDelay()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,6 +298,7 @@ func metaTest(t *testing.T, addr string, numOperations, maxKeySize, maxValueSize
 		go func(core int) {
 			//Client set-up
 			c, err := client.Connect(addr)
+			c.SetNoDelay()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -316,6 +322,7 @@ func metaTest(t *testing.T, addr string, numOperations, maxKeySize, maxValueSize
 	}
 	//Check map is in DB
 	c, err := client.Connect(addr)
+	c.SetNoDelay()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,6 +387,7 @@ func metaTestConsistencyAsyncSet(t *testing.T, serverAddr string, numClients, it
 			mutex.Lock()
 			//Create client and connect it to the fake server
 			c, err := client.Connect(serverAddr)
+			c.SetNoDelay()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -450,6 +458,7 @@ func metaTestConsistency(t *testing.T, serverAddr string, numClients, iterations
 			mutex.Lock()
 			//Create client and connect it to the fake server
 			c, err := client.Connect(serverAddr)
+			c.SetNoDelay()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -511,6 +520,7 @@ func TestSingleClock(t *testing.T) {
 	defer cluster[0].kill()
 	//Client set-up
 	c, err := client.Connect(addr)
+	c.SetNoDelay()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -571,6 +581,7 @@ func TestSingleClock(t *testing.T) {
 func TestSingleDefrag(t *testing.T) {
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
 	c, err := client.Connect(addr)
+	c.SetNoDelay()
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -30,54 +30,54 @@ type benchDef struct {
 	threads, clients  int
 	mix               benchOpMix
 	operations, space int
-	bufferingMode     client.BufferingMode
+	nodelay           bool
 }
 
 func TestBenchOpGet(t *testing.T) {
 	c := testBenchPrepareCluster(t, 1000*1000, 4, 1)
-	bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
+	bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, nodelay: false}
 	bdef.mix = benchOpMix{pGet: 1}
 	testBenchParallel(t, c, bdef)
 }
 
 func TestBenchOpSet(t *testing.T) {
 	c := testBenchPrepareCluster(t, 1000*1000, 4, 1)
-	bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
+	bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, nodelay: false}
 	bdef.mix = benchOpMix{pSet: 1}
 	testBenchParallel(t, c, bdef)
 }
 
 func TestBenchOpDel(t *testing.T) {
 	c := testBenchPrepareCluster(t, 1000*1000, 4, 1)
-	bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
+	bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, nodelay: false}
 	bdef.mix = benchOpMix{pDel: 1}
 	testBenchParallel(t, c, bdef)
 }
 
 func TestBenchOpCAS(t *testing.T) {
 	c := testBenchPrepareCluster(t, 1000*1000, 4, 1)
-	bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
+	bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, nodelay: false}
 	bdef.mix = benchOpMix{pCAS: 1}
 	testBenchParallel(t, c, bdef)
 }
 
 func TestBenchOpSetNew(t *testing.T) {
 	c := testBenchPrepareCluster(t, 1000*1000, 4, 1)
-	bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
+	bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, nodelay: false}
 	bdef.mix = benchOpMix{pSetNew: 1}
 	testBenchParallel(t, c, bdef)
 }
 
 func TestBenchOpAsyncSet(t *testing.T) {
 	c := testBenchPrepareCluster(t, 3000*1000, 4, 1)
-	bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
+	bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, nodelay: false}
 	bdef.mix = benchOpMix{pAsyncSet: 1}
 	testBenchParallel(t, c, bdef)
 }
 
 func TestBenchSequential(t *testing.T) {
 	c := testBenchPrepareCluster(t, 1000*1000, 4, 1)
-	bdef := benchDef{threads: 1, clients: 1, operations: 150 * 1000, space: 1000 * 1000, bufferingMode: client.NoDelay}
+	bdef := benchDef{threads: 1, clients: 1, operations: 150 * 1000, space: 1000 * 1000, nodelay: true}
 	bdef.mix = benchOpMix{pGet: 1}
 	testBenchParallel(t, c, bdef)
 }
@@ -86,7 +86,7 @@ func TestBenchClientParallelism(t *testing.T) {
 	c := testBenchPrepareCluster(t, 1000*1000, 4, 1)
 	for i := 1; i < 2000; i *= 2 {
 		fmt.Println(i, "clients")
-		bdef := benchDef{threads: 4000, clients: i, operations: 2500 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
+		bdef := benchDef{threads: 4000, clients: i, operations: 2500 * 1000, space: 1000 * 1000, nodelay: false}
 		bdef.mix = benchOpMix{pGet: 1}
 		testBenchParallel(t, c, bdef)
 	}
@@ -96,7 +96,7 @@ func TestBenchThreadParallelism(t *testing.T) {
 	c := testBenchPrepareCluster(t, 1000*1000, 4, 1)
 	for i := 64; i < 30000; i *= 2 {
 		fmt.Println(i, "threads")
-		bdef := benchDef{threads: i, clients: 10, operations: 3000 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
+		bdef := benchDef{threads: i, clients: 10, operations: 3000 * 1000, space: 1000 * 1000, nodelay: false}
 		bdef.mix = benchOpMix{pGet: 1}
 		testBenchParallel(t, c, bdef)
 	}
@@ -106,7 +106,7 @@ func TestBenchDiskParallelism(t *testing.T) {
 	c := testBenchPrepareCluster(t, 50*1000*1000, 220, 1)
 	for i := 1; i < 1000; i *= 2 {
 		fmt.Println(i, "clients")
-		bdef := benchDef{threads: 2000, clients: i, operations: 150 * 1000, space: 50 * 1000 * 1000, bufferingMode: client.Buffered}
+		bdef := benchDef{threads: 2000, clients: i, operations: 150 * 1000, space: 50 * 1000 * 1000}
 		bdef.mix = benchOpMix{pGet: 1}
 		testBenchParallel(t, c, bdef)
 	}
@@ -116,7 +116,7 @@ func TestBenchDiskVsRAM(t *testing.T) {
 	for i := 1; i < 120; i += 10 {
 		fmt.Println(float64(i*(220+4+8))/1024.0, "GB")
 		c := testBenchPrepareCluster(t, i*1024*1024, 220, 1)
-		bdef := benchDef{threads: 2000, clients: 128, operations: 350 * 1000, space: i * 1024 * 1024, bufferingMode: client.Buffered}
+		bdef := benchDef{threads: 2000, clients: 128, operations: 350 * 1000, space: i * 1024 * 1024}
 		bdef.mix = benchOpMix{pGet: 1}
 		testBenchParallel(t, c, bdef)
 	}
@@ -126,7 +126,7 @@ func TestBenchValueSize(t *testing.T) {
 	for i := 4; i < 4*1024; i *= 2 {
 		fmt.Println(i, "bytes")
 		c := testBenchPrepareCluster(t, 1000*1000, i, 1)
-		bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
+		bdef := benchDef{threads: 4000, clients: 10, operations: 5 * 1000 * 1000, space: 1000 * 1000}
 		bdef.mix = benchOpMix{pGet: 1}
 		testBenchParallel(t, c, bdef)
 	}
@@ -139,7 +139,7 @@ func TestBenchScalability(t *testing.T) {
 	for i := 1; i <= len(cluster); i++ {
 		fmt.Println(i, "servers")
 		c := testBenchPrepareCluster(t, 1000*1000, 4, i)
-		bdef := benchDef{threads: 4000, clients: 4, operations: 2 * 1000 * 1000, space: 1000 * 1000, bufferingMode: client.Buffered}
+		bdef := benchDef{threads: 4000, clients: 4, operations: 2 * 1000 * 1000, space: 1000 * 1000}
 		bdef.mix = benchOpMix{pGet: 1}
 		testBenchParallel(t, c, bdef)
 	}
@@ -165,7 +165,6 @@ func testBenchPrepareCluster(t *testing.T, precondition, preconditionValueSize, 
 	}
 	c, err := client.Connect(bc.addr)
 	c.SetTimeout = time.Second * 5
-	c.SetBufferingMode(client.Buffered)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -309,7 +308,9 @@ func testBenchParallel(t *testing.T, cluster benchCluster, bdef benchDef) {
 	clients := make([]*client.DBClient, bdef.clients)
 	for i := range clients {
 		c, err := client.Connect(cluster.addr)
-		c.SetBufferingMode(bdef.bufferingMode)
+		if bdef.nodelay {
+			c.SetNoDelay()
+		}
 		if err != nil {
 			t.Fatal(i, err)
 		}

@@ -23,6 +23,7 @@ func TestMultiBasicRebalance(t *testing.T) {
 
 	//Client set-up
 	client, err := client.Connect(addr1)
+	client.SetNoDelay()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,6 +65,8 @@ func TestMultiHotRebalance(t *testing.T) {
 	waitForServer(addr)
 	//Client set-up
 	c, err := client.Connect(addr)
+	c.SetNoDelay()
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,6 +126,7 @@ func TestMultiHotRebalance(t *testing.T) {
 					cluster[1].assoc(addr, ultraverbose, false)
 					//Wait for rebalance
 					time.Sleep(time.Second * 7)
+					c.SetNoDelay()
 					//First server shut down
 					log.Println("Server 1 shut down")
 					cluster[0].kill()
@@ -194,6 +198,7 @@ func TestMultiHotRebalance(t *testing.T) {
 func TestMultiNodeRevival(t *testing.T) {
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
 	c, err := client.Connect(addr)
+	c.SetNoDelay()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,6 +259,7 @@ func TestMultiCAS(t *testing.T) {
 	}
 	time.Sleep(time.Second * 8)
 	c, err := client.Connect(addr)
+	c.SetNoDelay()
 	if err != nil {
 		t.Fatal(err, "Should increase sleep time?")
 	}
@@ -300,6 +306,7 @@ func TestMultiCAS(t *testing.T) {
 	for c := 0; c < clients; c++ {
 		go func() {
 			c, err := client.Connect(addr)
+			c.SetNoDelay()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -330,6 +337,7 @@ func TestMultiReadRepair(t *testing.T) {
 	//Start A
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
 	c, err := client.Connect(addr)
+	c.SetNoDelay()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -371,6 +379,7 @@ func TestMultiBackwardsRepair(t *testing.T) {
 	//Start A
 	addr := cluster[0].create(testingNumChunks, 2, ultraverbose, false)
 	c, err := client.Connect(addr)
+	c.SetNoDelay()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,6 +419,7 @@ func TestMultiOpen(t *testing.T) {
 	waitForServer(addr)
 	//Client set-up
 	client, err := client.Connect(addr)
+	client.SetNoDelay()
 	if err != nil {
 		t.Fatal(err)
 	}

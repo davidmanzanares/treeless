@@ -8,6 +8,7 @@ import (
 )
 
 var checkInterval = time.Second
+var checksTillRepair = 7
 
 func repair(sg *servergroup.ServerGroup, lh *local.Core, cid int) {
 	log.Println("Backwards reparing chunk ", cid)
@@ -43,7 +44,7 @@ func StartRepairSystem(sg *servergroup.ServerGroup, lh *local.Core, ShouldStop f
 					delete(m, cid)
 				} else {
 					m[cid] = m[cid] + 1
-					if m[cid] >= 6 {
+					if m[cid] >= checksTillRepair {
 						repair(sg, lh, cid)
 					}
 				}

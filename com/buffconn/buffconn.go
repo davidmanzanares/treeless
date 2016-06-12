@@ -65,6 +65,8 @@ func New(conn *net.TCPConn) *Conn {
 			}
 		}
 	}(c)
+	c.buffering = true
+	c.ch <- 1
 	return c
 }
 

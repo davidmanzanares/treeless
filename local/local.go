@@ -281,7 +281,16 @@ func (lh *Core) Iterate(chunkIndex int, foreach func(key, value []byte) bool) er
 		lh.chunks[chunkIndex].Unlock()
 		return errors.New("ChunkNotPresent")
 	}
-	err := lh.chunks[chunkIndex].core.Iterate(foreach)
+	i := 0
+	err := lh.chunks[chunkIndex].core.Iterate(func(key, value []byte) bool {
+		if i%64 == 0 {
+			lh.chunks[chunkIndex].Unlock()
+			runtime.Gosched()
+			lh.chunks[chunkIndex].Lock()
+		}
+		i++
+		return foreach(key, value)
+	})
 	lh.chunks[chunkIndex].Unlock()
 	return err
 }

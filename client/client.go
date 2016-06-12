@@ -220,24 +220,16 @@ func (c *DBClient) Del(key []byte) (errs error) {
 	return errs
 }
 
-type BufferingMode int
-
-const (
-	NoDelay = iota
-	Buffered
-)
-
-func (c *DBClient) SetBufferingMode(mode BufferingMode) (errs error) {
-	servers := c.sg.Servers()
-	for _, s := range servers {
-		switch mode {
-		case Buffered:
-			s.SetBuffered()
-		case NoDelay:
-			s.SetNoDelay()
-		}
+func (c *DBClient) SetBuffered() {
+	for _, s := range c.sg.Servers() {
+		s.SetBuffered()
 	}
-	return nil
+}
+
+func (c *DBClient) SetNoDelay() {
+	for _, s := range c.sg.Servers() {
+		s.SetNoDelay()
+	}
 }
 
 func (c *DBClient) Close() {

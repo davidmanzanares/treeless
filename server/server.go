@@ -24,6 +24,13 @@ type DBServer struct {
 	stopped uint32
 }
 
+//Create creates a new DB server group
+//localIP and localPort sets the ip:port to use by this server
+//localDBpath sets the path to store/open the DB
+//localChunkSize sets the server chunk size in bytes
+//openDB should be true if you want to open an already stored DB, set it to false if you want to create a new DB, overwriting previous DB if it exists
+//numChunks is the number of chunks to use in the new server group
+//redundancy is the level of redundancy to use in the new server group, 1 means that only one server will have each chunk/partition
 func Create(localIP string, localPort int, localDBpath string, localChunkSize uint64, openDB bool, numChunks, redundancy int) *DBServer {
 	s := new(DBServer)
 	//Core
@@ -55,6 +62,12 @@ func Create(localIP string, localPort int, localDBpath string, localChunkSize ui
 	return s
 }
 
+//Assoc associates a new DB server node to an existint server group
+//localIP and localPort sets the ip:port to use by this server
+//localDBpath sets the path to store/open the DB
+//localChunkSize sets the server chunk size in bytes
+//openDB should be true if you want to open an already stored DB, set it to false if you want to create a new DB, overwriting previous DB if it exists
+//assocAddr is the ip:port address of one of the server groups nodes, it will be used at initialization time to associate this server
 func Assoc(localIP string, localPort int, localDBpath string, localChunkSize uint64, openDB bool, assocAddr string) *DBServer {
 	s := new(DBServer)
 	//Associate to an existing DB group
@@ -160,9 +173,13 @@ func (s *DBServer) processMessage(message protocol.Message) (response protocol.M
 				log.Println("Transfer failed, error:", err)
 			} else {
 				i := 0
-				s.core.BackwardsIterate(chunkID, func(key, value []byte) bool {
-					ch := c.Set(key, value, time.Millisecond*500)
-					err = ch.Wait()
+				s.core.Iterate(chunkID, func(key, value []byte) bool {
+					if i%100 == 0 {
+						ch := c.Set(key, value, time.Millisecond*500)
+						err = ch.Wait()
+					} else {
+						c.Set(key, value, 0) //AsyncSet
+					}
 					i++
 					return true
 				})

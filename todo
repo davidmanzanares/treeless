@@ -1,5 +1,6 @@
 go vet
 golint
+default buffered
 
 Core: 1w
 	Store cache alignment
