@@ -2,7 +2,6 @@ package server
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"log"
 	"sync/atomic"
@@ -33,7 +32,7 @@ func Create(localIP string, localPort int, localDBpath string, localChunkSize ui
 		s.core.Open()
 	} else {
 		for i := 0; i < numChunks; i++ {
-			s.core.ChunkSetSynched(i)
+			s.core.ChunkSetPresent(i)
 		}
 	}
 	//Servergroup
@@ -118,15 +117,14 @@ func (s *DBServer) processMessage(message protocol.Message) (response protocol.M
 	if s.isStopped() {
 		return response
 	}
+	response.ID = message.ID
 	switch message.Type {
 	case protocol.OpGet:
 		value, _ := s.core.Get(message.Key)
-		response.ID = message.ID
 		response.Type = protocol.OpResponse
 		response.Value = value
 	case protocol.OpSet:
 		err := s.core.Set(message.Key, message.Value)
-		response.ID = message.ID
 		if err == nil {
 			response.Type = protocol.OpOK
 		} else {
@@ -136,8 +134,7 @@ func (s *DBServer) processMessage(message protocol.Message) (response protocol.M
 	case protocol.OpAsyncSet:
 		s.core.Set(message.Key, message.Value)
 	case protocol.OpCAS:
-		err := s.core.CAS(message.Key, message.Value)
-		response.ID = message.ID
+		err := s.core.CAS(message.Key, message.Value, s.sg.IsSynched)
 		if err == nil {
 			response.Type = protocol.OpOK
 		} else {
@@ -146,7 +143,6 @@ func (s *DBServer) processMessage(message protocol.Message) (response protocol.M
 		}
 	case protocol.OpDel:
 		err := s.core.Delete(message.Key, message.Value)
-		response.ID = message.ID
 		if err == nil {
 			response.Type = protocol.OpOK
 		} else {
@@ -154,18 +150,7 @@ func (s *DBServer) processMessage(message protocol.Message) (response protocol.M
 			response.Value = []byte(err.Error())
 		}
 	case protocol.OpTransfer:
-		transferFail := func(err error) protocol.Message { //TODO up
-			var response protocol.Message
-			response.ID = message.ID
-			response.Type = protocol.OpErr
-			response.Value = []byte(err.Error())
-			return response
-		}
-		var chunkID int
-		err := json.Unmarshal(message.Key, &chunkID) //TODO use uint32
-		if err != nil {
-			return transferFail(err)
-		}
+		chunkID := int(binary.LittleEndian.Uint32(message.Key))
 		//New goroutine will put every key value pair into destination, it will manage the OpTransferOK response
 		go func() {
 			addr := string(message.Value)
@@ -184,60 +169,46 @@ func (s *DBServer) processMessage(message protocol.Message) (response protocol.M
 				log.Println("Transfer operation completed, pairs:", i)
 			}
 		}()
-		response.ID = message.ID
 		response.Type = protocol.OpOK
 	case protocol.OpGetConf:
-		var response protocol.Message
-		response.ID = message.ID
-		response.Type = protocol.OpResponse
 		b, err := s.sg.Marshal()
 		if err != nil {
 			panic(err)
 		}
+		response.Type = protocol.OpResponse
 		response.Value = b
-		return response
 	case protocol.OpAddServerToGroup:
-		var response protocol.Message
-		response.ID = message.ID
 		addr := string(message.Key)
 		s.sg.AddServerToGroup(addr)
 		s.hb.GossipAdded(addr)
 		response.Type = protocol.OpOK
-		return response
 	case protocol.OpGetChunkInfo:
-		var response protocol.Message
-		response.ID = message.ID
 		chunkID := int(binary.LittleEndian.Uint32(message.Key))
 		response.Type = protocol.OpResponse
 		response.Value = make([]byte, 8)
 		length := s.core.LengthOfChunk(chunkID)
 		binary.LittleEndian.PutUint64(response.Value, length)
-		return response
 	case protocol.OpProtect:
-		var response protocol.Message
-		response.ID = message.ID
 		chunkID := binary.LittleEndian.Uint32(message.Key)
-		if s.core.ChunkStatus(int(chunkID)) == local.ChunkSynched && s.sg.NumHolders(int(chunkID)) > s.sg.Redundancy() {
-			s.core.ChunkSetProtected(int(chunkID))
-			response.Type = protocol.OpOK
+		if s.sg.NumHolders(int(chunkID)) > s.sg.Redundancy() {
+			err := s.core.ChunkSetProtected(int(chunkID))
+			if err == nil {
+				response.Type = protocol.OpOK
+			} else {
+				response.Type = protocol.OpErr
+				response.Value = []byte(err.Error())
+			}
 		} else {
 			response.Type = protocol.OpErr
-			//fmt.Println(s.lh.ChunkStatus(int(chunkID)), s.sg.NumHolders(int(chunkID)), s.sg.Redundancy(), s.sg.String())
 		}
-		return response
 	case protocol.OpSetBuffered:
-		response.ID = message.ID
 		response.Type = protocol.OpSetBuffered
 	case protocol.OpSetNoDelay:
-		response.ID = message.ID
 		response.Type = protocol.OpSetNoDelay
 	default:
-		var response protocol.Message
-		response.ID = message.ID
 		response.Type = protocol.OpErr
 		response.Value = []byte("Operation not supported")
 		log.Println("Operation not supported", message.Type)
-		return response
 	}
 	return response
 }

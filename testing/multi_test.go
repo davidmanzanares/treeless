@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"log"
 	"math/rand"
 	"runtime"
 	"sync"
@@ -71,14 +72,18 @@ func TestMultiHotRebalance(t *testing.T) {
 	threads := 4
 	maxKeySize := 4
 	maxValueSize := 4
-	numOperations := 120000
+	numOperations := 200000
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	//Operate on built-in map, DB will be checked against this map
 	goMap := make(map[string][]byte)
 	var goDeletes []([]byte)
 	for core := 0; core < threads; core++ {
+		ops := numOperations
+		if core == 0 {
+			ops = numOperations / 4
+		}
 		rNext := randKVOpGenerator(1, maxKeySize, maxValueSize, core, 64, core)
-		for i := 0; i < numOperations; i++ {
+		for i := 0; i < ops; i++ {
 			opType, key, value := rNext()
 			switch opType {
 			case 0:
@@ -101,21 +106,25 @@ func TestMultiHotRebalance(t *testing.T) {
 			stop2()
 		}
 	}()
-	p := tlfmt.NewProgress("Writting", numOperations*threads)
+	p := tlfmt.NewProgress("Writting", numOperations*(threads-1)+numOperations/4)
 	for core := 0; core < threads; core++ {
 		go func(core int) {
 			rNext := randKVOpGenerator(1, maxKeySize, maxValueSize, core, 64, core)
-			for i := 0; i < numOperations; i++ {
+			ops := numOperations
+			if core == 0 {
+				ops = numOperations / 4
+			}
+			for i := 0; i < ops; i++ {
 				//fmt.Println(core, i)
 				if core == 0 && i == 0 {
 					time.Sleep(time.Second * 1)
-					fmt.Println("Server 2 power up")
+					log.Println("Server 2 power up")
 					//Second server set-up
 					cluster[1].assoc(addr, ultraverbose, false)
 					//Wait for rebalance
 					time.Sleep(time.Second * 7)
 					//First server shut down
-					fmt.Println("Server 1 shut down")
+					log.Println("Server 1 shut down")
 					cluster[0].kill()
 				}
 				p.Inc()

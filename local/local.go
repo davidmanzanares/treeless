@@ -28,22 +28,13 @@ type Core struct {
 }
 
 type metaChunk struct {
-	core           *pmap.PMap
-	status         ChunkStatus
-	revision       int64
-	protectionTime time.Time
+	core               *pmap.PMap
+	present, protected bool
+	revision           int64
+	protectionTime     time.Time
 	sync.Mutex
 	defragMutex sync.Mutex
 }
-
-type ChunkStatus int64
-
-const (
-	ChunkNotPresent ChunkStatus = iota
-	ChunkPresent
-	ChunkSynched
-	ChunkProtected
-)
 
 /*
 	Utils
@@ -98,7 +89,7 @@ func (lh *Core) Open() {
 		if path != "" {
 			log.Println("Opening", path)
 			c.core = pmap.Open(path)
-			c.status = ChunkSynched
+			c.present = true
 		}
 		c.Unlock()
 	}
@@ -128,7 +119,7 @@ func (lh *Core) ChunksList() []protocol.AmAliveChunk {
 	lh.mutex.RLock()
 	list := make([]protocol.AmAliveChunk, 0, lh.knownChunks)
 	for i := 0; i < len(lh.chunks); i++ {
-		if lh.chunks[i].status != 0 {
+		if lh.chunks[i].present {
 			list = append(list, protocol.AmAliveChunk{ID: i, Checksum: lh.chunks[i].core.Checksum()})
 		}
 	}
@@ -136,11 +127,18 @@ func (lh *Core) ChunksList() []protocol.AmAliveChunk {
 	return list
 }
 
-func (lh *Core) ChunkStatus(id int) ChunkStatus {
+func (lh *Core) IsPresent(id int) bool {
 	lh.mutex.RLock()
-	s := lh.chunks[id].status
+	p := lh.chunks[id].present
 	lh.mutex.RUnlock()
-	return s
+	return p
+}
+
+func (lh *Core) IsProtected(id int) bool {
+	lh.mutex.RLock()
+	p := lh.chunks[id].protected
+	lh.mutex.RUnlock()
+	return p
 }
 
 /*
@@ -153,64 +151,39 @@ func (lh *Core) ChunkSetNoPresent(cid int) {
 	chunk.Lock()
 	defer chunk.Unlock()
 	defer lh.mutex.Unlock()
-	if chunk.status != ChunkNotPresent {
-		lh.chunks[cid].core.CloseAndDelete()
-		lh.chunks[cid].core = nil
+	if chunk.present {
+		chunk.core.CloseAndDelete()
+		chunk.core = nil
 		lh.knownChunks--
+		chunk.present = false
+		chunk.protected = false
 	}
-	chunk.status = ChunkNotPresent
 }
+
 func (lh *Core) ChunkSetPresent(cid int) {
 	lh.mutex.Lock()
 	chunk := lh.chunks[cid]
 	chunk.Lock()
 	defer chunk.Unlock()
 	defer lh.mutex.Unlock()
-	if chunk.status == ChunkNotPresent {
-		lh.chunks[cid].core = pmap.New(getChunkPath(lh.dbpath, cid, 0), lh.size)
+	if !chunk.present {
+		chunk.core = pmap.New(getChunkPath(lh.dbpath, cid, 0), lh.size)
 		lh.knownChunks++
-	}
-	chunk.status = ChunkPresent
-}
-func (lh *Core) ChunkSetSynched(cid int) {
-	lh.mutex.Lock()
-	chunk := lh.chunks[cid]
-	chunk.Lock()
-	defer chunk.Unlock()
-	defer lh.mutex.Unlock()
-	if chunk.status == ChunkNotPresent {
-		lh.chunks[cid].core = pmap.New(getChunkPath(lh.dbpath, cid, 0), lh.size)
-		lh.knownChunks++
-	}
-	chunk.status = ChunkSynched
-}
-
-func (lh *Core) ChunkSetSynchedIfNotProtected(cid int) {
-	lh.mutex.Lock()
-	chunk := lh.chunks[cid]
-	chunk.Lock()
-	defer chunk.Unlock()
-	defer lh.mutex.Unlock()
-	if chunk.status == ChunkNotPresent {
-		lh.chunks[cid].core = pmap.New(getChunkPath(lh.dbpath, cid, 0), lh.size)
-		lh.knownChunks++
-	}
-	if chunk.status != ChunkProtected {
-		chunk.status = ChunkSynched
+		chunk.present = true
 	}
 }
 
-func (lh *Core) ChunkSetProtected(cid int) {
+func (lh *Core) ChunkSetProtected(cid int) error {
 	lh.mutex.Lock()
 	chunk := lh.chunks[cid]
 	chunk.Lock()
 	defer chunk.Unlock()
 	defer lh.mutex.Unlock()
-	if chunk.status == ChunkNotPresent {
-		lh.chunks[cid].core = pmap.New(getChunkPath(lh.dbpath, cid, 0), lh.size)
-		lh.knownChunks++
+	if !chunk.present {
+		return errors.New("Not present")
 	}
 	t := time.Now()
+	chunk.protected = true
 	chunk.protectionTime = t
 	go func(cid int, t time.Time) {
 		time.Sleep(time.Second * 10)
@@ -221,12 +194,10 @@ func (lh *Core) ChunkSetProtected(cid int) {
 		defer chunk.Unlock()
 		if chunk.protectionTime == t {
 			chunk.protectionTime = time.Time{}
-			if chunk.status == ChunkProtected {
-				chunk.status = ChunkSynched
-			}
+			chunk.protected = false
 		}
 	}(cid, t)
-	chunk.status = ChunkProtected
+	return nil
 }
 
 /*
@@ -240,8 +211,8 @@ func (lh *Core) Get(key []byte) ([]byte, error) {
 	chunkIndex := int((h >> 32) % uint64(len(lh.chunks)))
 	chunk := lh.chunks[chunkIndex]
 	chunk.Lock()
-	if lh.chunks[chunkIndex].status == ChunkNotPresent {
-		lh.chunks[chunkIndex].Unlock()
+	if !chunk.present {
+		chunk.Unlock()
 		return nil, errors.New("ChunkNotPresent")
 	}
 	v, err := chunk.core.Get(uint32(h), key)
@@ -255,7 +226,7 @@ func (lh *Core) Set(key, value []byte) (err error) {
 	//Opt: use AND operator
 	chunkIndex := int((h >> 32) % uint64(len(lh.chunks)))
 	lh.chunks[chunkIndex].Lock()
-	if lh.chunks[chunkIndex].status == ChunkNotPresent {
+	if !lh.chunks[chunkIndex].present {
 		err = errors.New("ChunkNotPresent")
 	} else {
 		err = lh.chunks[chunkIndex].core.Set(h, key, value)
@@ -271,7 +242,7 @@ func (lh *Core) Delete(key, value []byte) error {
 	chunkIndex := int((h >> 32) % uint64(len(lh.chunks)))
 	chunk := lh.chunks[chunkIndex]
 	chunk.Lock()
-	if lh.chunks[chunkIndex].status == ChunkNotPresent {
+	if !lh.chunks[chunkIndex].present {
 		chunk.Unlock()
 		return errors.New("ChunkNotPresent")
 	}
@@ -285,16 +256,16 @@ func (lh *Core) Delete(key, value []byte) error {
 	return err
 }
 
-func (lh *Core) CAS(key, value []byte) error {
+func (lh *Core) CAS(key, value []byte, isSynched func(chunkIndex int) bool) error {
 	h := hashing.FNV1a64(key)
 	//Opt: use AND operator
 	chunkIndex := int((h >> 32) % uint64(len(lh.chunks)))
 	lh.chunks[chunkIndex].Lock()
-	if lh.chunks[chunkIndex].status == ChunkNotPresent {
+	if !lh.chunks[chunkIndex].present {
 		lh.chunks[chunkIndex].Unlock()
 		return errors.New("ChunkNotPresent")
 	}
-	if lh.chunks[chunkIndex].status < ChunkSynched {
+	if !isSynched(chunkIndex) {
 		lh.chunks[chunkIndex].Unlock()
 		return errors.New("Not Synched")
 	}
@@ -306,7 +277,7 @@ func (lh *Core) CAS(key, value []byte) error {
 //Iterate all key-value pairs of a chunk, executing foreach for each key-value pair
 func (lh *Core) Iterate(chunkIndex int, foreach func(key, value []byte) bool) error {
 	lh.chunks[chunkIndex].Lock()
-	if lh.chunks[chunkIndex].status == ChunkNotPresent {
+	if !lh.chunks[chunkIndex].present {
 		lh.chunks[chunkIndex].Unlock()
 		return errors.New("ChunkNotPresent")
 	}
@@ -318,7 +289,7 @@ func (lh *Core) Iterate(chunkIndex int, foreach func(key, value []byte) bool) er
 //Iterate all key-value pairs of a chunk, executing foreach for each key-value pair
 func (lh *Core) BackwardsIterate(chunkIndex int, foreach func(key, value []byte) bool) error {
 	lh.chunks[chunkIndex].Lock()
-	if lh.chunks[chunkIndex].status == ChunkNotPresent {
+	if !lh.chunks[chunkIndex].present {
 		lh.chunks[chunkIndex].Unlock()
 		return errors.New("ChunkNotPresent")
 	}
@@ -341,10 +312,7 @@ func (lh *Core) BackwardsIterate(chunkIndex int, foreach func(key, value []byte)
 func (lh *Core) LengthOfChunk(chunkIndex int) uint64 {
 	lh.chunks[chunkIndex].Lock()
 	defer lh.chunks[chunkIndex].Unlock()
-	if lh.chunks[chunkIndex].status == ChunkNotPresent {
-		return math.MaxUint64
-	}
-	if lh.chunks[chunkIndex].status <= ChunkPresent {
+	if !lh.chunks[chunkIndex].present {
 		return math.MaxUint64
 	}
 	l := lh.chunks[chunkIndex].core.Used()

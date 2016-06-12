@@ -2,7 +2,6 @@ package tlcom
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -410,10 +409,8 @@ func (c *Conn) SetBuffered() {
 
 //Transfer a chunk
 func (c *Conn) Transfer(addr string, chunkID int) error {
-	key, err := json.Marshal(chunkID)
-	if err != nil {
-		panic(err)
-	}
+	key := make([]byte, 4)
+	binary.LittleEndian.PutUint32(key, uint32(chunkID))
 	value := []byte(addr)
 	r := c.sendAndReceive(protocol.OpTransfer, key, value, 500*time.Millisecond)
 	return r.Err

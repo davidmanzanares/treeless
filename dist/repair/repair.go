@@ -36,12 +36,11 @@ func StartRepairSystem(sg *servergroup.ServerGroup, lh *local.Core, ShouldStop f
 		for !ShouldStop() {
 			sg.SetServerChunks(lh.LocalhostIPPort, lh.ChunksList())
 			for cid := 0; cid < sg.NumChunks(); cid++ {
-				if lh.ChunkStatus(cid) == local.ChunkNotPresent {
+				if !lh.IsPresent(cid) {
 					continue
 				}
 				if sg.IsSynched(cid) {
 					delete(m, cid)
-					lh.ChunkSetSynchedIfNotProtected(cid)
 				} else {
 					m[cid] = m[cid] + 1
 					if m[cid] >= 6 {

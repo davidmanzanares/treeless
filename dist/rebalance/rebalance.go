@@ -41,16 +41,16 @@ func StartRebalance(sg *servergroup.ServerGroup, lh *local.Core, ShouldStop func
 			avg := total / float64(sg.NumServers())
 			//LR-Duplicate
 			for i := 0; i < sg.NumChunks(); i++ {
-				if sg.NumHolders(i) < sg.Redundancy() && lh.ChunkStatus(i) == 0 {
+				if sg.NumHolders(i) < sg.Redundancy() && !lh.IsPresent(i) {
 					log.Println("Duplicate to mantain redundancy. Reason:", i, sg.NumHolders(i), sg.Redundancy())
 					duplicate(i)
 				}
 			}
 			if known+1 < avg { //REB-Duplicate
-				//Local server hass less work than it should
+				//Local server has less work than it should
 				//Try to download a random chunk
 				c := int(rand.Int31n(int32(sg.NumChunks())))
-				if lh.ChunkStatus(c) == 0 && sg.NumHolders(c) <= sg.Redundancy() {
+				if !lh.IsPresent(c) && sg.NumHolders(c) <= sg.Redundancy() {
 					log.Println("Duplicate to rebalance. Reason:", known, avg)
 					duplicate(c)
 				}
@@ -58,7 +58,7 @@ func StartRebalance(sg *servergroup.ServerGroup, lh *local.Core, ShouldStop func
 				//Local server has more work than it should
 				//Locate a chunk with more redundancy than the required redundancy and *not* protected
 				for _, c := range lh.ChunksList() {
-					if lh.ChunkStatus(c.ID) == local.ChunkSynched && sg.NumHolders(c.ID) > sg.Redundancy() {
+					if lh.IsPresent(c.ID) && sg.NumHolders(c.ID) > sg.Redundancy() {
 						log.Println("Release to rebalance.", c.ID, sg.NumHolders(c.ID), " Reason:", known, avg)
 						release(c.ID)
 						break
@@ -192,7 +192,7 @@ func releaser(sg *servergroup.ServerGroup, lh *local.Core) (release func(cid int
 				return
 			}
 			//Request chunk protection?
-			if lh.ChunkStatus(c) == local.ChunkProtected {
+			if lh.IsProtected(c) {
 				log.Println("Chunk release aborted: chunk already protected on localhost", c)
 				continue
 			}
