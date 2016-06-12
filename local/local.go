@@ -7,6 +7,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -183,6 +184,22 @@ func (lh *Core) ChunkSetSynched(cid int) {
 	}
 	chunk.status = ChunkSynched
 }
+
+func (lh *Core) ChunkSetSynchedIfNotProtected(cid int) {
+	lh.mutex.Lock()
+	chunk := lh.chunks[cid]
+	chunk.Lock()
+	defer chunk.Unlock()
+	defer lh.mutex.Unlock()
+	if chunk.status == ChunkNotPresent {
+		lh.chunks[cid].core = pmap.New(getChunkPath(lh.dbpath, cid, 0), lh.size)
+		lh.knownChunks++
+	}
+	if chunk.status != ChunkProtected {
+		chunk.status = ChunkSynched
+	}
+}
+
 func (lh *Core) ChunkSetProtected(cid int) {
 	lh.mutex.Lock()
 	chunk := lh.chunks[cid]
@@ -277,6 +294,10 @@ func (lh *Core) CAS(key, value []byte) error {
 		lh.chunks[chunkIndex].Unlock()
 		return errors.New("ChunkNotPresent")
 	}
+	if lh.chunks[chunkIndex].status < ChunkSynched {
+		lh.chunks[chunkIndex].Unlock()
+		return errors.New("Not Synched")
+	}
 	err := lh.chunks[chunkIndex].core.CAS(h, key, value)
 	lh.chunks[chunkIndex].Unlock()
 	return err
@@ -301,11 +322,18 @@ func (lh *Core) BackwardsIterate(chunkIndex int, foreach func(key, value []byte)
 		lh.chunks[chunkIndex].Unlock()
 		return errors.New("ChunkNotPresent")
 	}
-	lh.chunks[chunkIndex].Unlock()
 	lh.chunks[chunkIndex].defragMutex.Lock()
+	i := 0
 	err := lh.chunks[chunkIndex].core.BackwardsIterate(func(key, value []byte) bool {
+		if i%64 == 0 {
+			lh.chunks[chunkIndex].Unlock()
+			runtime.Gosched()
+			lh.chunks[chunkIndex].Lock()
+		}
+		i++
 		return foreach(key, value)
 	})
+	lh.chunks[chunkIndex].Unlock()
 	lh.chunks[chunkIndex].defragMutex.Unlock()
 	return err
 }

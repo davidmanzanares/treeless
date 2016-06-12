@@ -16,31 +16,51 @@ import (
 	"treeless/dist/servergroup"
 	"treeless/server"
 )
-import _ "net/http/pprof"
+import (
+	_ "net/http/pprof"
+	"runtime/debug"
+)
 
 const DefaultDBSize = 1024 * 1024 * 128
+const DefaultPort = 9876
+const DefaultRedundancy = 2
+const DefaultNumChunk = 8
 
 func main() {
-	rand.Seed(time.Now().UnixNano())
-	//Operations
+	//Recover: log and quit
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("DB panic", r)
+			log.Println("STACK TRACE:\n", string(debug.Stack()))
+			panic(r)
+		}
+	}()
 	log.Println("Treeless args:", os.Args)
-	create := flag.Bool("create", false, "Create a new DB server group")
-	assoc := flag.String("assoc", "", "Associate to an existing DB server group")
-	monitor := flag.String("monitor", "", "Monitor an existing DB")
-	//Options
-	port := flag.Int("port", 9876, "Use this port as the localhost server port")
-	open := flag.Bool("open", false, "Open an existing DB folder")
-	redundancy := flag.Int("redundancy", 2, "Redundancy of the new DB server group")
-	chunks := flag.Int("chunks", 2, "Number of chunks")
-	procs := flag.Int("procs", runtime.NumCPU(), "GOMAXPROCS")
-	size := flag.Int64("size", DefaultDBSize, "DB chunk size")
-	dbpath := flag.String("dbpath", "", "Filesystem path to store DB info")
-	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
-	webprofile := flag.Bool("webprofile", false, "webprofile")
-	localIP := flag.String("localip", tlcom.GetLocalIP(), "set local IP")
-	logToFile := flag.String("logtofile", "", "set logging to file")
 
+	rand.Seed(time.Now().UnixNano())
+
+	//Main parameters
+	create := flag.Bool("create", false, "Create a new DB server group")
+	assoc := flag.String("assoc", "", "Associate a new node to an existing DB server group")
+	monitor := flag.String("monitor", "", "Monitor an existing DB")
+	//Additional parameters
+	port := flag.Int("port", DefaultPort, "Port to use by the new DB server node")
+	open := flag.Bool("open", false, "Open an existing DB folder instead of creating a new one, use with -dbpath")
+	redundancy := flag.Int("redundancy", DefaultRedundancy, "Redundancy of the new DB server group")
+	chunks := flag.Int("chunks", DefaultNumChunk, "Number of chunks of the new DB server group")
+	procs := flag.Int("procs", runtime.NumCPU(), "GOMAXPROCS")
+	size := flag.Int64("size", DefaultDBSize, "DB chunk size in bytes")
+	dbpath := flag.String("dbpath", "", "Filesystem path to store DB info, don't set it to use only RAM")
+	cpuprofile := flag.String("cpuprofile", "", "Write cpu profile info to file")
+	webprofile := flag.Bool("webprofile", false, "Set webprofile on")
+	localIP := flag.String("localip", tlcom.GetLocalIP(),
+		"Set the local IP, Treeless will use a non loopback IP if the flag is missing")
+	logToFile := flag.String("logtofile", "", "Set an output file for logging")
 	flag.Parse()
+
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	log.SetPrefix(*localIP + ":" + fmt.Sprint(*port) + " ")
+
 	runtime.GOMAXPROCS(*procs)
 
 	if *logToFile != "" {
@@ -60,7 +80,6 @@ func main() {
 			if err != nil {
 				log.Fatal(err)
 			}
-			//time.Sleep(time.Second * 400)
 			log.Println("CPU profile started")
 			pprof.StartCPUProfile(f)
 		}()
@@ -71,6 +90,7 @@ func main() {
 		}()
 	}
 
+	var s *server.DBServer
 	if *monitor != "" {
 		sg, err := servergroup.Assoc(*monitor)
 		if err != nil {
@@ -87,54 +107,30 @@ func main() {
 		}()
 		c := make(chan os.Signal, 1)
 		signal.Notify(c, os.Interrupt)
-		fmt.Println("INTER")
 		<-c
 		hb.Stop()
-		/*s, err := tlsgOLD.ConnectAsClient(*monitor)
-		if err != nil {
-			fmt.Println("Access couldn't be established")
-			fmt.Println(err)
-		}
-		fmt.Println(s)*/
+		return
 	} else if *create {
-		s := server.Start("", *localIP, *port, *chunks, *redundancy, *dbpath, uint64(*size), *open)
-		go func() {
-			c := make(chan os.Signal, 1)
-			signal.Notify(c, os.Interrupt)
-			<-c
-			log.Println("Interrupt signal recieved")
-			if *cpuprofile != "" {
-				pprof.StopCPUProfile()
-				f.Close()
-				fmt.Println("Profiling output generated")
-				fmt.Println("View the pprof graph with:")
-				fmt.Println("go tool pprof --png treeless cpu.prof > a.png")
-			}
-			s.Stop()
-			log.Println("Server stopped")
-			os.Exit(0)
-		}()
-		select {}
+		s = server.Create(*localIP, *port, *dbpath, uint64(*size), *open, *chunks, *redundancy)
 	} else if *assoc != "" {
-		s := server.Start(*assoc, *localIP, *port, *chunks, *redundancy, *dbpath, uint64(*size), *open)
-		go func() {
-			c := make(chan os.Signal, 1)
-			signal.Notify(c, os.Interrupt)
-			<-c
-			log.Println("Interrupt signal recieved")
-			if *cpuprofile != "" {
-				pprof.StopCPUProfile()
-				f.Close()
-				fmt.Println("Profiling output generated")
-				fmt.Println("View the pprof graph with:")
-				fmt.Println("go tool pprof --png treeless cpu.prof > a.png")
-			}
-			s.Stop()
-			log.Println("Server stopped")
-			os.Exit(0)
-		}()
-		select {}
+		s = server.Assoc(*localIP, *port, *dbpath, uint64(*size), *open, *assoc)
 	} else {
-		log.Fatal("No operations passed. See usage with --help.")
+		flag.Usage()
+		fmt.Println("No operations passed. Use one of these: -create, -assoc -monitor.")
+		os.Exit(1)
 	}
+	//Wait for an interrupt signal
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	<-c
+	log.Println("Interrupt signal recieved")
+	if *cpuprofile != "" {
+		pprof.StopCPUProfile()
+		f.Close()
+		fmt.Println("Profiling output generated")
+		fmt.Println("View the pprof graph with:")
+		fmt.Println("go tool pprof --png treeless cpu.prof > a.png")
+	}
+	s.Stop()
+	log.Println("Server stopped")
 }

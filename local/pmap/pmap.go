@@ -205,6 +205,9 @@ func (c *PMap) Get(h32 uint32, key []byte) ([]byte, error) {
 //the already stored pair timestamp is before the provided timestamp.
 //The first 8 bytes of value should contain the timestamp of the pair (nanoseconds elapsed since Unix time).
 func (c *PMap) Set(h64 uint64, key, value []byte) error {
+	if len(value) < 8 {
+		return errors.New(("Error: message value len < 8"))
+	}
 	//Check for available space
 	if c.hm.numStoredKeys >= c.hm.numKeysToExpand {
 		err := c.hm.expand()
@@ -277,6 +280,9 @@ func (c *PMap) Set(h64 uint64, key, value []byte) error {
 //2. Stored value hash matches the provided hash
 //It retunrs nil if the new value was written
 func (c *PMap) CAS(h64 uint64, key, value []byte) error {
+	if len(value) < 24 {
+		return errors.New("Error: CAS value len < 16")
+	}
 	//Check for available space
 	if c.hm.numStoredKeys >= c.hm.numKeysToExpand {
 		err := c.hm.expand()
@@ -393,7 +399,7 @@ func (c *PMap) isPresent(index uint64) bool {
 }
 
 //Iterate calls foreach for each stored pair, it will stop iterating if the call returns false
-func (c *PMap) BackwardsIterate(foreach func(key, value []byte) (continuE bool)) error {
+func (c *PMap) BackwardsIterate(foreach func(key, value []byte) (Continue bool)) error {
 	index := c.st.length
 	if index <= 0 {
 		return nil
@@ -425,7 +431,7 @@ func (c *PMap) BackwardsIterate(foreach func(key, value []byte) (continuE bool))
 	return nil
 }
 
-func (c *PMap) Iterate(foreach func(key, value []byte) (continuE bool)) error {
+func (c *PMap) Iterate(foreach func(key, value []byte) (Continue bool)) error {
 	for index := uint64(0); index < c.st.length; {
 		if c.isPresent(index) {
 			key := c.st.key(index)

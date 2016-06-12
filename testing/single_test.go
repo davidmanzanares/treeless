@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
-	"runtime/debug"
 	"sync"
 	"testing"
 	"time"
@@ -26,7 +25,7 @@ var cluster []testServer
 var ultraverbose = false
 
 func TestMain(m *testing.M) {
-	debug.SetTraceback("all")
+	//debug.SetTraceback("all")
 	cmd := exec.Command("killall", "treeless")
 	cmd.Run()
 	os.Chdir("..")

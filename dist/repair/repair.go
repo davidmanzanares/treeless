@@ -41,6 +41,7 @@ func StartRepairSystem(sg *servergroup.ServerGroup, lh *local.Core, ShouldStop f
 				}
 				if sg.IsSynched(cid) {
 					delete(m, cid)
+					lh.ChunkSetSynchedIfNotProtected(cid)
 				} else {
 					m[cid] = m[cid] + 1
 					if m[cid] >= 6 {

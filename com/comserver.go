@@ -23,12 +23,12 @@ type TCPCallback func(write chan<- protocol.Message, read <-chan protocol.Messag
 type UDPCallback func() protocol.AmAlive
 
 //Start a Treeless server
-func Start(addr string, localIP string, localport int, worker func(protocol.Message) (response protocol.Message), udpc UDPCallback) *Server {
+func Start(localIP string, localPort int, tcpCallback func(protocol.Message) (response protocol.Message), udpCallback UDPCallback) *Server {
 	var s Server
 	//Init server
 	s.localIP = localIP
-	listenConnections(&s, localport, worker)
-	s.udpCon = udpconn.Reply(udpconn.ReplyCallback(udpc), localport)
+	listenConnections(&s, localPort, tcpCallback)
+	s.udpCon = udpconn.Reply(udpconn.ReplyCallback(udpCallback), localPort)
 	return &s
 }
 

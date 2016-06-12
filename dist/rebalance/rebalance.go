@@ -130,8 +130,6 @@ func duplicator(sg *servergroup.ServerGroup, lh *local.Core,
 				//Heartbeat must be propagated before transfer initialization
 				time.Sleep(time.Second * 2)
 				log.Println("Duplication completed: 0 sized", s.Phy, cid)
-				lh.ChunkSetSynched(cid)
-				sg.SetServerChunks(lh.LocalhostIPPort, lh.ChunksList())
 			}()
 		} else {
 			go func() {
@@ -158,12 +156,10 @@ func duplicator(sg *servergroup.ServerGroup, lh *local.Core,
 				err := s.Transfer(lh.LocalhostIPPort, cid)
 				if err != nil {
 					log.Println(cid, s.Phy, err)
-					log.Println("Chunk duplication aborted", cid)
+					log.Println("Chunk duplication aborted", cid, err)
 					continue
 				} else {
 					//Set chunk as ready
-					lh.ChunkSetSynched(cid)
-					sg.SetServerChunks(lh.LocalhostIPPort, lh.ChunksList())
 					log.Println("Chunk duplication completed", cid)
 					transferred = true
 					break

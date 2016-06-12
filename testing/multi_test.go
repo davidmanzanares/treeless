@@ -113,7 +113,7 @@ func TestMultiHotRebalance(t *testing.T) {
 					//Second server set-up
 					cluster[1].assoc(addr, ultraverbose, false)
 					//Wait for rebalance
-					time.Sleep(time.Second * 5)
+					time.Sleep(time.Second * 7)
 					//First server shut down
 					fmt.Println("Server 1 shut down")
 					cluster[0].kill()
