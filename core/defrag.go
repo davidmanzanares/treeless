@@ -1,9 +1,9 @@
-package local
+package core
 
 import (
 	"log"
+	"treeless/core/pmap"
 	"treeless/hashing"
-	"treeless/local/pmap"
 )
 
 const defragBufferSize = 256
@@ -13,27 +13,27 @@ type defragOp struct {
 	status  chan bool
 }
 
-func newDefragmenter(lh *Core) chan<- defragOp {
+func newDefragmenter(c *Core) chan<- defragOp {
 	inputChannel := make(chan defragOp, defragBufferSize)
 	go func() {
 		for op := range inputChannel {
-			chunk := lh.chunks[op.chunkID]
-			log.Println("Defrag id: ", op.chunkID, " Deleted: ", chunk.core.Deleted(), " Length: ", chunk.core.Used())
+			chunk := c.chunks[op.chunkID]
+			log.Println("Defrag id: ", op.chunkID, " Deleted: ", chunk.pm.Deleted(), " Length: ", chunk.pm.Used())
 
 			chunk.defragMutex.Lock()
 			chunk.Lock()
 
-			old := chunk.core
+			old := chunk.pm
 			chunk.revision++
-			if lh.dbpath == "" {
-				chunk.core = pmap.New("", lh.size)
+			if c.dbpath == "" {
+				chunk.pm = pmap.New("", c.chunkSize)
 			} else {
-				chunk.core = pmap.New(getChunkPath(lh.dbpath, op.chunkID, chunk.revision), lh.size)
+				chunk.pm = pmap.New(c.chunkPath(op.chunkID, chunk.revision), c.chunkSize)
 			}
 
 			old.Iterate(func(key, value []byte) bool {
 				h := hashing.FNV1a64(key)
-				err := chunk.core.Set(h, key, value)
+				err := chunk.pm.Set(h, key, value)
 				if err != nil {
 					panic(err)
 				}
@@ -41,7 +41,7 @@ func newDefragmenter(lh *Core) chan<- defragOp {
 			})
 			old.CloseAndDelete()
 
-			lh.chunks[op.chunkID].Unlock()
+			chunk.Unlock()
 			chunk.defragMutex.Unlock()
 			if op.status != nil {
 				op.status <- true

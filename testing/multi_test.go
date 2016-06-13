@@ -418,46 +418,58 @@ func TestMultiOpen(t *testing.T) {
 	cluster[1].assoc(addr, ultraverbose, false)
 	waitForServer(addr)
 	//Client set-up
-	client, err := client.Connect(addr)
-	client.SetNoDelay()
+	c, err := client.Connect(addr)
+	c.SetNoDelay()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer client.Close()
 
 	//Set operation
-	_, err = client.Set([]byte("hola"), []byte("mundo"))
+	_, err = c.Set([]byte("hola"), []byte("mundo"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	c.Close()
 	cluster[0].close()
 	cluster[1].close()
 	addr = cluster[0].create(testingNumChunks, 1, ultraverbose, true)
 	cluster[1].assoc(addr, ultraverbose, true)
+	c, err = client.Connect(addr)
+	c.SetNoDelay()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	//Get operation
-	value, _, _ := client.Get([]byte("hola"))
+	value, _, _ := c.Get([]byte("hola"))
 	if string(value) != "mundo" {
 		t.Fatal("Get failed, returned string: ", string(value))
 	}
 
 	//Del operation
-	err = client.Del([]byte("hola"))
+	err = c.Del([]byte("hola"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	c.Close()
 	cluster[0].close()
 	cluster[1].close()
 	addr = cluster[0].create(testingNumChunks, 1, ultraverbose, true)
 	cluster[1].assoc(addr, ultraverbose, true)
+	c, err = client.Connect(addr)
+	c.SetNoDelay()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	//Get operation
-	value, _, _ = client.Get([]byte("hola"))
+	value, _, _ = c.Get([]byte("hola"))
 	if value != nil {
 		t.Fatal("Get 2 returned string: ", string(value))
 	}
 
+	c.Close()
 	cluster[0].close()
 	cluster[1].close()
 }

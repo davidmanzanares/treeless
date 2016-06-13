@@ -1,7 +1,8 @@
-package tlcom
+package com
 
 import "net"
 
+//GetLocalIP returns a non-loopback localhost IP if any
 func GetLocalIP() string {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {

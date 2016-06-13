@@ -21,7 +21,7 @@ type DBClient struct {
 
 func Connect(addr string) (*DBClient, error) {
 	c := new(DBClient)
-	sg, err := servergroup.Assoc(addr)
+	sg, err := servergroup.Assoc(addr, "")
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +41,7 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time, read bool)
 	//Last write wins policy
 	chunkID := hashing.GetChunkID(key, c.sg.NumChunks())
 	servers := c.sg.GetChunkHolders(chunkID)
-	var charray [8]tlcom.GetOperation
+	var charray [8]com.GetOperation
 	var chvalidarray [8]bool
 	var times [8]time.Time
 	for i, s := range servers {
@@ -103,7 +103,7 @@ func (c *DBClient) set(key, value []byte, timeout time.Duration) (written bool, 
 	valueWithTime := make([]byte, 8+len(value))
 	binary.LittleEndian.PutUint64(valueWithTime, uint64(time.Now().UnixNano()))
 	copy(valueWithTime[8:], value)
-	var charray [8]*tlcom.SetOperation
+	var charray [8]*com.SetOperation
 	for i, s := range servers {
 		if s == nil {
 			continue
@@ -192,7 +192,7 @@ func (c *DBClient) Del(key []byte) (errs error) {
 	servers := c.sg.GetChunkHolders(chunkID)
 	t := make([]byte, 8)
 	binary.LittleEndian.PutUint64(t, uint64(time.Now().UnixNano()))
-	var charray [8]*tlcom.DelOperation
+	var charray [8]*com.DelOperation
 	for i, s := range servers {
 		if s == nil {
 			continue

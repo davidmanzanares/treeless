@@ -53,7 +53,7 @@ func main() {
 	dbpath := flag.String("dbpath", "", "Filesystem path to store DB info, don't set it to use only RAM")
 	cpuprofile := flag.String("cpuprofile", "", "Write cpu profile info to file")
 	webprofile := flag.Bool("webprofile", false, "Set webprofile on")
-	localIP := flag.String("localip", tlcom.GetLocalIP(),
+	localIP := flag.String("localip", com.GetLocalIP(),
 		"Set the local IP, Treeless will use a non loopback IP if the flag is missing")
 	logToFile := flag.String("logtofile", "", "Set an output file for logging")
 	flag.Parse()
@@ -92,7 +92,7 @@ func main() {
 
 	var s *server.DBServer
 	if *monitor != "" {
-		sg, err := servergroup.Assoc(*monitor)
+		sg, err := servergroup.Assoc(*monitor, "")
 		if err != nil {
 			fmt.Println(err)
 			return

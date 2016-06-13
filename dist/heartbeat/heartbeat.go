@@ -5,10 +5,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"treeless/com"
 	"treeless/com/protocol"
-	"treeless/com/udpconn"
+	"treeless/core"
 	"treeless/dist/servergroup"
-	"treeless/local"
 )
 
 var heartbeatTimeout = time.Millisecond * 250
@@ -26,7 +26,7 @@ type Heartbeater struct {
 	stop                 int32
 	timeouts             map[string]int
 	sg                   *servergroup.ServerGroup
-	core                 *local.Core
+	core                 *core.Core
 	recentlyAddedServers map[string]time.Time
 	recentlyDeadServers  map[string]time.Time
 	newsMutex            sync.Mutex
@@ -68,10 +68,10 @@ func (h *Heartbeater) cleanNews() {
 }
 
 func (h *Heartbeater) request(addr string) (ok bool) {
-	if h.core != nil && addr == h.core.LocalhostIPPort {
+	if h.core != nil && addr == h.sg.LocalhostIPPort {
 		return true
 	}
-	aa, err := udpconn.Request(addr, heartbeatTimeout)
+	aa, err := com.UDPRequest(addr, heartbeatTimeout)
 	if err != nil {
 		if h.sg.IsServerOnGroup(addr) {
 			h.timeouts[addr] = h.timeouts[addr] + 1
@@ -80,6 +80,8 @@ func (h *Heartbeater) request(addr string) (ok bool) {
 				//Server is dead
 				h.sg.DeadServer(addr)
 				h.GossipDead(addr)
+			} else {
+				return h.request(addr)
 			}
 		} else {
 			delete(h.timeouts, addr)
@@ -140,11 +142,11 @@ func Start(sg *servergroup.ServerGroup) *Heartbeater {
 }
 
 //ListenReply starts listening and repling to UDP heartbeat requests
-func (h *Heartbeater) ListenReply(c *local.Core) func() protocol.AmAlive {
+func (h *Heartbeater) ListenReply(c *core.Core) func() protocol.AmAlive {
 	h.core = c
 	return func() (r protocol.AmAlive) {
 		h.cleanNews()
-		r.KnownChunks = c.ChunksList()
+		r.KnownChunks = c.PresentChunksList()
 		h.cleanNews()
 		h.newsMutex.Lock()
 		r.RecentlyAddedServers = make([]string, 0, len(h.recentlyAddedServers))

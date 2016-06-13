@@ -1,9 +1,10 @@
-package tlcom
+package com
 
 import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"sync"
 	"time"
@@ -11,48 +12,46 @@ import (
 	"treeless/com/protocol"
 )
 
+//brokerTick controls the time between polling for timeout'ed respond messages
 var brokerTick = time.Millisecond * 5
 
-//Stores a DB operation result
-type Result struct {
+//dialTimeout controls the TCP dial timeout
+var dialTimeout = 3 * time.Second
+
+//result stores a DB operation result returned by a server
+type result struct {
 	Value []byte
 	Err   error
 }
 
-//Conn is a DB TCP client connection
-type Conn struct {
-	conn            *net.TCPConn
-	responseChannel chan ResponserMsg
-	rchPool         sync.Pool
-}
-
-type ResponserMsg struct {
+type brokerMsg struct {
 	mess    protocol.Message
 	timeout time.Duration
-	rch     chan Result
+	rch     chan result
+}
+
+//Conn provides an interface to a possible buffered DB TCP client connection
+type Conn struct {
+	tcpConn                  *net.TCPConn
+	brokerSendChannel        chan brokerMsg
+	brokerReceiveChannelPool sync.Pool
 }
 
 //CreateConnection returns a new DB connection
 func CreateConnection(addr string, onClose func()) (*Conn, error) {
-	//log.Println("Dialing for new connection", taddr)
-	/*taddr, errp := net.ResolveTCPAddr("tcp", addr)
-	if errp != nil {
-		return nil, errp
-	}*/
-
-	d := &net.Dialer{Timeout: 3 * time.Second}
+	d := &net.Dialer{Timeout: dialTimeout}
 	tcpconn, err := d.Dial("tcp", addr)
 	if err != nil {
 		return nil, err
 	}
 
 	var c Conn
-	c.conn = tcpconn.(*net.TCPConn)
+	c.tcpConn = tcpconn.(*net.TCPConn)
 	//c.conn.SetNoDelay(false)
 
-	c.responseChannel = make(chan ResponserMsg, 1024)
-	c.rchPool = sync.Pool{New: func() interface{} {
-		return make(chan Result, 1)
+	c.brokerSendChannel = make(chan brokerMsg, 1024)
+	c.brokerReceiveChannelPool = sync.Pool{New: func() interface{} {
+		return make(chan result, 1)
 	}}
 	go broker(&c, onClose)
 
@@ -148,8 +147,8 @@ func (q *queue) forall(callback func(tm *timeoutMsg)) {
 }
 
 func broker(c *Conn, onClose func()) {
-	bconn := buffconn.New(c.conn)
-	waits := make(map[uint32]chan<- Result)
+	bconn := buffconn.New(c.tcpConn)
+	waits := make(map[uint32]chan<- result)
 	pq := createQueue()
 	tickerActivation := make(chan bool)
 	var mutex sync.Mutex
@@ -166,7 +165,7 @@ func broker(c *Conn, onClose func()) {
 					w, ok := waits[tm.tid]
 					if ok {
 						delete(waits, tm.tid)
-						w <- Result{nil, errors.New("Timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
+						w <- result{nil, errors.New("Timeout" + fmt.Sprint("Local", c.tcpConn.LocalAddr(), "Remote", c.tcpConn.RemoteAddr()))}
 					}
 				})
 				if pq.len() == 0 {
@@ -187,7 +186,7 @@ func broker(c *Conn, onClose func()) {
 		//To world
 		tid := uint32(0)
 		for {
-			msg, ok := <-c.responseChannel
+			msg, ok := <-c.brokerSendChannel
 			mutex.Lock()
 			if !ok {
 				pq.forall(func(tm *timeoutMsg) {
@@ -197,7 +196,7 @@ func broker(c *Conn, onClose func()) {
 							panic("w rch == nil")
 						}
 						delete(waits, tm.tid)
-						w <- Result{nil, errors.New("Connection closed => fast timeout" + fmt.Sprint("Local", c.conn.LocalAddr(), "Remote", c.conn.RemoteAddr()))}
+						w <- result{nil, errors.New("Connection closed => fast timeout" + fmt.Sprint("Local", c.tcpConn.LocalAddr(), "Remote", c.tcpConn.RemoteAddr()))}
 					}
 				})
 				bconn.Close()
@@ -255,13 +254,13 @@ func broker(c *Conn, onClose func()) {
 			mutex.Unlock()
 			switch m.Type {
 			case protocol.OpResponse:
-				ch <- Result{m.Value, nil}
+				ch <- result{m.Value, nil}
 			case protocol.OpOK:
-				ch <- Result{nil, nil}
+				ch <- result{nil, nil}
 			case protocol.OpErr:
-				ch <- Result{nil, errors.New("Response error: " + string(m.Value))}
+				ch <- result{nil, errors.New("Response error: " + string(m.Value))}
 			default:
-				ch <- Result{nil, errors.New("Invalid response operation code: " + fmt.Sprint(m.Type))}
+				ch <- result{nil, errors.New("Invalid response operation code: " + fmt.Sprint(m.Type))}
 			}
 		}
 	}()
@@ -269,66 +268,66 @@ func broker(c *Conn, onClose func()) {
 
 //Close this connection
 func (c *Conn) Close() {
-	close(c.responseChannel)
+	close(c.brokerSendChannel)
 }
 
 func (c *Conn) send(opType protocol.Operation, key, value []byte,
-	timeout time.Duration) chan Result {
+	timeout time.Duration) chan result {
 	if timeout == 0 {
 		//Send-only
-		var m ResponserMsg
+		var m brokerMsg
 		m.mess.Type = opType
 		m.mess.Key = key
 		m.mess.Value = value
-		c.responseChannel <- m
+		c.brokerSendChannel <- m
 		return nil
 	}
 	//Send and recieve
-	var m ResponserMsg
+	var m brokerMsg
 	m.mess.Type = opType
 	m.mess.Key = key
 	m.mess.Value = value
 	m.timeout = timeout
-	m.rch = c.rchPool.Get().(chan Result)
-	c.responseChannel <- m
+	m.rch = c.brokerReceiveChannelPool.Get().(chan result)
+	c.brokerSendChannel <- m
 	return m.rch
 }
 
 func (c *Conn) sendAndReceive(opType protocol.Operation, key, value []byte,
-	timeout time.Duration) Result {
+	timeout time.Duration) result {
 	rch := c.send(opType, key, value, timeout)
 	if rch == nil {
-		return Result{}
+		return result{}
 	}
 	return <-rch
 }
 
 type GetOperation struct {
-	rch chan Result
+	rch chan result
 	c   *Conn
 }
 
 type SetOperation struct {
-	rch chan Result
+	rch chan result
 	c   *Conn
 }
 
 type DelOperation struct {
-	rch chan Result
+	rch chan result
 	c   *Conn
 }
 
 type CASOperation struct {
-	rch chan Result
+	rch chan result
 	c   *Conn
 }
 
-func (g *GetOperation) Wait() Result {
+func (g *GetOperation) Wait() result {
 	if g.rch == nil {
-		return Result{nil, errors.New("Already returned")}
+		return result{nil, errors.New("Already returned")}
 	}
 	r := <-g.rch
-	g.c.rchPool.Put(g.rch)
+	g.c.brokerReceiveChannelPool.Put(g.rch)
 	g.rch = nil
 	return r
 }
@@ -338,7 +337,7 @@ func (g *SetOperation) Wait() error {
 		return errors.New("Already returned")
 	}
 	r := <-g.rch
-	g.c.rchPool.Put(g.rch)
+	g.c.brokerReceiveChannelPool.Put(g.rch)
 	g.rch = nil
 	return r.Err
 }
@@ -348,7 +347,7 @@ func (g *DelOperation) Wait() error {
 		return errors.New("Already returned")
 	}
 	r := <-g.rch
-	g.c.rchPool.Put(g.rch)
+	g.c.brokerReceiveChannelPool.Put(g.rch)
 	g.rch = nil
 	return r.Err
 }
@@ -358,7 +357,7 @@ func (g *CASOperation) Wait() error {
 		return errors.New("Already returned")
 	}
 	r := <-g.rch
-	g.c.rchPool.Put(g.rch)
+	g.c.brokerReceiveChannelPool.Put(g.rch)
 	g.rch = nil
 	return r.Err
 }
@@ -448,4 +447,36 @@ func (c *Conn) GetChunkInfo(chunkID int) (size uint64, err error) {
 		return 0, r.Err
 	}
 	return binary.LittleEndian.Uint64(r.Value), nil
+}
+
+/*
+	UDP
+*/
+//UDPRequest sends an UDP request to the specified address with a timeout
+func UDPRequest(addr string, timeout time.Duration) (response *protocol.AmAlive, err error) {
+	conn, err := net.ListenUDP("udp", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	destAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return nil, err
+	}
+	conn.SetDeadline(time.Now().Add(timeout))
+	conn.WriteTo([]byte("ping"), destAddr)
+	for {
+		message := make([]byte, protocol.MaxHeartbeatSize)
+		n, readAddr, err := conn.ReadFromUDP(message)
+		if err != nil {
+			return nil, err
+		} else if readAddr.IP.Equal(destAddr.IP) {
+			aa, err := protocol.AmAliveUnMarshal(message[:n])
+			if err != nil {
+				log.Println(err)
+			}
+			return aa, err
+
+		}
+	}
 }

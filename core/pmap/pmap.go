@@ -19,7 +19,7 @@ const FilePerms = 0700
 const defaultCheckSumInterval = time.Second
 
 /*
-A PMap is a persistent dicctionary with high-performance access and specific timestamp semantics.
+A PMap is a persistent dictionary with high-performance access and specific timestamp semantics.
 
 A PMap has some utility functions and 4 primitives: Get, Set, Del and CAS.
 
@@ -53,6 +53,7 @@ func New(path string, size uint64) *PMap {
 	return c
 }
 
+//Open opens a previous closed pmap returning a new pmap
 func Open(path string) *PMap {
 	c := new(PMap)
 	c.path = path
@@ -102,7 +103,7 @@ func (c *PMap) restorePair(key, value []byte, storeIndex uint32) error {
 			c.hm.numStoredKeys++
 			t := time.Unix(0, int64(binary.LittleEndian.Uint64(value[:8])))
 			//fmt.Println("Sum", value)
-			c.checksum.Sum(h64^binary.LittleEndian.Uint64(value[:8]), t)
+			c.checksum.sum(h64^binary.LittleEndian.Uint64(value[:8]), t)
 			return nil
 		}
 		if h == storedHash {
@@ -118,13 +119,13 @@ func (c *PMap) restorePair(key, value []byte, storeIndex uint32) error {
 				//Last write wins
 				v := c.st.val(uint64(stIndex))
 				t := time.Unix(0, int64(binary.LittleEndian.Uint64(value[:8])))
-				c.checksum.Sub(h64^binary.LittleEndian.Uint64(v[:8]), t)
+				c.checksum.sub(h64^binary.LittleEndian.Uint64(v[:8]), t)
 				//fmt.Println("Sub", v)
 				c.st.deleted += uint64(12 + len(key) + len(v))
 				if len(value) > 0 {
 					c.hm.setHash(index, h)
 					c.hm.setStoreIndex(index, storeIndex)
-					c.checksum.Sum(h64^binary.LittleEndian.Uint64(value[:8]), t)
+					c.checksum.sum(h64^binary.LittleEndian.Uint64(value[:8]), t)
 					//fmt.Println("Sum2", value)
 				} else {
 					c.hm.setHash(index, deletedBucket)
@@ -136,17 +137,18 @@ func (c *PMap) restorePair(key, value []byte, storeIndex uint32) error {
 	}
 }
 
+//Checksum returns a time-stable checksum
 func (c *PMap) Checksum() uint64 {
-	return c.checksum.Checksum()
+	return c.checksum.checksum()
 }
 
-//Close closes a PMap. The hashmap is destroyed and the store is disk synched.
-//Close will panic if it is called 2 times.
+//Close closes a PMap. The hashmap is destroyed and the store is disk synced.
+//Close will panic if it is called more than one time.
 func (c *PMap) Close() {
 	c.st.close()
 }
 
-//CloseAndDelete closes the PMap and removes associated files.
+//CloseAndDelete closes the PMap and removes the associated file freeing disk space.
 func (c *PMap) CloseAndDelete() {
 	c.st.close()
 	c.st.deleteStore()
@@ -157,12 +159,12 @@ func (c *PMap) Deleted() int {
 	return int(c.st.deleted)
 }
 
-//Used retunrs the number of bytes used
+//Used returns the number of bytes used
 func (c *PMap) Used() int {
 	return int(c.st.length)
 }
 
-//Size retunrs the size of the pmap
+//Size returns the size of the pmap
 func (c *PMap) Size() int {
 	return int(c.st.size)
 }
@@ -231,7 +233,7 @@ func (c *PMap) Set(h64 uint64, key, value []byte) error {
 			c.hm.setStoreIndex(index, storeIndex)
 			c.hm.numStoredKeys++
 			t := time.Unix(0, int64(binary.LittleEndian.Uint64(value[:8])))
-			c.checksum.Sum(h64^binary.LittleEndian.Uint64(value[:8]), t)
+			c.checksum.sum(h64^binary.LittleEndian.Uint64(value[:8]), t)
 			return nil
 		}
 
@@ -258,10 +260,10 @@ func (c *PMap) Set(h64 uint64, key, value []byte) error {
 				if err != nil {
 					return err
 				}
-				c.checksum.Sub(h64^binary.LittleEndian.Uint64(v[:8]), t)
+				c.checksum.sub(h64^binary.LittleEndian.Uint64(v[:8]), t)
 				c.hm.setHash(index, h)
 				c.hm.setStoreIndex(index, storeIndex)
-				c.checksum.Sum(h64^binary.LittleEndian.Uint64(value[:8]), t)
+				c.checksum.sum(h64^binary.LittleEndian.Uint64(value[:8]), t)
 				return nil
 			}
 		}
@@ -276,9 +278,9 @@ func (c *PMap) Set(h64 uint64, key, value []byte) error {
 //[16:24] => new timestamp
 //[24:]   => new value
 //Tests:
-//1. Stored value timstamp match the CAS timestamp, if the pair doesn't exists the CAS timestamp should be 0
+//1. Stored value timestamp match the CAS timestamp, if the pair doesn't exists the CAS timestamp should be 0
 //2. Stored value hash matches the provided hash
-//It retunrs nil if the new value was written
+//It returns nil if the new value was written
 func (c *PMap) CAS(h64 uint64, key, value []byte) error {
 	if len(value) < 24 {
 		return errors.New("Error: CAS value len < 16")
@@ -311,7 +313,7 @@ func (c *PMap) CAS(h64 uint64, key, value []byte) error {
 			c.hm.setHash(index, h)
 			c.hm.setStoreIndex(index, storeIndex)
 			c.hm.numStoredKeys++
-			c.checksum.Sum(h64^binary.LittleEndian.Uint64(value[16:24]), t)
+			c.checksum.sum(h64^binary.LittleEndian.Uint64(value[16:24]), t)
 			return nil
 		}
 		if h == storedHash {
@@ -332,14 +334,14 @@ func (c *PMap) CAS(h64 uint64, key, value []byte) error {
 					log.Println("hash mismatch!")
 					return errors.New("CAS failed: hash mismatch")
 				}
-				c.checksum.Sub(h64^binary.LittleEndian.Uint64(v[:8]), t)
+				c.checksum.sub(h64^binary.LittleEndian.Uint64(v[:8]), t)
 				storeIndex, err := c.st.put(key, value[16:])
 				if err != nil {
 					return err
 				}
 				c.hm.setHash(index, h)
 				c.hm.setStoreIndex(index, storeIndex)
-				c.checksum.Sum(h64^binary.LittleEndian.Uint64(value[16:24]), t)
+				c.checksum.sum(h64^binary.LittleEndian.Uint64(value[16:24]), t)
 				return nil
 			}
 		}
@@ -376,7 +378,7 @@ func (c *PMap) Del(h64 uint64, key, value []byte) error {
 					return nil
 				}
 				c.st.deleted += uint64(12 + len(key) + len(v))
-				c.checksum.Sub(h64^binary.LittleEndian.Uint64(v[:8]), t)
+				c.checksum.sub(h64^binary.LittleEndian.Uint64(v[:8]), t)
 				c.hm.setHash(index, deletedBucket)
 				//Tombstone
 				_, err := c.st.put(key, nil)
@@ -398,7 +400,8 @@ func (c *PMap) isPresent(index uint64) bool {
 	return bytes.Compare(value[0:8], storeValue[0:8]) == 0
 }
 
-//Iterate calls foreach for each stored pair, it will stop iterating if the call returns false
+//BackwardsIterate calls foreach for each stored pair in backwards direction, it will stop iterating if the call returns false
+//It stops early if foreach returns false
 func (c *PMap) BackwardsIterate(foreach func(key, value []byte) (Continue bool)) error {
 	index := c.st.length
 	if index <= 0 {
@@ -431,6 +434,8 @@ func (c *PMap) BackwardsIterate(foreach func(key, value []byte) (Continue bool))
 	return nil
 }
 
+//BackwardsIterate calls foreach for each stored pair, it will stop iterating if the call returns false
+//It stops early if foreach returns false
 func (c *PMap) Iterate(foreach func(key, value []byte) (Continue bool)) error {
 	for index := uint64(0); index < c.st.length; {
 		if c.isPresent(index) {

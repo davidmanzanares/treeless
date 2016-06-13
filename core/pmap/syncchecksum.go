@@ -7,16 +7,16 @@ type syncChecksum struct {
 	newTime, mediumTime, oldTime             time.Time
 }
 
-func (s *syncChecksum) Checksum() uint64 {
-	s.Sum(0, time.Now())
+func (s *syncChecksum) checksum() uint64 {
+	s.sum(0, time.Now())
 	return s.oldChecksum
 }
 
-func (s *syncChecksum) Sub(el uint64, t time.Time) {
-	s.Sum(-el, t)
+func (s *syncChecksum) sub(el uint64, t time.Time) {
+	s.sum(-el, t)
 }
 
-func (s *syncChecksum) Sum(el uint64, t time.Time) {
+func (s *syncChecksum) sum(el uint64, t time.Time) {
 	if t.After(s.newTime) {
 		//Move forward the time
 		s.oldTime = s.mediumTime

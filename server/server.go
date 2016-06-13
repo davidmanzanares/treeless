@@ -8,17 +8,17 @@ import (
 	"time"
 	"treeless/com"
 	"treeless/com/protocol"
+	"treeless/core"
 	"treeless/dist/heartbeat"
 	"treeless/dist/rebalance"
 	"treeless/dist/repair"
 	"treeless/dist/servergroup"
-	"treeless/local"
 )
 
 //DBServer manages a Treeless node server
 type DBServer struct {
-	core    *local.Core
-	server  *tlcom.Server
+	core    *core.Core
+	server  *com.Server
 	sg      *servergroup.ServerGroup
 	hb      *heartbeat.Heartbeater
 	stopped uint32
@@ -34,7 +34,7 @@ type DBServer struct {
 func Create(localIP string, localPort int, localDBpath string, localChunkSize uint64, openDB bool, numChunks, redundancy int) *DBServer {
 	s := new(DBServer)
 	//Core
-	s.core = local.NewCore(localDBpath, localChunkSize, numChunks, localIP+":"+fmt.Sprint(localPort))
+	s.core = core.New(localDBpath, localChunkSize, numChunks)
 	if openDB {
 		s.core.Open()
 	} else {
@@ -43,7 +43,7 @@ func Create(localIP string, localPort int, localDBpath string, localChunkSize ui
 		}
 	}
 	//Servergroup
-	s.sg = servergroup.CreateServerGroup(numChunks, redundancy)
+	s.sg = servergroup.CreateServerGroup(numChunks, redundancy, localIP+":"+fmt.Sprint(localPort))
 	s.sg.AddServerToGroup(localIP + ":" + fmt.Sprint(localPort))
 	list := make([]protocol.AmAliveChunk, numChunks)
 	for i := 0; i < numChunks; i++ {
@@ -57,7 +57,7 @@ func Create(localIP string, localPort int, localDBpath string, localChunkSize ui
 	//Repair
 	repair.StartRepairSystem(s.sg, s.core, s.isStopped)
 	//Server
-	s.server = tlcom.Start(localIP, localPort, s.processMessage, s.hb.ListenReply(s.core))
+	s.server = com.Start(localIP, localPort, s.processMessage, s.hb.ListenReply(s.core))
 	log.Println("Server boot-up completed")
 	return s
 }
@@ -72,21 +72,21 @@ func Assoc(localIP string, localPort int, localDBpath string, localChunkSize uin
 	s := new(DBServer)
 	//Associate to an existing DB group
 	var err error
-	s.sg, err = servergroup.Assoc(assocAddr)
+	s.sg, err = servergroup.Assoc(assocAddr, localIP+":"+fmt.Sprint(localPort))
 	if err != nil {
 		panic(err)
 	}
 
 	numChunks := s.sg.NumChunks()
 	//Launch core
-	s.core = local.NewCore(localDBpath, localChunkSize, numChunks, localIP+":"+fmt.Sprint(localPort))
+	s.core = core.New(localDBpath, localChunkSize, numChunks)
 	if openDB {
 		s.core.Open()
 	}
 	//Add this server to the server group
 	addedAtLeastOnce := false
 	for _, s2 := range s.sg.Servers() {
-		err = s2.AddServerToGroup(s.core.LocalhostIPPort)
+		err = s2.AddServerToGroup(s.sg.LocalhostIPPort)
 		if err != nil {
 			log.Println(err)
 		} else {
@@ -104,7 +104,7 @@ func Assoc(localIP string, localPort int, localDBpath string, localChunkSize uin
 	//Repair
 	repair.StartRepairSystem(s.sg, s.core, s.isStopped)
 	//Server
-	s.server = tlcom.Start(localIP, localPort, s.processMessage, s.hb.ListenReply(s.core))
+	s.server = com.Start(localIP, localPort, s.processMessage, s.hb.ListenReply(s.core))
 	log.Println("Server boot-up completed")
 	return s
 }
@@ -167,7 +167,7 @@ func (s *DBServer) processMessage(message protocol.Message) (response protocol.M
 		//New goroutine will put every key value pair into destination, it will manage the OpTransferOK response
 		go func() {
 			addr := string(message.Value)
-			c, err := tlcom.CreateConnection(addr, func() {})
+			c, err := com.CreateConnection(addr, func() {})
 			defer c.Close()
 			if err != nil {
 				log.Println("Transfer failed, error:", err)

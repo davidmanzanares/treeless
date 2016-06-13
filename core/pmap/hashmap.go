@@ -30,7 +30,7 @@ const (
 	deletedBucket = 1
 )
 
-//create a new hashmap initializating its metadata and allocating an initial memory region
+//create a new hashmap initializing its metadata and allocating an initial memory region
 func newHashMap(initialLog2Size, sizeLimit uint32) *hashmap {
 	m := new(hashmap)
 	m.sizeLimit = sizeLimit

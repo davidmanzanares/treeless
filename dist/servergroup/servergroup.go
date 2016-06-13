@@ -23,7 +23,8 @@ type serializableServerGroup struct {
 
 //ServerGroup provides an access to a DB server group
 type ServerGroup struct {
-	mutex sync.RWMutex //All ServerGroup read/writes are mutex-protected
+	mutex           sync.RWMutex //All ServerGroup read/writes are mutex-protected
+	LocalhostIPPort string       //Read-only from external packages
 	//Database configuration
 	numChunks  int //Number of DB chunks
 	redundancy int //DB target redundancy
@@ -45,8 +46,10 @@ func (sg *ServerGroup) Stop() {
 }
 
 //CreateServerGroup creates a new DB server group, without connecting to an existing group
-func CreateServerGroup(numChunks int, redundancy int) *ServerGroup {
+func CreateServerGroup(numChunks int, redundancy int, LocalhostIPPort string) *ServerGroup {
 	sg := new(ServerGroup)
+	sg.LocalhostIPPort = LocalhostIPPort
+
 	//DB configuration
 	sg.numChunks = numChunks
 	sg.redundancy = redundancy
@@ -60,9 +63,9 @@ func CreateServerGroup(numChunks int, redundancy int) *ServerGroup {
 	return sg
 }
 
-func Assoc(addr string) (*ServerGroup, error) {
+func Assoc(addr string, LocalhostIPPort string) (*ServerGroup, error) {
 	//Connect to the provided address
-	c, err := tlcom.CreateConnection(addr, func() {})
+	c, err := com.CreateConnection(addr, func() {})
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +74,12 @@ func Assoc(addr string) (*ServerGroup, error) {
 	if err != nil {
 		return nil, err
 	}
-	return UnmarhalServerGroup(serialization)
+	sg, err := UnmarhalServerGroup(serialization)
+	if err != nil {
+		return nil, err
+	}
+	sg.LocalhostIPPort = LocalhostIPPort
+	return sg, nil
 }
 
 //UnmarhalServerGroup unmarshalles serialization creating a new ServerGroup

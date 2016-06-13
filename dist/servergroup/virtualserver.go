@@ -13,7 +13,7 @@ type VirtualServer struct {
 	lastHeartbeat time.Time //Last time a heartbeat was listened
 	dead          bool
 	heldChunks    []protocol.AmAliveChunk //List of all chunks that this server holds
-	conn          *tlcom.Conn             //TCP connection, it may not exists
+	conn          *com.Conn             //TCP connection, it may not exists
 	m             sync.RWMutex
 }
 
@@ -32,7 +32,7 @@ func (s *VirtualServer) needConnection() (err error) {
 		s.m.Lock()
 		if s.conn == nil {
 			//log.Println("Creatting conn to", s.Phy)
-			s.conn, err = tlcom.CreateConnection(s.Phy, func() {
+			s.conn, err = com.CreateConnection(s.Phy, func() {
 				//log.Println("Free connection", s.Phy)
 				s.freeConn()
 			})
@@ -60,9 +60,9 @@ func (s *VirtualServer) freeConn() {
 }
 
 //Get the value of key
-func (s *VirtualServer) Get(key []byte, timeout time.Duration) (tlcom.GetOperation, error) {
+func (s *VirtualServer) Get(key []byte, timeout time.Duration) (com.GetOperation, error) {
 	if err := s.needConnection(); err != nil {
-		return tlcom.GetOperation{}, err
+		return com.GetOperation{}, err
 	}
 	r := s.conn.Get(key, timeout)
 	s.m.RUnlock()
@@ -70,9 +70,9 @@ func (s *VirtualServer) Get(key []byte, timeout time.Duration) (tlcom.GetOperati
 }
 
 //Set a new key/value pair
-func (s *VirtualServer) Set(key, value []byte, timeout time.Duration) (tlcom.SetOperation, error) {
+func (s *VirtualServer) Set(key, value []byte, timeout time.Duration) (com.SetOperation, error) {
 	if err := s.needConnection(); err != nil {
-		return tlcom.SetOperation{}, err
+		return com.SetOperation{}, err
 	}
 	r := s.conn.Set(key, value, timeout)
 	s.m.RUnlock()
@@ -80,9 +80,9 @@ func (s *VirtualServer) Set(key, value []byte, timeout time.Duration) (tlcom.Set
 }
 
 //Del deletes a key/value pair
-func (s *VirtualServer) Del(key []byte, value []byte, timeout time.Duration) (tlcom.DelOperation, error) {
+func (s *VirtualServer) Del(key []byte, value []byte, timeout time.Duration) (com.DelOperation, error) {
 	if err := s.needConnection(); err != nil {
-		return tlcom.DelOperation{}, err
+		return com.DelOperation{}, err
 	}
 	r := s.conn.Del(key, value, timeout)
 	s.m.RUnlock()
@@ -90,9 +90,9 @@ func (s *VirtualServer) Del(key []byte, value []byte, timeout time.Duration) (tl
 }
 
 //Set a new key/value pair
-func (s *VirtualServer) CAS(key, value []byte, timeout time.Duration) (tlcom.CASOperation, error) {
+func (s *VirtualServer) CAS(key, value []byte, timeout time.Duration) (com.CASOperation, error) {
 	if err := s.needConnection(); err != nil {
-		return tlcom.CASOperation{}, err
+		return com.CASOperation{}, err
 	}
 	r := s.conn.CAS(key, value, timeout)
 	s.m.RUnlock()

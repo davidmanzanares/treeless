@@ -3,14 +3,14 @@ package repair
 import (
 	"log"
 	"time"
+	"treeless/core"
 	"treeless/dist/servergroup"
-	"treeless/local"
 )
 
 var checkInterval = time.Second
 var checksTillRepair = 7
 
-func repair(sg *servergroup.ServerGroup, lh *local.Core, cid int) {
+func repair(sg *servergroup.ServerGroup, lh *core.Core, cid int) {
 	log.Println("Backwards reparing chunk ", cid)
 	//Backwards iteration with early exit
 	i := 0
@@ -31,11 +31,11 @@ func repair(sg *servergroup.ServerGroup, lh *local.Core, cid int) {
 	log.Println("Backwards reparing process finished1 ", cid)
 }
 
-func StartRepairSystem(sg *servergroup.ServerGroup, lh *local.Core, ShouldStop func() bool) {
+func StartRepairSystem(sg *servergroup.ServerGroup, lh *core.Core, ShouldStop func() bool) {
 	go func() {
 		m := make(map[int]int)
 		for !ShouldStop() {
-			sg.SetServerChunks(lh.LocalhostIPPort, lh.ChunksList())
+			sg.SetServerChunks(sg.LocalhostIPPort, lh.PresentChunksList())
 			for cid := 0; cid < sg.NumChunks(); cid++ {
 				if !lh.IsPresent(cid) {
 					continue

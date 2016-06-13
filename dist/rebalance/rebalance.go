@@ -8,8 +8,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"treeless/core"
 	"treeless/dist/servergroup"
-	"treeless/local"
 )
 
 const maxRebalanceWaitSeconds = 3
@@ -28,7 +28,7 @@ func (r *Rebalancer) Stop() {
 }
 
 //StartRebalance creates a new Rebalancer and begins its operation
-func StartRebalance(sg *servergroup.ServerGroup, lh *local.Core, ShouldStop func() bool) {
+func StartRebalance(sg *servergroup.ServerGroup, lh *core.Core, ShouldStop func() bool) {
 	//Delegate chunk downloads to the duplicator
 	duplicate := duplicator(sg, lh, ShouldStop)
 	release := releaser(sg, lh)
@@ -36,7 +36,7 @@ func StartRebalance(sg *servergroup.ServerGroup, lh *local.Core, ShouldStop func
 	//servers should have more or less the same work
 	go func() { //LoadRebalancer
 		for !ShouldStop() {
-			known := float64(lh.KnownChunks())
+			known := float64(lh.PresentChunks())
 			total := float64(sg.NumChunks()) * float64(sg.Redundancy())
 			avg := total / float64(sg.NumServers())
 			//LR-Duplicate
@@ -57,7 +57,7 @@ func StartRebalance(sg *servergroup.ServerGroup, lh *local.Core, ShouldStop func
 			} else if known >= avg { //HR-Release
 				//Local server has more work than it should
 				//Locate a chunk with more redundancy than the required redundancy and *not* protected
-				for _, c := range lh.ChunksList() {
+				for _, c := range lh.PresentChunksList() {
 					if lh.IsPresent(c.ID) && sg.NumHolders(c.ID) > sg.Redundancy() {
 						log.Println("Release to rebalance.", c.ID, sg.NumHolders(c.ID), " Reason:", known, avg)
 						release(c.ID)
@@ -97,7 +97,7 @@ func getFreeDiskSpace() uint64 {
 //It will download the chunk otherwise
 //However this download will be executed in the background (i.e. in another goroutine).
 //Duplicate will return inmediatly unless the channel buffer is filled
-func duplicator(sg *servergroup.ServerGroup, lh *local.Core,
+func duplicator(sg *servergroup.ServerGroup, lh *core.Core,
 	ShouldStop func() bool) (duplicate func(cid int)) {
 
 	duplicateChannel := make(chan int, 1024)
@@ -150,10 +150,10 @@ func duplicator(sg *servergroup.ServerGroup, lh *local.Core,
 
 			transferred := false
 			for _, s := range servers {
-				if s == nil || s.Phy == lh.LocalhostIPPort {
+				if s == nil || s.Phy == sg.LocalhostIPPort {
 					continue
 				}
-				err := s.Transfer(lh.LocalhostIPPort, cid)
+				err := s.Transfer(sg.LocalhostIPPort, cid)
 				if err != nil {
 					log.Println(cid, s.Phy, err)
 					log.Println("Chunk duplication aborted", cid, err)
@@ -179,7 +179,7 @@ func duplicator(sg *servergroup.ServerGroup, lh *local.Core,
 //release will return inmediatly unless the channel buffer is filled
 //It request a chunk "protection" from the other servers to prevent data-loss
 //(avoiding multiple deletions simultaneously on the same chunk)
-func releaser(sg *servergroup.ServerGroup, lh *local.Core) (release func(cid int)) {
+func releaser(sg *servergroup.ServerGroup, lh *core.Core) (release func(cid int)) {
 	releaseChannel := make(chan int, 1024)
 
 	release = func(cid int) {
@@ -202,7 +202,7 @@ func releaser(sg *servergroup.ServerGroup, lh *local.Core) (release func(cid int
 			//Request chunk protection
 			protected := true
 			for _, s := range sg.GetChunkHolders(c) {
-				if s == nil || s.Phy == lh.LocalhostIPPort {
+				if s == nil || s.Phy == sg.LocalhostIPPort {
 					continue
 				}
 				ok := s.Protect(c)
@@ -217,7 +217,7 @@ func releaser(sg *servergroup.ServerGroup, lh *local.Core) (release func(cid int
 			}
 			//Release
 			lh.ChunkSetNoPresent(c)
-			sg.SetServerChunks(lh.LocalhostIPPort, lh.ChunksList())
+			sg.SetServerChunks(sg.LocalhostIPPort, lh.PresentChunksList())
 			log.Println("Remove completed", c)
 		}
 	}()

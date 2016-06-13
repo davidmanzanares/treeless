@@ -1,35 +1,37 @@
-package tlcom
+package com
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"sync/atomic"
 	"treeless/com/buffconn"
 	"treeless/com/protocol"
-	"treeless/com/udpconn"
 )
 
-//Server listen to TCP & UDP, accepting connections and responding to clients
+//Server listen to TCP & UDP, accepting connections and responding to clients using callback functions
 type Server struct {
 	localIP string
 	//Net
-	udpCon      net.Conn
 	tcpListener *net.TCPListener
+	udpListener *net.UDPConn
 	//Status
 	stopped int32
 }
 
-type TCPCallback func(write chan<- protocol.Message, read <-chan protocol.Message)
+//TCPCallback is the main callback, it returns a response message, if the response message type is 0 the response will be dropped
+type TCPCallback func(protocol.Message) (response protocol.Message)
+
+//UDPCallback function should respond to incoming UDP pings
 type UDPCallback func() protocol.AmAlive
 
 //Start a Treeless server
 func Start(localIP string, localPort int, tcpCallback func(protocol.Message) (response protocol.Message), udpCallback UDPCallback) *Server {
-	var s Server
-	//Init server
+	s := new(Server)
 	s.localIP = localIP
-	listenConnections(&s, localPort, tcpCallback)
-	s.udpCon = udpconn.Reply(udpconn.ReplyCallback(udpCallback), localPort)
-	return &s
+	listenUDP(s, udpCallback, localPort)
+	listenTCP(s, tcpCallback, localPort)
+	return s
 }
 
 //IsStopped returns true if the server is not running
@@ -40,11 +42,14 @@ func (s *Server) IsStopped() bool {
 //Stop the server, close all TCP/UDP connections
 func (s *Server) Stop() {
 	atomic.StoreInt32(&s.stopped, 1)
-	s.udpCon.Close()
 	s.tcpListener.Close()
+	s.udpListener.Close()
 }
 
-func listenRequests(conn *net.TCPConn, id int, worker func(protocol.Message) (response protocol.Message)) {
+/*
+	TCP
+*/
+func listenRequests(conn *net.TCPConn, worker TCPCallback) {
 	//log.Println("New connection accepted. Connection ID:", id)
 	go func() {
 		c := buffconn.New(conn)
@@ -64,25 +69,23 @@ func listenRequests(conn *net.TCPConn, id int, worker func(protocol.Message) (re
 		}
 	}()
 }
-
-func listenConnections(s *Server, port int, worker func(protocol.Message) (response protocol.Message)) {
+func listenTCP(s *Server, callback TCPCallback, port int) {
 	taddr, err := net.ResolveTCPAddr("tcp", s.localIP+":"+fmt.Sprint(port))
 	if err != nil {
 		panic(err)
 	}
-	ln, err := net.ListenTCP("tcp", taddr)
+	s.tcpListener, err = net.ListenTCP("tcp", taddr)
 	if err != nil {
 		panic(err)
 	}
-	s.tcpListener = ln
 	go func(s *Server) {
 		var tcpConnections []*net.TCPConn
-		for i := 0; ; i++ {
+		for {
 			conn, err := s.tcpListener.AcceptTCP()
 			//log.Println("TCP Accept", conn, "ASD", conn.LocalAddr(), conn.RemoteAddr())
 			if err != nil {
-				for i := 0; i < len(tcpConnections); i++ {
-					tcpConnections[i].Close()
+				for _, conn := range tcpConnections {
+					conn.Close()
 				}
 				if s.IsStopped() {
 					return
@@ -90,7 +93,36 @@ func listenConnections(s *Server, port int, worker func(protocol.Message) (respo
 				panic(err)
 			}
 			tcpConnections = append(tcpConnections, conn)
-			go listenRequests(conn, i, worker)
+			go listenRequests(conn, callback)
 		}
 	}(s)
+}
+
+/*
+	UDP
+*/
+func listenUDP(s *Server, callback UDPCallback, udpPort int) *net.UDPConn {
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{Port: udpPort})
+	s.udpListener = conn
+	if err != nil {
+		panic(err)
+	}
+	go func(s *Server) {
+		for {
+			_, addr, err := conn.ReadFromUDP(nil)
+			if err != nil {
+				conn.Close()
+				if s.IsStopped() {
+					return
+				}
+				panic(err)
+			}
+			saa := callback()
+			_, err = conn.WriteTo(saa.Marshal(), addr)
+			if err != nil {
+				log.Println(err)
+			}
+		}
+	}(s)
+	return conn
 }
