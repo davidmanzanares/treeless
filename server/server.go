@@ -172,6 +172,7 @@ func (s *DBServer) processMessage(message protocol.Message) (response protocol.M
 			if err != nil {
 				log.Println("Transfer failed, error:", err)
 			} else {
+				log.Println("Transfer operation initiated, chunkID:", chunkID)
 				i := 0
 				s.core.Iterate(chunkID, func(key, value []byte) bool {
 					if i%100 == 0 {
@@ -183,7 +184,7 @@ func (s *DBServer) processMessage(message protocol.Message) (response protocol.M
 					i++
 					return true
 				})
-				log.Println("Transfer operation completed, pairs:", i)
+				log.Println("Transfer operation completed", chunkID, "pairs:", i)
 			}
 		}()
 		response.Type = protocol.OpOK

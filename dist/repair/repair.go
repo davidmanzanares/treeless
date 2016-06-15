@@ -8,7 +8,7 @@ import (
 )
 
 var checkInterval = time.Second
-var checksTillRepair = 7
+var checksTillRepair = 8
 
 func repair(sg *servergroup.ServerGroup, lh *core.Core, cid int) {
 	log.Println("Backwards reparing chunk ", cid)

@@ -14,7 +14,7 @@ import (
 	"treeless/tlfmt"
 )
 
-//scalability
+const benchDisk = false
 
 type benchCluster struct {
 	precondition int
@@ -84,7 +84,7 @@ func TestBenchSequential(t *testing.T) {
 
 func TestBenchClientParallelism(t *testing.T) {
 	c := testBenchPrepareCluster(t, 1000*1000, 4, 1)
-	for i := 1; i < 2000; i *= 2 {
+	for i := 1; i < 1000; i *= 2 {
 		fmt.Println(i, "clients")
 		bdef := benchDef{threads: 4000, clients: i, operations: 2500 * 1000, space: 1000 * 1000, nodelay: false}
 		bdef.mix = benchOpMix{pGet: 1}
@@ -103,6 +103,9 @@ func TestBenchThreadParallelism(t *testing.T) {
 }
 
 func TestBenchDiskParallelism(t *testing.T) {
+	if !benchDisk {
+		t.Skip("Disk bencharmark disabled")
+	}
 	c := testBenchPrepareCluster(t, 50*1000*1000, 220, 1)
 	for i := 1; i < 1000; i *= 2 {
 		fmt.Println(i, "clients")
@@ -113,6 +116,9 @@ func TestBenchDiskParallelism(t *testing.T) {
 }
 
 func TestBenchDiskVsRAM(t *testing.T) {
+	if !benchDisk {
+		t.Skip("Disk bencharmark disabled")
+	}
 	for i := 1; i < 120; i += 10 {
 		fmt.Println(float64(i*(220+4+8))/1024.0, "GB")
 		c := testBenchPrepareCluster(t, i*1024*1024, 220, 1)
@@ -202,100 +208,6 @@ func testBenchPrepareCluster(t *testing.T, precondition, preconditionValueSize, 
 	fmt.Println("Precondition time", time.Now().Sub(t1))
 	return bc
 }
-
-/*
-func TestBenchParallelEachS1_Get(t *testing.T) {
-	testBenchParallel(t, 10000, 256, 1.0, 0., 0.0, 0, 0, 0, 1, 1000000, 0, "", 1000000)
-}
-
-func TestBenchParallelSharedS1_Get(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 1.0, 0.0, 0.0, 0, 0, 0, 1, 10000000, 0, "", 1000000)
-}
-
-func TestBenchParallelSharedS1_GetFilled(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 1.0, 0.0, 0.0, 0, 0, 0, 1, 10000000, 1000000, "", 1000000)
-}
-
-func TestBenchParallelSharedS1_GetClients(t *testing.T) {
-	for i := 100; i < 4000; i += 200 {
-		testBenchParallel(t, i, 1, 1.0, 0.0, 0.0, 0, 0, 0, 1, 1000000, 0, "", 1000000)
-	}
-}
-
-func TestBenchParallelSharedS1_MixGet60Del10AsyncSet30(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 0.6, 0.0, 0.1, 0, 0.3, 0, 1, 1000000, 1000000, "", 1000000)
-}
-
-func TestBenchParallelSharedS1_Set(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 0.0, 1.0, 0.0, 0, 0, 0, 1, 10000000, 0, "", 1000000)
-}
-func TestBenchParallelSharedS1_SetFilled(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 0.0, 1.0, 0.0, 0, 0, 0, 1, 10000000, 1000000, "", 1000000)
-}
-func TestBenchParallelSharedS1_Del(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 0.0, 0.0, 1.0, 0, 0, 0, 1, 10000000, 0, "", 1000000)
-}
-func TestBenchParallelSharedS1_DelFilled(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 0.0, 0.0, 1.0, 0, 0, 0, 1, 10000000, 1000000, "", 1000000)
-}
-func TestBenchParallelSharedS1_CAS(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 0.0, 0.0, 0., 1, 0, 0, 1, 10000000, 0, "", 1000000)
-}
-func TestBenchParallelSharedS1_CASFilled(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 0.0, 0.0, 0., 1, 0, 0, 1, 10000000, 1000000, "", 1000000)
-}
-func TestBenchParallelSharedS1_AsyncSet(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 0.0, 0.0, 0.0, 0, 1, 0, 1, 10000000, 0, "", 1000000)
-}
-func TestBenchParallelSharedS1_AsyncSetFilled(t *testing.T) {
-	testBenchParallel(t, 10000, 10, 0.0, 0.0, 0.0, 0, 1, 0, 1, 10000000, 1000000, "", 1000000)
-}
-
-//fio --name=randread --ioengine=sync --rw=randread --bs=4k --direct=1 --size=1G --numjobs=32 --runtime=240 --group_reporting
-
-func TestBenchParallelSharedSX_GetFilled(t *testing.T) {
-	for i := 1; i <= len(cluster); i++ {
-		testBenchParallel(t, 10000, 10, 1.0, 0.0, 0.0, 0, 0, 0, i, 10000000, 0, "", 1000000)
-	}
-}
-
-func TestBenchParallelSharedS1_GetFilledDisk(t *testing.T) {
-	for i := 100; i < 80000; i += 4000 {
-		testBenchParallel(t, 10000, 10, 1.0, 0.0, 0.0, 0, 0, 0, 1, 500000, i*1000, "", 1000000)
-	}
-}
-
-func TestBenchParallelSharedS1_GetFilledDiskParallelism(t *testing.T) {
-	addr := cluster[0].create(256, 1, ultraverbose)
-	testBenchParallel(t, 10000, 32, 1.0, 0.0, 0.0, 0, 0, 0, 1, 1, 50*1000*1000, addr, 50*1000*1000)
-	for i := 2; i < 500; i *= 2 {
-		fmt.Println("\n\n\n")
-		testBenchParallel(t, 1000, i, 1.0, 0.0, 0.0, 0, 0, 0, 1, 400*1000, 0, addr, 50*1000*1000)
-	}
-	cluster[0].kill()
-}
-
-func TestBenchParallelSharedS1_SetFilledDisk(t *testing.T) {
-	for i := 1; i < 180000; i += 4000 {
-		addr := cluster[0].create(32, 1, ultraverbose)
-		ops := 10000000
-		if i > 16000 {
-			ops = 800000
-		}
-		if i > 20000 {
-			ops = 200000
-		}
-		testBenchParallel(t, 10000, 10, 1.0, 0.0, 0.0, 0, 0, 0, 1, ops, i*1000, addr, i*1000)
-		testBenchParallel(t, 10000, 10, 0.0, 1.0, 0.0, 0, 0, 0, 1, ops, 0, addr, i*1000)
-		testBenchParallel(t, 10000, 10, 0.0, 0.0, 0.0, 0, 0, 1, 1, 4000000, 0, addr, i*1000)
-		cluster[0].kill()
-		fmt.Println("\n\n\n")
-		if i == 1 {
-			i = 0
-		}
-		//testBenchParallel(t, 1000, 10, 0.5, 0.5, 0.0, 0, 0, 1, 500000, 0)
-	}
-}*/
 
 func testBenchParallel(t *testing.T, cluster benchCluster, bdef benchDef) {
 	mix := bdef.mix

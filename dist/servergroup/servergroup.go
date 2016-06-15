@@ -31,6 +31,7 @@ type ServerGroup struct {
 	//External status
 	servers map[string]*VirtualServer //Set of all DB servers
 	chunks  []VirtualChunk            //Array of all DB chunks
+	noDelay bool
 }
 
 /*
@@ -312,6 +313,7 @@ func (sg *ServerGroup) AddServerToGroup(addr string) (*VirtualServer, error) {
 		s = new(VirtualServer)
 		sg.servers[addr] = s
 		s.Phy = addr
+		s.noDelay = sg.noDelay
 		log.Println("Server", addr, "added")
 		return s, nil
 	}
@@ -383,4 +385,24 @@ func (sg *ServerGroup) UnSynchedChunks() []int {
 		}
 	}
 	return list
+}
+
+func (sg *ServerGroup) SetNoDelay() {
+	sg.mutex.Lock()
+	sg.noDelay = true
+	for _, s := range sg.servers {
+		s.noDelay = true
+		s.SetNoDelay()
+	}
+	sg.mutex.Unlock()
+}
+
+func (sg *ServerGroup) SetBuffered() {
+	sg.mutex.Lock()
+	sg.noDelay = false
+	for _, s := range sg.servers {
+		s.noDelay = false
+		s.SetBuffered()
+	}
+	sg.mutex.Unlock()
 }

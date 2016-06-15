@@ -12,6 +12,8 @@ import (
 	"treeless/com/protocol"
 )
 
+const brokerChannelBufferSize = 1024
+
 //brokerTick controls the time between polling for timeout'ed respond messages
 var brokerTick = time.Millisecond * 5
 
@@ -30,34 +32,6 @@ type brokerMsg struct {
 	rch     chan result
 }
 
-//Conn provides an interface to a possible buffered DB TCP client connection
-type Conn struct {
-	tcpConn                  *net.TCPConn
-	brokerSendChannel        chan brokerMsg
-	brokerReceiveChannelPool sync.Pool
-}
-
-//CreateConnection returns a new DB connection
-func CreateConnection(addr string, onClose func()) (*Conn, error) {
-	d := &net.Dialer{Timeout: dialTimeout}
-	tcpconn, err := d.Dial("tcp", addr)
-	if err != nil {
-		return nil, err
-	}
-
-	var c Conn
-	c.tcpConn = tcpconn.(*net.TCPConn)
-	//c.conn.SetNoDelay(false)
-
-	c.brokerSendChannel = make(chan brokerMsg, 1024)
-	c.brokerReceiveChannelPool = sync.Pool{New: func() interface{} {
-		return make(chan result, 1)
-	}}
-	go broker(&c, onClose)
-
-	return &c, nil
-}
-
 type timeoutMsg struct {
 	t          time.Time
 	tid        uint32
@@ -68,6 +42,30 @@ type queue struct {
 	head, tail *timeoutMsg
 	pool       sync.Pool
 	l          int
+}
+
+//Conn provides an interface to a possible buffered DB TCP client connection
+type Conn struct {
+	tcpConn                  *net.TCPConn
+	brokerSendChannel        chan brokerMsg
+	brokerReceiveChannelPool sync.Pool
+}
+
+//CreateConnection returns a new Conn
+func CreateConnection(addr string, onClose func()) (*Conn, error) {
+	d := &net.Dialer{Timeout: dialTimeout}
+	tcpconn, err := d.Dial("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	c := new(Conn)
+	c.tcpConn = tcpconn.(*net.TCPConn)
+	c.brokerSendChannel = make(chan brokerMsg, brokerChannelBufferSize)
+	c.brokerReceiveChannelPool = sync.Pool{New: func() interface{} {
+		return make(chan result, 1)
+	}}
+	go broker(c, onClose)
+	return c, nil
 }
 
 func createQueue() (q *queue) {

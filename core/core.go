@@ -7,7 +7,6 @@ import (
 	"log"
 	"math"
 	"os"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -126,7 +125,9 @@ func (c *Core) PresentChunksList() []protocol.AmAliveChunk {
 	list := make([]protocol.AmAliveChunk, 0, c.knownChunks)
 	for id, chunk := range c.chunks {
 		if chunk.present {
+			chunk.Lock()
 			list = append(list, protocol.AmAliveChunk{ID: id, Checksum: chunk.pm.Checksum()})
+			chunk.Unlock()
 		}
 	}
 	c.mutex.RUnlock()
@@ -296,15 +297,11 @@ func (c *Core) Iterate(chunkIndex int, foreach func(key, value []byte) bool) err
 		chunk.Unlock()
 		return errors.New("ChunkNotPresent")
 	}
-	i := 0
 	err := chunk.pm.Iterate(func(key, value []byte) bool {
-		if i%64 == 0 {
-			chunk.Unlock()
-			runtime.Gosched()
-			chunk.Lock()
-		}
-		i++
-		return foreach(key, value)
+		chunk.Unlock()
+		Continue := foreach(key, value)
+		chunk.Lock()
+		return Continue
 	})
 	chunk.Unlock()
 	return err
@@ -320,15 +317,11 @@ func (c *Core) BackwardsIterate(chunkIndex int, foreach func(key, value []byte) 
 		return errors.New("ChunkNotPresent")
 	}
 	chunk.defragMutex.Lock()
-	i := 0
 	err := chunk.pm.BackwardsIterate(func(key, value []byte) bool {
-		if i%64 == 0 {
-			chunk.Unlock()
-			runtime.Gosched()
-			chunk.Lock()
-		}
-		i++
-		return foreach(key, value)
+		chunk.Unlock()
+		Continue := foreach(key, value)
+		chunk.Lock()
+		return Continue
 	})
 	chunk.Unlock()
 	chunk.defragMutex.Unlock()

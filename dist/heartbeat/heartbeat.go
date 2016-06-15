@@ -68,14 +68,14 @@ func (h *Heartbeater) cleanNews() {
 }
 
 func (h *Heartbeater) request(addr string) (ok bool) {
-	if h.core != nil && addr == h.sg.LocalhostIPPort {
+	if addr == h.sg.LocalhostIPPort {
 		return true
 	}
 	aa, err := com.UDPRequest(addr, heartbeatTimeout)
 	if err != nil {
 		if h.sg.IsServerOnGroup(addr) {
 			h.timeouts[addr] = h.timeouts[addr] + 1
-			if h.timeouts[addr] > 3 {
+			if h.timeouts[addr] >= 3 {
 				delete(h.timeouts, addr)
 				//Server is dead
 				h.sg.DeadServer(addr)

@@ -75,7 +75,7 @@ func TestMultiHotRebalance(t *testing.T) {
 	threads := 4
 	maxKeySize := 4
 	maxValueSize := 4
-	numOperations := 200000
+	numOperations := 300000
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	//Operate on built-in map, DB will be checked against this map
 	goMap := make(map[string][]byte)
@@ -125,8 +125,7 @@ func TestMultiHotRebalance(t *testing.T) {
 					//Second server set-up
 					cluster[1].assoc(addr, ultraverbose, false)
 					//Wait for rebalance
-					time.Sleep(time.Second * 7)
-					c.SetNoDelay()
+					time.Sleep(time.Second * 10)
 					//First server shut down
 					log.Println("Server 1 shut down")
 					cluster[0].kill()
@@ -281,7 +280,7 @@ func TestMultiCAS(t *testing.T) {
 			written, _ = c.CAS(key, value, t, oldv)
 			atomic.AddUint64(&tries, 1)
 			if !written {
-				time.Sleep(time.Millisecond)
+				time.Sleep(time.Microsecond * time.Duration(rand.Intn(2000)))
 			}
 		}
 	}
@@ -300,7 +299,7 @@ func TestMultiCAS(t *testing.T) {
 		t.Fatal("Initial CAS failed", n, v)
 	}
 	ops := 100
-	clients := 100
+	clients := 50
 	var w sync.WaitGroup
 	w.Add(clients)
 	for c := 0; c < clients; c++ {

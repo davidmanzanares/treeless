@@ -13,7 +13,8 @@ type VirtualServer struct {
 	lastHeartbeat time.Time //Last time a heartbeat was listened
 	dead          bool
 	heldChunks    []protocol.AmAliveChunk //List of all chunks that this server holds
-	conn          *com.Conn             //TCP connection, it may not exists
+	conn          *com.Conn               //TCP connection, it may not exists
+	noDelay       bool
 	m             sync.RWMutex
 }
 
@@ -42,6 +43,9 @@ func (s *VirtualServer) needConnection() (err error) {
 				return err
 			}
 			//Connection established
+			if s.noDelay {
+				s.conn.SetNoDelay()
+			}
 		}
 		s.m.Unlock()
 		s.m.RLock()

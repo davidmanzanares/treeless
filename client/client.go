@@ -10,15 +10,22 @@ import (
 	"treeless/hashing"
 )
 
+const defaultGetTimeout = time.Millisecond * 500
+const defaultSetTimeout = time.Millisecond * 500
+const defaultDelTimeout = time.Millisecond * 500
+const defaultCASTimeout = time.Millisecond * 500
+
+//DBClient provides an interface for Treeless client operations
 type DBClient struct {
 	sg         *servergroup.ServerGroup
 	hb         *heartbeat.Heartbeater
 	GetTimeout time.Duration
 	SetTimeout time.Duration
 	DelTimeout time.Duration
-	drift      time.Duration
+	CASTimeout time.Duration
 }
 
+//Connect creates a new DBClient and connects it to a Treeless server group by using addr as the entry point
 func Connect(addr string) (*DBClient, error) {
 	c := new(DBClient)
 	sg, err := servergroup.Assoc(addr, "")
@@ -26,17 +33,17 @@ func Connect(addr string) (*DBClient, error) {
 		return nil, err
 	}
 	c.sg = sg
-
-	//Start heartbeat listener
 	c.hb = heartbeat.Start(sg)
-
-	c.GetTimeout = time.Millisecond * 500
-	c.SetTimeout = time.Millisecond * 500
-	c.DelTimeout = time.Millisecond * 500
-	//c.drift = time.Duration(time.Nanosecond * time.Duration(rand.Intn(10000*1000)))
+	c.GetTimeout = defaultGetTimeout
+	c.SetTimeout = defaultSetTimeout
+	c.DelTimeout = defaultDelTimeout
+	c.CASTimeout = defaultCASTimeout
 	return c, nil
 }
 
+//Get return the value associated to a given key
+//lastTime is the last modification time of the pair
+//read will be true if at least one server respond
 func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time, read bool) {
 	//Last write wins policy
 	chunkID := hashing.GetChunkID(key, c.sg.NumChunks())
@@ -60,7 +67,6 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time, read bool)
 		}
 		r := charray[i].Wait()
 		if r.Err != nil {
-			//fmt.Println(r.Err)
 			continue
 		}
 		v := r.Value
@@ -88,10 +94,15 @@ func (c *DBClient) Get(key []byte) (value []byte, lastTime time.Time, read bool)
 	return value[8:], lastTime, read
 }
 
+//Set sets a key-value pair by creating a new one or by overwriting a previous value
+//written is set to true if at least one server respond without errors
 func (c *DBClient) Set(key, value []byte) (written bool, errs error) {
 	return c.set(key, value, c.SetTimeout)
 }
 
+//AsyncSet is similar to Set, but it asks the server to don't ACK the SET message
+//It provides more performance than Set
+//However, there is no way to be sure that the key-value pair has been written successfully
 func (c *DBClient) AsyncSet(key, value []byte) (errs error) {
 	_, errs = c.set(key, value, 0)
 	return errs
@@ -103,24 +114,26 @@ func (c *DBClient) set(key, value []byte, timeout time.Duration) (written bool, 
 	valueWithTime := make([]byte, 8+len(value))
 	binary.LittleEndian.PutUint64(valueWithTime, uint64(time.Now().UnixNano()))
 	copy(valueWithTime[8:], value)
-	var charray [8]*com.SetOperation
+	var charray [8]com.SetOperation
+	var chvalidarray [8]bool
 	for i, s := range servers {
 		if s == nil {
 			continue
 		}
 		c, err := s.Set(key, valueWithTime, timeout)
 		if err != nil {
-			errs = err //TODO return only written
+			errs = err //TODO return all errors
 		} else {
-			charray[i] = &c
+			charray[i] = c
+			chvalidarray[i] = true
 		}
 	}
 	if timeout > 0 {
 		for i, _ := range servers {
-			if charray[i] != nil {
+			if chvalidarray[i] {
 				err := charray[i].Wait()
 				if err != nil {
-					errs = err //TODO return only written
+					errs = err //TODO return all errors
 				} else {
 					written = true
 				}
@@ -130,11 +143,15 @@ func (c *DBClient) set(key, value []byte, timeout time.Duration) (written bool, 
 	return written, errs
 }
 
+//CAS (Compare And Swap) modifies the value of a pair if the provided timestamp and old value match the stored value
+//This is an atomic operation, but it doesn't tolerate network partitions (permanent node failures are ok)
+//It can be used with Get to achieve synchronization when there are no network partitions
+//Using it concurrently with Set is a race condition
 func (c *DBClient) CAS(key, value []byte, timestamp time.Time, oldValue []byte) (written bool, errs error) {
 	chunkID := hashing.GetChunkID(key, c.sg.NumChunks())
 	servers := c.sg.GetChunkHolders(chunkID)
 	valueWithTime := make([]byte, 24+len(value))
-	casTime := time.Now().Add(c.drift)
+	casTime := time.Now()
 	binary.LittleEndian.PutUint64(valueWithTime[0:8], uint64(timestamp.UnixNano()))
 	binary.LittleEndian.PutUint64(valueWithTime[8:16], hashing.FNV1a64(oldValue))
 	binary.LittleEndian.PutUint64(valueWithTime[16:24], uint64(casTime.UnixNano()))
@@ -165,7 +182,7 @@ func (c *DBClient) CAS(key, value []byte, timestamp time.Time, oldValue []byte) 
 		return false, errors.New("No servers")
 	}
 	//fmt.Println(servers[master].Phy)
-	op, err := servers[master].CAS(key, valueWithTime, c.SetTimeout)
+	op, err := servers[master].CAS(key, valueWithTime, c.CASTimeout)
 	if err != nil {
 		return false, err
 	}
@@ -187,6 +204,9 @@ func (c *DBClient) CAS(key, value []byte, timestamp time.Time, oldValue []byte) 
 	return true, errs
 }
 
+//Del deletes a key-value pair from the DB
+//However, if there is a network partition the deleted pair can reappear after the network partition heals
+//Setting the value to nil is more safe, but that won't free all memory
 func (c *DBClient) Del(key []byte) (errs error) {
 	chunkID := hashing.GetChunkID(key, c.sg.NumChunks())
 	servers := c.sg.GetChunkHolders(chunkID)
@@ -220,21 +240,24 @@ func (c *DBClient) Del(key []byte) (errs error) {
 	return errs
 }
 
+//SetBuffered activates buffering in all client-server and server-client communications
+//Buffering is activated by default
 func (c *DBClient) SetBuffered() {
-	for _, s := range c.sg.Servers() {
-		s.SetBuffered()
-	}
+	c.sg.SetBuffered()
 }
 
+//SetNoDelay deactivates buffering in all client-server and server-client communications
+//Buffering provides a critical performance gain, use this with caution
+//Buffering is activated by default
 func (c *DBClient) SetNoDelay() {
-	for _, s := range c.sg.Servers() {
-		s.SetNoDelay()
-	}
+	c.sg.SetNoDelay()
+
 }
 
+//Close close all connections
 func (c *DBClient) Close() {
 	//Stop hearbeat
 	c.hb.Stop()
-	//Stop sockets
+	//Close sockets
 	c.sg.Stop()
 }

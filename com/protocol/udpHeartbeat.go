@@ -55,11 +55,6 @@ func (aa *AmAlive) Marshal() []byte {
 	binary.LittleEndian.PutUint16(m, 0)
 
 	return msg
-	/*s, err := json.Marshal(aa)
-	if err != nil {
-		panic(err)
-	}
-	return s*/
 }
 
 //AmAliveUnMarshal unserializes s into an AmAlive object
@@ -106,7 +101,4 @@ func AmAliveUnMarshal(msg []byte) (*AmAlive, error) {
 	}
 
 	return aa, nil
-	/*var aa AmAlive
-	err := json.Unmarshal(s, &aa)
-	return &aa, err*/
 }

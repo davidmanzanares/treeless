@@ -14,6 +14,8 @@ import (
 
 const maxRebalanceWaitSeconds = 3
 
+const duplicationWaitTime = time.Second * 4
+
 //Rebalancer is used to rebalance the system, getting a copy (duplication) of chunks
 //and deleting the local copy of chunks as needed
 type Rebalancer struct {
@@ -126,15 +128,12 @@ func duplicator(sg *servergroup.ServerGroup, lh *core.Core,
 
 		lh.ChunkSetPresent(cid)
 		if length == 0 {
-			go func() {
-				//Heartbeat must be propagated before transfer initialization
-				time.Sleep(time.Second * 2)
-				log.Println("Duplication completed: 0 sized", s.Phy, cid)
-			}()
+			log.Println("Duplication completed: 0 sized", s.Phy, cid)
+
 		} else {
 			go func() {
 				//Heartbeat must be propagated before transfer initialization
-				time.Sleep(time.Second * 2)
+				time.Sleep(duplicationWaitTime)
 				duplicateChannel <- cid
 			}()
 		}
