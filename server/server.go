@@ -6,13 +6,13 @@ import (
 	"log"
 	"sync/atomic"
 	"time"
-	"treeless/com"
-	"treeless/com/protocol"
-	"treeless/core"
-	"treeless/dist/heartbeat"
-	"treeless/dist/rebalance"
-	"treeless/dist/repair"
-	"treeless/dist/servergroup"
+	"github.com/dv343/treeless/com"
+	"github.com/dv343/treeless/com/protocol"
+	"github.com/dv343/treeless/core"
+	"github.com/dv343/treeless/dist/heartbeat"
+	"github.com/dv343/treeless/dist/rebalance"
+	"github.com/dv343/treeless/dist/repair"
+	"github.com/dv343/treeless/dist/servergroup"
 )
 
 //DBServer manages a Treeless node server

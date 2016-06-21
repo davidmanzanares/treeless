@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"treeless/com/protocol"
-	"treeless/core/pmap"
-	"treeless/hashing"
+	"github.com/dv343/treeless/com/protocol"
+	"github.com/dv343/treeless/core/pmap"
+	"github.com/dv343/treeless/hashing"
 )
 
 var protectionTime = time.Second * 10

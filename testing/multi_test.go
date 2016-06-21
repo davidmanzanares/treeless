@@ -11,9 +11,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-	"treeless/client"
-	"treeless/hashing"
-	"treeless/tlfmt"
+	"github.com/dv343/treeless/client"
+	"github.com/dv343/treeless/hashing"
+	"github.com/dv343/treeless/tlfmt"
 )
 
 func TestMultiBasicRebalance(t *testing.T) {

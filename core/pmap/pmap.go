@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"log"
 	"time"
-	"treeless/hashing"
+	"github.com/dv343/treeless/hashing"
 )
 
 //FilePerms i

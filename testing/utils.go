@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"math/rand"
 	"time"
-	"treeless/client"
+	"github.com/dv343/treeless/client"
 )
 
 type capability int

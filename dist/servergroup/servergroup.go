@@ -9,8 +9,8 @@ import (
 	"sort"
 	"sync"
 	"time"
-	"treeless/com"
-	"treeless/com/protocol"
+	"github.com/dv343/treeless/com"
+	"github.com/dv343/treeless/com/protocol"
 )
 
 //Hide virtuals

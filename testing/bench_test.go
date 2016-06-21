@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-	"treeless/client"
-	"treeless/tlfmt"
+	"github.com/dv343/treeless/client"
+	"github.com/dv343/treeless/tlfmt"
 )
 
 const benchDisk = false

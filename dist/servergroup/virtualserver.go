@@ -3,8 +3,8 @@ package servergroup
 import (
 	"sync"
 	"time"
-	"treeless/com"
-	"treeless/com/protocol"
+	"github.com/dv343/treeless/com"
+	"github.com/dv343/treeless/com/protocol"
 )
 
 //VirtualServer stores generical server info

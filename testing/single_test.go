@@ -14,8 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
-	"treeless/client"
-	"treeless/tlfmt"
+	"github.com/dv343/treeless/client"
+	"github.com/dv343/treeless/tlfmt"
 )
 
 const testingNumChunks = 8

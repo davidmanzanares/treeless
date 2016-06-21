@@ -5,10 +5,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"treeless/com"
-	"treeless/com/protocol"
-	"treeless/core"
-	"treeless/dist/servergroup"
+	"github.com/dv343/treeless/com"
+	"github.com/dv343/treeless/com/protocol"
+	"github.com/dv343/treeless/core"
+	"github.com/dv343/treeless/dist/servergroup"
 )
 
 var heartbeatTimeout = time.Millisecond * 250

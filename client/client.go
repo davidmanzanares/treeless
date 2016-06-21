@@ -4,10 +4,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"time"
-	"treeless/com"
-	"treeless/dist/heartbeat"
-	"treeless/dist/servergroup"
-	"treeless/hashing"
+	"github.com/dv343/treeless/com"
+	"github.com/dv343/treeless/dist/heartbeat"
+	"github.com/dv343/treeless/dist/servergroup"
+	"github.com/dv343/treeless/hashing"
 )
 
 const defaultGetTimeout = time.Millisecond * 500

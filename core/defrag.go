@@ -2,8 +2,8 @@ package core
 
 import (
 	"log"
-	"treeless/core/pmap"
-	"treeless/hashing"
+	"github.com/dv343/treeless/core/pmap"
+	"github.com/dv343/treeless/hashing"
 )
 
 const defragBufferSize = 256

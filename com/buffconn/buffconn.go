@@ -5,7 +5,7 @@ import (
 	"net"
 	"sync"
 	"time"
-	"treeless/com/protocol"
+	"github.com/dv343/treeless/com/protocol"
 )
 
 //For maximum performance set this variable to the MSS(maximum segment size)

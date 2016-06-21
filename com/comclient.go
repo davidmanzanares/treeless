@@ -8,8 +8,8 @@ import (
 	"net"
 	"sync"
 	"time"
-	"treeless/com/buffconn"
-	"treeless/com/protocol"
+	"github.com/dv343/treeless/com/buffconn"
+	"github.com/dv343/treeless/com/protocol"
 )
 
 const brokerChannelBufferSize = 1024

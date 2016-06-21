@@ -5,8 +5,8 @@ import (
 	"log"
 	"net"
 	"sync/atomic"
-	"treeless/com/buffconn"
-	"treeless/com/protocol"
+	"github.com/dv343/treeless/com/buffconn"
+	"github.com/dv343/treeless/com/protocol"
 )
 
 //Server listen to TCP & UDP, accepting connections and responding to clients using callback functions

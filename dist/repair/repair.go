@@ -3,8 +3,8 @@ package repair
 import (
 	"log"
 	"time"
-	"treeless/core"
-	"treeless/dist/servergroup"
+	"github.com/dv343/treeless/core"
+	"github.com/dv343/treeless/dist/servergroup"
 )
 
 var checkInterval = time.Second
